@@ -1,5 +1,5 @@
 {
-  "name": "Sunhouse ID Card Generator",
-  "description": "Ứng dụng tạo và in thẻ nhân viên tự động cho Sunhouse từ file Excel và ảnh.",
+  "name": "WIP Inventory Manager",
+  "description": "Hệ thống quản lý tồn kho sản xuất (WIP) theo quy trình chuỗi cung ứng nội bộ, hỗ trợ nhập liệu và báo cáo tồn kho cơ bản.",
   "requestFramePermissions": []
 }
