@@ -115,15 +115,16 @@ export const storageService = {
     // 2. Record transaction
     const transactions = this.getTransactions();
     const parts = this.getParts();
-    const part = parts.find(p => p.id === partId);
     const stage = STAGES.find(s => s.id === stageId);
-    const targetStage = targetStageId ? STAGES.find(s => s.id === targetStageId) : null;
     
     const txId = crypto.randomUUID();
+    const timestamp = Date.now();
     
     // ONLY generate QR data if exporting from OUT
+    // Format: partId|quantity|sourceStageId|timestamp|txId|targetStageId
+    // Removed Vietnamese names to avoid scan errors with non-UTF8 scanners
     const qrData = sourceLocation === 'OUT' 
-      ? `${partId}|${quantity}|${stageId}|${part?.name || ''}|${stage?.name || ''}|${Date.now()}|true|${txId}|${targetStageId || ''}|${targetStage?.name || ''}`
+      ? `${partId}|${quantity}|${stageId}|${timestamp}|${txId}|${targetStageId || ''}`
       : undefined;
 
     const newTransaction: Transaction = {
@@ -148,11 +149,12 @@ export const storageService = {
 
   recordStageIn(qrData: string, currentStageId: StageId, targetLocation: 'IN' | 'OUT' = 'IN') {
     const parts = qrData.split('|');
-    if (parts.length < 8) {
+    if (parts.length < 5) {
       throw new Error('Định dạng mã QR không hợp lệ hoặc không phải mã xuất kho OUT.');
     }
     
-    const [partId, quantityStr, sourceStageId, , , , , sourceTxId, targetStageId] = parts;
+    // New Format: partId|quantity|sourceStageId|timestamp|txId|targetStageId
+    const [partId, quantityStr, sourceStageId, , sourceTxId, targetStageId] = parts;
     const quantity = parseFloat(quantityStr);
 
     // 1. Check if this QR (Transaction ID) has already been scanned

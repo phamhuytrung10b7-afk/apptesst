@@ -175,10 +175,6 @@ export default function App() {
       setSelectedPart(existingParts[0].id);
     }
 
-    if (existing.length === 0 && existingParts.length > 0) {
-      storageService.updateInventory(existingParts[0].id, 'LASER', 'IN', 100);
-      storageService.updateInventory(existingParts[0].id, 'LASER', 'OUT', 20);
-    }
     refreshData();
   }, []);
 
@@ -305,9 +301,9 @@ export default function App() {
                 <span className="font-bold uppercase">{STAGES.find(s => s.id === lastTransaction.stageId)?.name}</span>
               </div>
             </div>
-            {lastTransaction.qrData?.split('|')[9] && (
+            {lastTransaction.qrData?.split('|')[5] && (
               <p className="mt-1 font-bold" style={{ fontSize: `${labelSettings.fontSize - 2}px` }}>
-                Đích: {lastTransaction.qrData.split('|')[9]}
+                Đích: {STAGES.find(s => s.id === lastTransaction.qrData!.split('|')[5])?.name || lastTransaction.qrData!.split('|')[5]}
               </p>
             )}
             <div className="mt-2 opacity-60" style={{ fontSize: `${labelSettings.fontSize - 4}px` }}>
@@ -658,13 +654,13 @@ function LabelHistoryView({ parts, onPrint, onCopy }: { parts: Part[], onPrint: 
                   </div>
                 </div>
                 
-                {selectedLabel.qrData?.split('|')[8] && (
+                {selectedLabel.qrData?.split('|')[5] && (
                   <div className="bg-[#F27D26]/5 p-4 rounded-xl border border-[#F27D26]/20">
                     <span className="text-xs font-mono uppercase opacity-60 block mb-2">Đích tiếp theo</span>
                     <div className="flex items-center justify-center gap-3 text-[#F27D26] font-bold text-xl">
                       <span>{STAGES.find(s => s.id === selectedLabel.stageId)?.name}</span>
                       <ArrowRight size={20} />
-                      <span>{selectedLabel.qrData.split('|')[9]}</span>
+                      <span>{STAGES.find(s => s.id === selectedLabel.qrData!.split('|')[5])?.name || selectedLabel.qrData!.split('|')[5]}</span>
                     </div>
                   </div>
                 )}
@@ -1256,13 +1252,13 @@ function ProduceView({
                   </div>
                 </div>
                 
-                {lastTransaction.qrData?.split('|')[8] && (
+                {lastTransaction.qrData?.split('|')[5] && (
                   <div className="bg-[#F27D26]/5 p-4 rounded-xl border border-[#F27D26]/20">
                     <span className="text-xs font-mono uppercase opacity-60 block mb-2">Đích tiếp theo</span>
                     <div className="flex items-center justify-center gap-3 text-[#F27D26] font-bold text-xl">
                       <span>{STAGES.find(s => s.id === lastTransaction.stageId)?.name}</span>
                       <ArrowRight size={20} />
-                      <span>{lastTransaction.qrData.split('|')[9]}</span>
+                      <span>{STAGES.find(s => s.id === lastTransaction.qrData!.split('|')[5])?.name || lastTransaction.qrData!.split('|')[5]}</span>
                     </div>
                   </div>
                 )}
@@ -1338,24 +1334,28 @@ function InboundView({ selectedStage, setSelectedStage, onScanSuccess, parts, on
       try {
         onScanSuccess(input, targetLocation);
         
-        if (qrParts.length >= 3) {
+        if (qrParts.length >= 5) {
+          const pId = qrParts[0];
+          const sId = qrParts[2];
           setLastScanned({
-            partId: qrParts[0],
+            partId: pId,
             quantity: qrParts[1],
-            sourceStageId: qrParts[2],
-            partName: qrParts[3] || qrParts[0],
-            sourceName: qrParts[4] || qrParts[2],
+            sourceStageId: sId,
+            partName: parts.find((p: any) => p.id === pId)?.name || pId,
+            sourceName: STAGES.find(s => s.id === sId)?.name || sId,
             status: 'success'
           });
         }
       } catch (err) {
-        if (qrParts.length >= 3) {
+        if (qrParts.length >= 5) {
+          const pId = qrParts[0];
+          const sId = qrParts[2];
           setLastScanned({
-            partId: qrParts[0],
+            partId: pId,
             quantity: qrParts[1],
-            sourceStageId: qrParts[2],
-            partName: qrParts[3] || qrParts[0],
-            sourceName: qrParts[4] || qrParts[2],
+            sourceStageId: sId,
+            partName: parts.find((p: any) => p.id === pId)?.name || pId,
+            sourceName: STAGES.find(s => s.id === sId)?.name || sId,
             status: 'error',
             errorMsg: err instanceof Error ? err.message : 'Lỗi không xác định'
           });
