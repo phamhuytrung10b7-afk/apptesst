@@ -10,9 +10,18 @@ const STORAGE_KEYS = {
   TRANSACTIONS: 'wip_transactions',
   PARTS: 'wip_parts',
   BOM: 'wip_bom',
+  LABEL_SETTINGS: 'wip_label_settings',
 };
 
 export const storageService = {
+  getLabelSettings() {
+    const data = localStorage.getItem(STORAGE_KEYS.LABEL_SETTINGS);
+    return data ? JSON.parse(data) : { width: 100, height: 50, fontSize: 14, qrSize: 120 };
+  },
+
+  saveLabelSettings(settings: any) {
+    localStorage.setItem(STORAGE_KEYS.LABEL_SETTINGS, JSON.stringify(settings));
+  },
   getParts(): Part[] {
     const data = localStorage.getItem(STORAGE_KEYS.PARTS);
     return data ? JSON.parse(data) : INITIAL_PARTS;

@@ -164,6 +164,8 @@ export default function App() {
   const [success, setSuccess] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
+  const [labelSettings, setLabelSettings] = useState(storageService.getLabelSettings());
+
   useEffect(() => {
     // Initialize with some dummy data if empty
     const existing = storageService.getInventory();
@@ -238,8 +240,83 @@ export default function App() {
     setSuccess(null);
   };
 
+  const handlePrint = (label: Transaction) => {
+    setLastTransaction(label);
+    setTimeout(() => {
+      window.print();
+    }, 500);
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setSuccess('Đã sao chép mã QR vào bộ nhớ tạm!');
+  };
+
   return (
-    <div className="flex h-screen bg-[#F8F9FA] text-gray-900 font-sans overflow-hidden">
+    <div className="flex h-screen bg-[#F8F9FA] text-gray-900 font-sans overflow-hidden print:bg-white">
+      <style>
+        {`
+          @media print {
+            @page {
+              size: ${labelSettings.width}mm ${labelSettings.height}mm;
+              margin: 0;
+            }
+            body * {
+              visibility: hidden;
+            }
+            #print-area, #print-area * {
+              visibility: visible;
+            }
+            #print-area {
+              position: absolute;
+              left: 0;
+              top: 0;
+              width: ${labelSettings.width}mm;
+              height: ${labelSettings.height}mm;
+              padding: 5mm;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              background: white;
+            }
+            .no-print {
+              display: none !important;
+            }
+          }
+        `}
+      </style>
+
+      {/* Hidden Print Area */}
+      <div id="print-area" className="hidden print:flex">
+        {lastTransaction && (
+          <div className="flex flex-col items-center text-center w-full">
+            <div className="border-2 border-black p-2 mb-2">
+              <QRCodeSVG value={lastTransaction.qrData || ''} size={labelSettings.qrSize} level="H" />
+            </div>
+            <p className="font-bold leading-tight" style={{ fontSize: `${labelSettings.fontSize + 4}px` }}>
+              {parts.find(p => p.id === lastTransaction.partId)?.name}
+            </p>
+            <div className="flex justify-center gap-4 mt-2" style={{ fontSize: `${labelSettings.fontSize}px` }}>
+              <div className="flex flex-col">
+                <span className="font-bold">{lastTransaction.quantity} {parts.find(p => p.id === lastTransaction.partId)?.unit}</span>
+              </div>
+              <div className="flex flex-col">
+                <span className="font-bold uppercase">{STAGES.find(s => s.id === lastTransaction.stageId)?.name}</span>
+              </div>
+            </div>
+            {lastTransaction.qrData?.split('|')[9] && (
+              <p className="mt-1 font-bold" style={{ fontSize: `${labelSettings.fontSize - 2}px` }}>
+                Đích: {lastTransaction.qrData.split('|')[9]}
+              </p>
+            )}
+            <div className="mt-2 opacity-60" style={{ fontSize: `${labelSettings.fontSize - 4}px` }}>
+              <span>ID: {lastTransaction.id.split('-')[0].toUpperCase()}</span>
+              <span className="ml-2">{format(lastTransaction.timestamp, 'dd/MM/yy HH:mm')}</span>
+            </div>
+          </div>
+        )}
+      </div>
       {/* Sidebar */}
       <aside className={cn(
         "bg-white border-r border-gray-200 transition-all duration-300 flex flex-col z-50",
@@ -360,6 +437,8 @@ export default function App() {
                   setLastTransaction={setLastTransaction}
                   inventory={inventory}
                   parts={parts}
+                  onPrint={handlePrint}
+                  onCopy={copyToClipboard}
                 />
               )}
               {currentView === 'inbound' && (
@@ -373,13 +452,27 @@ export default function App() {
                 />
               )}
               {currentView === 'labels' && (
-                <LabelHistoryView key="labels" parts={parts} />
+                <LabelHistoryView 
+                  key="labels" 
+                  parts={parts} 
+                  onPrint={handlePrint}
+                  onCopy={copyToClipboard}
+                />
               )}
               {currentView === 'history' && (
                 <HistoryView key="history" transactions={transactions} parts={parts} />
               )}
               {currentView === 'settings' && (
-                <SettingsView key="settings" parts={parts} onPartsChange={refreshData} />
+                <SettingsView 
+                  key="settings" 
+                  parts={parts} 
+                  onPartsChange={refreshData} 
+                  labelSettings={labelSettings}
+                  onLabelSettingsChange={(s: any) => {
+                    setLabelSettings(s);
+                    storageService.saveLabelSettings(s);
+                  }}
+                />
               )}
             </AnimatePresence>
           </div>
@@ -456,7 +549,7 @@ interface DashboardProps {
   key?: string;
 }
 
-function LabelHistoryView({ parts }: { parts: Part[], key?: string }) {
+function LabelHistoryView({ parts, onPrint, onCopy }: { parts: Part[], onPrint: (l: Transaction) => void, onCopy: (t: string) => void, key?: string }) {
   const [labels, setLabels] = useState<Transaction[]>([]);
   const [showDeleteModal, setShowDeleteModal] = useState<string | null>(null);
   const [password, setPassword] = useState("");
@@ -582,10 +675,20 @@ function LabelHistoryView({ parts }: { parts: Part[], key?: string }) {
                 </div>
               </div>
 
-              <div className="w-full">
-                <button className="w-full bg-blue-600 text-white py-5 rounded-xl flex items-center justify-center gap-3 font-bold text-lg uppercase hover:bg-blue-700 transition-all shadow-lg shadow-blue-200">
+              <div className="w-full flex gap-4 no-print">
+                <button 
+                  onClick={() => onPrint(selectedLabel)}
+                  className="flex-1 bg-blue-600 text-white py-5 rounded-xl flex items-center justify-center gap-3 font-bold text-lg uppercase hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
+                >
                   <Printer size={24} />
-                  In nhãn / Lưu PDF
+                  In nhãn (PDF)
+                </button>
+                <button 
+                  onClick={() => onCopy(selectedLabel.qrData || '')}
+                  className="px-6 bg-gray-100 text-gray-600 py-5 rounded-xl flex items-center justify-center gap-3 font-bold text-lg uppercase hover:bg-gray-200 transition-all"
+                  title="Sao chép mã QR"
+                >
+                  <QrCode size={24} />
                 </button>
               </div>
             </motion.div>
@@ -951,7 +1054,9 @@ function ProduceView({
   handleProduce,
   lastTransaction, setLastTransaction,
   inventory,
-  parts
+  parts,
+  onPrint,
+  onCopy
 }: any) {
   const [sourceLocation, setSourceLocation] = useState<'IN' | 'OUT'>('IN');
   const [targetStageId, setTargetStageId] = useState<StageId>(
@@ -1168,10 +1273,20 @@ function ProduceView({
                 </div>
               </div>
 
-              <div className="w-full">
-                <button className="w-full bg-blue-600 text-white py-5 rounded-xl flex items-center justify-center gap-3 font-bold text-lg uppercase hover:bg-blue-700 transition-all shadow-lg shadow-blue-200">
+              <div className="w-full flex gap-4 no-print">
+                <button 
+                  onClick={() => onPrint(lastTransaction)}
+                  className="flex-1 bg-blue-600 text-white py-5 rounded-xl flex items-center justify-center gap-3 font-bold text-lg uppercase hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
+                >
                   <Printer size={24} />
-                  In nhãn / Lưu PDF
+                  In nhãn (PDF)
+                </button>
+                <button 
+                  onClick={() => onCopy(lastTransaction.qrData || '')}
+                  className="px-6 bg-gray-100 text-gray-600 py-5 rounded-xl flex items-center justify-center gap-3 font-bold text-lg uppercase hover:bg-gray-200 transition-all"
+                  title="Sao chép mã QR"
+                >
+                  <QrCode size={24} />
                 </button>
               </div>
             </motion.div>
@@ -1521,13 +1636,19 @@ function InboundView({ selectedStage, setSelectedStage, onScanSuccess, parts, on
   );
 }
 
-function SettingsView({ parts, onPartsChange }: { parts: Part[], onPartsChange: () => void, key?: string }) {
+function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChange }: { 
+  parts: Part[], 
+  onPartsChange: () => void, 
+  labelSettings: any,
+  onLabelSettingsChange: (s: any) => void,
+  key?: string 
+}) {
   const [newPart, setNewPart] = useState<Part>({ id: '', name: '', unit: 'Cái', level: 1 });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [isImportingBOM, setIsImportingBOM] = useState(false);
 
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'parts' | 'bom'>('parts');
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'parts' | 'bom' | 'label'>('parts');
 
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetPassword, setResetPassword] = useState('');
@@ -1857,9 +1978,108 @@ function SettingsView({ parts, onPartsChange }: { parts: Part[], onPartsChange: 
           >
             Định mức sản xuất (BOM)
           </button>
+          <button 
+            onClick={() => setActiveSettingsTab('label')}
+            className={cn(
+              "flex-1 py-5 text-base font-bold uppercase tracking-widest transition-all border-b-2",
+              activeSettingsTab === 'label' ? "border-blue-600 text-blue-600" : "border-transparent text-gray-400 hover:text-gray-600"
+            )}
+          >
+            Cấu hình khổ nhãn
+          </button>
         </div>
 
-        {activeSettingsTab === 'parts' ? (
+        {activeSettingsTab === 'label' ? (
+          <div className="p-10 space-y-8">
+            <div className="flex items-center gap-4 mb-6">
+              <div className="bg-blue-600 p-3 rounded-xl text-white">
+                <Printer size={24} />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight">Cấu hình in nhãn trực tiếp</h2>
+                <p className="text-sm text-gray-500">Thiết lập khổ giấy và kích thước hiển thị trên PDF</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase opacity-50">Chiều rộng (mm)</label>
+                    <input 
+                      type="number"
+                      value={labelSettings.width}
+                      onChange={e => onLabelSettingsChange({...labelSettings, width: parseInt(e.target.value) || 0})}
+                      className="w-full p-4 rounded-lg border border-gray-200 font-mono text-lg outline-none focus:border-blue-600"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase opacity-50">Chiều cao (mm)</label>
+                    <input 
+                      type="number"
+                      value={labelSettings.height}
+                      onChange={e => onLabelSettingsChange({...labelSettings, height: parseInt(e.target.value) || 0})}
+                      className="w-full p-4 rounded-lg border border-gray-200 font-mono text-lg outline-none focus:border-blue-600"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase opacity-50">Cỡ chữ (px)</label>
+                    <input 
+                      type="number"
+                      value={labelSettings.fontSize}
+                      onChange={e => onLabelSettingsChange({...labelSettings, fontSize: parseInt(e.target.value) || 0})}
+                      className="w-full p-4 rounded-lg border border-gray-200 font-mono text-lg outline-none focus:border-blue-600"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase opacity-50">Kích thước QR (px)</label>
+                    <input 
+                      type="number"
+                      value={labelSettings.qrSize}
+                      onChange={e => onLabelSettingsChange({...labelSettings, qrSize: parseInt(e.target.value) || 0})}
+                      className="w-full p-4 rounded-lg border border-gray-200 font-mono text-lg outline-none focus:border-blue-600"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-50 rounded-2xl p-8 border-2 border-dashed border-gray-200 flex flex-col items-center justify-center">
+                <span className="text-xs font-bold uppercase opacity-40 mb-4">Xem trước khổ giấy</span>
+                <div 
+                  className="bg-white shadow-lg border border-gray-300 flex flex-col items-center justify-center overflow-hidden"
+                  style={{ 
+                    width: `${labelSettings.width * 2}px`, 
+                    height: `${labelSettings.height * 2}px`,
+                    padding: '10px'
+                  }}
+                >
+                  <div className="border border-black p-1 mb-1">
+                    <div className="w-8 h-8 bg-gray-200" />
+                  </div>
+                  <div className="w-full h-2 bg-gray-100 mb-1" />
+                  <div className="w-2/3 h-2 bg-gray-100" />
+                </div>
+                <p className="mt-4 text-xs text-gray-400 italic">Tỷ lệ xem trước 1:2</p>
+              </div>
+            </div>
+
+            <div className="p-6 bg-blue-50 rounded-xl border border-blue-100 flex gap-4 items-start">
+              <AlertCircle size={20} className="text-blue-600 mt-1" />
+              <div className="text-sm text-blue-800 space-y-2">
+                <p className="font-bold">Lưu ý khi in:</p>
+                <ul className="list-disc pl-4 space-y-1">
+                  <li>Trong hộp thoại in của trình duyệt, hãy chọn máy in nhãn của bạn.</li>
+                  <li>Phần <strong>Khổ giấy (Paper Size)</strong> nên được đặt trùng với cấu hình ở trên.</li>
+                  <li>Phần <strong>Lề (Margins)</strong> nên đặt là <strong>None</strong> để nhãn in ra chuẩn nhất.</li>
+                  <li>Phần <strong>Tỷ lệ (Scale)</strong> nên đặt là <strong>Default</strong> hoặc <strong>100%</strong>.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        ) : activeSettingsTab === 'parts' ? (
           <>
             <div className="p-8 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
               <h2 className="font-bold text-2xl tracking-tight">Linh kiện ({parts.length})</h2>
