@@ -1412,7 +1412,7 @@ function InboundView({ selectedStage, setSelectedStage, onScanSuccess, parts, on
     if (selectedStage === 'BENDING') return p.level === 2;
     if (selectedStage === 'WELDING') {
       if (targetLocation === 'IN') return p.level === 2;
-      if (targetLocation === 'OUT') return p.level === 3;
+      if (targetLocation === 'OUT') return p.level === 1;
     }
     if (selectedStage === 'PAINTING') return p.level === 1;
     return true;
@@ -2095,7 +2095,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="p-6 text-xs font-bold uppercase opacity-50">Thành phẩm (Level 3/1)</th>
+                    <th className="p-6 text-xs font-bold uppercase opacity-50">Thành phẩm (Level 1)</th>
                     <th className="p-6 text-xs font-bold uppercase opacity-50">Linh kiện thành phần (Level 2)</th>
                     <th className="p-6 text-xs font-bold uppercase opacity-50 text-center">Số lượng/1 đơn vị</th>
                   </tr>
