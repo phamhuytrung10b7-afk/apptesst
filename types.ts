@@ -38,6 +38,12 @@ export interface BOMDefinition {
   scrapWeight: number;     // KG of scrap per unit of child
 }
 
+export interface BOMDefinitionV2 {
+  resultPartId: string;
+  ingredientPartId: string;
+  quantity: number; // Amount of ingredient per unit of result
+}
+
 export const STAGES: { id: StageId; name: string; nextStageId?: StageId }[] = [
   { id: 'LASER', name: 'Cắt Laser', nextStageId: 'BENDING' },
   { id: 'BENDING', name: 'Chấn/Dập', nextStageId: 'WELDING' },

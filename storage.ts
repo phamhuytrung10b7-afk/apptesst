@@ -3,13 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { InventoryItem, Transaction, StageId, STAGES, INITIAL_PARTS, Part, BOMDefinition } from './types';
+import { InventoryItem, Transaction, StageId, STAGES, INITIAL_PARTS, Part, BOMDefinition, BOMDefinitionV2 } from './types';
 
 const STORAGE_KEYS = {
   INVENTORY: 'wip_inventory',
   TRANSACTIONS: 'wip_transactions',
   PARTS: 'wip_parts',
   BOM: 'wip_bom',
+  BOM_V2: 'wip_bom_v2',
   LABEL_SETTINGS: 'wip_label_settings',
 };
 
@@ -38,6 +39,15 @@ export const storageService = {
 
   saveBOM(bom: BOMDefinition[]) {
     localStorage.setItem(STORAGE_KEYS.BOM, JSON.stringify(bom));
+  },
+
+  getBOMV2(): BOMDefinitionV2[] {
+    const data = localStorage.getItem(STORAGE_KEYS.BOM_V2);
+    return data ? JSON.parse(data) : [];
+  },
+
+  saveBOMV2(bom: BOMDefinitionV2[]) {
+    localStorage.setItem(STORAGE_KEYS.BOM_V2, JSON.stringify(bom));
   },
 
   getInventory(): InventoryItem[] {
@@ -91,6 +101,63 @@ export const storageService = {
     this.saveInventory(inventory);
   },
 
+  applyBOMDeduction(partId: string, stageId: StageId, quantity: number) {
+    const parts = this.getParts();
+    
+    // Laser stage specific logic (BOM V1):
+    // Deduct Level 3 parts from Laser IN based on BOM when Level 2 is produced
+    if (stageId === 'LASER') {
+      const bom = this.getBOM();
+      const bomDef = bom.find(b => b.childPartId === partId);
+      
+      if (bomDef) {
+        const totalConsumption = quantity * (bomDef.componentWeight + bomDef.scrapWeight);
+        const totalScrap = quantity * bomDef.scrapWeight;
+        
+        const inventory = this.getInventory();
+        const parentStock = inventory.find(i => i.partId === bomDef.parentPartId && i.stageId === 'LASER' && i.location === 'IN');
+        
+        if (!parentStock || parentStock.quantity < totalConsumption) {
+          const parentPart = parts.find(p => p.id === bomDef.parentPartId);
+          throw new Error(`Lỗi: Không đủ tồn kho ${parentPart?.name || bomDef.parentPartId} tại LASER_IN. Cần ${totalConsumption.toFixed(4)} kg, hiện có ${parentStock?.quantity || 0} kg`);
+        }
+        
+        this.updateInventory(bomDef.parentPartId, 'LASER', 'IN', -totalConsumption);
+        const scrapPart = parts.find(p => p.id === 'PL-TON-SX' || p.name.toLowerCase().includes('phế liệu'));
+        if (scrapPart) {
+          this.updateInventory(scrapPart.id, 'LASER', 'OUT', totalScrap);
+        }
+      }
+    }
+
+    // Welding stage specific logic (BOM V2):
+    // Deduct ingredients from Welding IN when result is produced
+    if (stageId === 'WELDING') {
+      const bomV2 = this.getBOMV2();
+      const ingredients = bomV2.filter(b => b.resultPartId === partId);
+      
+      if (ingredients.length > 0) {
+        const inventory = this.getInventory();
+        
+        // Check if enough stock exists for ALL ingredients in Welding IN
+        for (const ing of ingredients) {
+          const needed = quantity * ing.quantity;
+          const stock = inventory.find(i => i.partId === ing.ingredientPartId && i.stageId === 'WELDING' && i.location === 'IN');
+          
+          if (!stock || stock.quantity < needed) {
+            const ingPart = parts.find(p => p.id === ing.ingredientPartId);
+            throw new Error(`Lỗi: Không đủ tồn kho ${ingPart?.name || ing.ingredientPartId} tại WELDING_IN. Cần ${needed} ${ingPart?.unit || ''}, hiện có ${stock?.quantity || 0}`);
+          }
+        }
+        
+        // Deduct ingredients
+        for (const ing of ingredients) {
+          this.updateInventory(ing.ingredientPartId, 'WELDING', 'IN', -(quantity * ing.quantity));
+        }
+      }
+    }
+  },
+
   recordStageOut(partId: string, stageId: StageId, quantity: number, sourceLocation: 'IN' | 'OUT' = 'IN', targetStageId?: StageId) {
     // Validation: Check if source location has enough quantity
     const inventory = this.getInventory();
@@ -105,6 +172,9 @@ export const storageService = {
     // 1. Inventory movement
     if (sourceLocation === 'IN') {
       // Move IN -> OUT (Finish production)
+      // Apply BOM deduction before updating inventory
+      this.applyBOMDeduction(partId, stageId, quantity);
+      
       this.updateInventory(partId, stageId, 'IN', -quantity);
       this.updateInventory(partId, stageId, 'OUT', quantity);
     } else {
@@ -200,40 +270,9 @@ export const storageService = {
   },
 
   recordManualInbound(partId: string, stageId: StageId, location: 'IN' | 'OUT', quantity: number) {
-    // Laser stage specific logic:
-    // When entering Level 2 parts into Laser OUT, deduct Level 3 parts from Laser IN based on BOM
-    if (stageId === 'LASER' && location === 'OUT') {
-      const parts = this.getParts();
-      const part = parts.find(p => p.id === partId);
-      
-      if (part && part.level === 2) {
-        const bom = this.getBOM();
-        const bomDef = bom.find(b => b.childPartId === partId);
-        
-        if (bomDef) {
-          const totalConsumption = quantity * (bomDef.componentWeight + bomDef.scrapWeight);
-          const totalScrap = quantity * bomDef.scrapWeight;
-          
-          // Check if enough Level 3 stock exists in Laser IN
-          const inventory = this.getInventory();
-          const parentStock = inventory.find(i => i.partId === bomDef.parentPartId && i.stageId === 'LASER' && i.location === 'IN');
-          
-          if (!parentStock || parentStock.quantity < totalConsumption) {
-            const parentPart = parts.find(p => p.id === bomDef.parentPartId);
-            throw new Error(`Lỗi: Không đủ tồn kho ${parentPart?.name || bomDef.parentPartId} tại LASER_IN. Cần ${totalConsumption.toFixed(4)} kg, hiện có ${parentStock?.quantity || 0} kg`);
-          }
-          
-          // 1. Deduct parent part (Tôn tấm) from Laser IN
-          this.updateInventory(bomDef.parentPartId, 'LASER', 'IN', -totalConsumption);
-
-          // 2. Add scrap to Laser OUT (or a dedicated scrap location)
-          // We look for the scrap part ID 'PL-TON-SX' or similar
-          const scrapPart = parts.find(p => p.id === 'PL-TON-SX' || p.name.toLowerCase().includes('phế liệu'));
-          if (scrapPart) {
-            this.updateInventory(scrapPart.id, 'LASER', 'OUT', totalScrap);
-          }
-        }
-      }
+    // Apply BOM logic if entering into OUT (Production result)
+    if (location === 'OUT') {
+      this.applyBOMDeduction(partId, stageId, quantity);
     }
 
     this.updateInventory(partId, stageId, location, quantity);
@@ -267,6 +306,7 @@ export const storageService = {
     localStorage.removeItem(STORAGE_KEYS.TRANSACTIONS);
     localStorage.removeItem(STORAGE_KEYS.PARTS);
     localStorage.removeItem(STORAGE_KEYS.BOM);
+    localStorage.removeItem(STORAGE_KEYS.BOM_V2);
     localStorage.removeItem('wip_labels');
   },
 };

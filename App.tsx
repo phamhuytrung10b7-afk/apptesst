@@ -24,7 +24,8 @@ import {
   Package,
   Monitor,
   Menu,
-  FileUp
+  FileUp,
+  Layers
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -43,7 +44,7 @@ import {
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
-import { STAGES, INITIAL_PARTS, StageId, Part, InventoryItem, Transaction, BOMDefinition } from './types';
+import { STAGES, INITIAL_PARTS, StageId, Part, InventoryItem, Transaction, BOMDefinition, BOMDefinitionV2 } from './types';
 import { storageService } from './storage';
 
 // Utility for tailwind classes
@@ -1679,8 +1680,9 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [isImportingBOM, setIsImportingBOM] = useState(false);
+  const [isImportingBOMV2, setIsImportingBOMV2] = useState(false);
 
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'parts' | 'bom' | 'label'>('parts');
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'parts' | 'bom' | 'label' | 'bom_v2'>('parts');
 
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetPassword, setResetPassword] = useState('');
@@ -2011,6 +2013,15 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
             Định mức sản xuất (BOM)
           </button>
           <button 
+            onClick={() => setActiveSettingsTab('bom_v2')}
+            className={cn(
+              "flex-1 py-5 text-base font-bold uppercase tracking-widest transition-all border-b-2",
+              activeSettingsTab === 'bom_v2' ? "border-blue-600 text-blue-600" : "border-transparent text-gray-400 hover:text-gray-600"
+            )}
+          >
+            Định mức Hàn (BOM v2)
+          </button>
+          <button 
             onClick={() => setActiveSettingsTab('label')}
             className={cn(
               "flex-1 py-5 text-base font-bold uppercase tracking-widest transition-all border-b-2",
@@ -2021,7 +2032,97 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
           </button>
         </div>
 
-        {activeSettingsTab === 'label' ? (
+        {activeSettingsTab === 'bom_v2' ? (
+          <div className="p-10 space-y-8">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-4">
+                <div className="bg-orange-600 p-3 rounded-xl text-white">
+                  <Layers size={24} />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold tracking-tight">Định mức Hàn (BOM v2)</h2>
+                  <p className="text-sm text-gray-500">Tự động trừ linh kiện Level 2 khi nhập kho OUT công đoạn Hàn</p>
+                </div>
+              </div>
+              <div className="flex gap-4">
+                <label className="bg-white border-2 border-orange-600 text-orange-600 px-6 py-3 rounded-xl font-bold uppercase cursor-pointer hover:bg-orange-50 transition-all flex items-center gap-2">
+                  <FileUp size={20} />
+                  {isImportingBOMV2 ? 'Đang xử lý...' : 'Nhập Excel BOM v2'}
+                  <input type="file" accept=".xlsx, .xls" className="hidden" onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setIsImportingBOMV2(true);
+                    const reader = new FileReader();
+                    reader.onload = (evt) => {
+                      try {
+                        const bstr = evt.target?.result;
+                        const wb = XLSX.read(bstr, { type: 'binary' });
+                        const wsname = wb.SheetNames[0];
+                        const ws = wb.Sheets[wsname];
+                        const data = XLSX.utils.sheet_to_json(ws) as any[];
+                        
+                        // Expected columns: ResultID, IngredientID, Quantity
+                        const imported: BOMDefinitionV2[] = data.map(row => ({
+                          resultPartId: String(row['ResultID'] || row['Mã thành phẩm'] || row['Mã cha'] || '').trim(),
+                          ingredientPartId: String(row['IngredientID'] || row['Mã linh kiện'] || row['Mã con'] || '').trim(),
+                          quantity: parseFloat(row['Quantity'] || row['Số lượng'] || '1')
+                        })).filter(b => b.resultPartId && b.ingredientPartId && b.quantity > 0);
+
+                        if (imported.length === 0) {
+                          alert('Không tìm thấy dữ liệu hợp lệ. Cần các cột: ResultID, IngredientID, Quantity');
+                        } else {
+                          storageService.saveBOMV2(imported);
+                          alert(`Đã nhập thành công ${imported.length} định mức Hàn!`);
+                        }
+                      } catch (err) {
+                        alert('Lỗi khi đọc file.');
+                      } finally {
+                        setIsImportingBOMV2(false);
+                        if (e.target) e.target.value = '';
+                      }
+                    };
+                    reader.readAsBinaryString(file);
+                  }} />
+                </label>
+              </div>
+            </div>
+
+            <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="p-6 text-xs font-bold uppercase opacity-50">Thành phẩm (Level 3/1)</th>
+                    <th className="p-6 text-xs font-bold uppercase opacity-50">Linh kiện thành phần (Level 2)</th>
+                    <th className="p-6 text-xs font-bold uppercase opacity-50 text-center">Số lượng/1 đơn vị</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {storageService.getBOMV2().length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="p-20 text-center text-gray-400 italic">Chưa có dữ liệu định mức Hàn. Vui lòng nhập từ Excel.</td>
+                    </tr>
+                  ) : (
+                    storageService.getBOMV2().map((b, i) => (
+                      <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                        <td className="p-6">
+                          <div className="font-bold">{parts.find(p => p.id === b.resultPartId)?.name || b.resultPartId}</div>
+                          <div className="text-xs font-mono opacity-50">{b.resultPartId}</div>
+                        </td>
+                        <td className="p-6">
+                          <div className="font-bold">{parts.find(p => p.id === b.ingredientPartId)?.name || b.ingredientPartId}</div>
+                          <div className="text-xs font-mono opacity-50">{b.ingredientPartId}</div>
+                        </td>
+                        <td className="p-6 text-center font-mono font-bold text-orange-600 text-xl">
+                          x{b.quantity}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : activeSettingsTab === 'label' ? (
           <div className="p-10 space-y-8">
             <div className="flex items-center gap-4 mb-6">
               <div className="bg-blue-600 p-3 rounded-xl text-white">
