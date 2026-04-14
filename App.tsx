@@ -1409,7 +1409,11 @@ function InboundView({ selectedStage, setSelectedStage, onScanSuccess, parts, on
       if (targetLocation === 'IN') return p.level === 3;
       if (targetLocation === 'OUT') return p.level === 2;
     }
-    if (selectedStage === 'BENDING' || selectedStage === 'WELDING') return p.level === 2;
+    if (selectedStage === 'BENDING') return p.level === 2;
+    if (selectedStage === 'WELDING') {
+      if (targetLocation === 'IN') return p.level === 2;
+      if (targetLocation === 'OUT') return p.level === 3;
+    }
     if (selectedStage === 'PAINTING') return p.level === 1;
     return true;
   });
