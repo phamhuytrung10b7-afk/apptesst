@@ -284,31 +284,63 @@ export default function App() {
       </style>
 
       {/* Hidden Print Area */}
-      <div id="print-area" className="hidden print:flex">
+      <div id="print-area" className="hidden print:block">
         {lastTransaction && (
-          <div className="flex flex-col items-center text-center w-full">
-            <div className="border-2 border-black p-2 mb-2">
-              <QRCodeSVG value={lastTransaction.qrData || ''} size={labelSettings.qrSize} level="H" />
+          <div className="w-full h-full bg-white text-black flex flex-col items-center p-4 box-border border-2 border-black">
+            {/* QR Code Section */}
+            <div className="mb-4 border-4 border-black p-2">
+              <QRCodeSVG value={lastTransaction.qrData || ''} size={labelSettings.qrSize * 1.5} level="H" />
             </div>
-            <p className="font-bold leading-tight" style={{ fontSize: `${labelSettings.fontSize + 4}px` }}>
-              {parts.find(p => p.id === lastTransaction.partId)?.name}
-            </p>
-            <div className="flex justify-center gap-4 mt-2" style={{ fontSize: `${labelSettings.fontSize}px` }}>
-              <div className="flex flex-col">
-                <span className="font-bold">{lastTransaction.quantity} {parts.find(p => p.id === lastTransaction.partId)?.unit}</span>
-              </div>
-              <div className="flex flex-col">
-                <span className="font-bold uppercase">{STAGES.find(s => s.id === lastTransaction.stageId)?.name}</span>
-              </div>
-            </div>
-            {lastTransaction.qrData?.split('|')[5] && (
-              <p className="mt-1 font-bold" style={{ fontSize: `${labelSettings.fontSize - 2}px` }}>
-                Đích: {STAGES.find(s => s.id === lastTransaction.qrData!.split('|')[5])?.name || lastTransaction.qrData!.split('|')[5]}
+
+            {/* Part Name & ID */}
+            <div className="text-center w-full mb-4">
+              <h1 className="font-black uppercase leading-tight" style={{ fontSize: `${labelSettings.fontSize + 10}px` }}>
+                {parts.find(p => p.id === lastTransaction.partId)?.name || 'N/A'}
+              </h1>
+              <p className="font-mono font-bold mt-1" style={{ fontSize: `${labelSettings.fontSize}px` }}>
+                Mã LK: {lastTransaction.partId}
               </p>
+            </div>
+
+            {/* Quantity & Source Stage */}
+            <div className="grid grid-cols-2 w-full border-t-2 border-b-2 border-black py-4 mb-4">
+              <div className="flex flex-col items-center border-r-2 border-black">
+                <span className="text-[10px] font-bold uppercase opacity-60 mb-1">Số lượng:</span>
+                <span className="font-black" style={{ fontSize: `${labelSettings.fontSize + 14}px` }}>
+                  {lastTransaction.quantity} {parts.find(p => p.id === lastTransaction.partId)?.unit}
+                </span>
+              </div>
+              <div className="flex flex-col items-center">
+                <span className="text-[10px] font-bold uppercase opacity-60 mb-1">Từ công đoạn:</span>
+                <span className="font-black uppercase" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
+                  {STAGES.find(s => s.id === lastTransaction.stageId)?.name}
+                </span>
+              </div>
+            </div>
+
+            {/* Route / Destination */}
+            {lastTransaction.qrData?.split('|')[5] && (
+              <div className="w-full bg-gray-100 p-3 rounded-lg border border-black mb-4 text-center">
+                <span className="text-[10px] font-bold uppercase opacity-60 block mb-1">Đích tiếp theo:</span>
+                <div className="flex items-center justify-center gap-4 font-black" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
+                  <span className="uppercase">{STAGES.find(s => s.id === lastTransaction.stageId)?.name}</span>
+                  <span className="text-2xl">→</span>
+                  <span className="uppercase">
+                    {STAGES.find(s => s.id === lastTransaction.qrData!.split('|')[5])?.name || lastTransaction.qrData!.split('|')[5]}
+                  </span>
+                </div>
+              </div>
             )}
-            <div className="mt-2 opacity-60" style={{ fontSize: `${labelSettings.fontSize - 4}px` }}>
-              <span>ID: {lastTransaction.id.split('-')[0].toUpperCase()}</span>
-              <span className="ml-2">{format(lastTransaction.timestamp, 'dd/MM/yy HH:mm')}</span>
+
+            {/* Footer: ID & Time */}
+            <div className="mt-auto w-full flex justify-between items-end font-mono border-t border-black pt-2" style={{ fontSize: `${labelSettings.fontSize - 4}px` }}>
+              <div className="flex flex-col">
+                <span className="font-bold">ID: {lastTransaction.id.toUpperCase()}</span>
+                <span>Thời gian: {format(lastTransaction.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
+              </div>
+              <div className="font-black italic">
+                WIP TRACKING
+              </div>
             </div>
           </div>
         )}
