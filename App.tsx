@@ -450,7 +450,7 @@ export default function App() {
           <div className="max-w-6xl mx-auto">
             <AnimatePresence mode="wait">
               {currentView === 'dashboard' && (
-                <DashboardView key="dashboard" inventory={inventory} parts={parts} />
+                <DashboardView key="dashboard" inventory={inventory} parts={parts} refreshData={refreshData} />
               )}
               {currentView === 'produce' && (
                 <ProduceView 
@@ -575,6 +575,7 @@ function SidebarLink({ active, onClick, icon, label, collapsed }: { active: bool
 interface DashboardProps {
   inventory: InventoryItem[];
   parts: Part[];
+  refreshData: () => void;
   key?: string;
 }
 
@@ -777,7 +778,7 @@ function LabelHistoryView({ parts, onPrint, onCopy }: { parts: Part[], onPrint: 
   );
 }
 
-function DashboardView({ inventory, parts }: DashboardProps) {
+function DashboardView({ inventory, parts, refreshData }: DashboardProps) {
   const [selectedStageDetail, setSelectedStageDetail] = useState<StageId | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -930,8 +931,45 @@ function DashboardView({ inventory, parts }: DashboardProps) {
                                   <div className="text-xs opacity-50">{part.name}</div>
                                 </td>
                                 <td className="p-4 text-right">
-                                  <span className="font-mono font-bold text-xl">{displayQty}</span>
-                                  <span className="ml-2 text-xs font-mono opacity-40 uppercase">{part.unit}</span>
+                                  <div className="flex items-center justify-end gap-3">
+                                    <span className="font-mono font-bold text-xl">{displayQty}</span>
+                                    <span className="text-xs font-mono opacity-40 uppercase mr-4">{part.unit}</span>
+                                    <button 
+                                      onClick={() => {
+                                        const pwd = prompt('Nhập mật khẩu admin để sửa tồn kho:');
+                                        if (pwd === 'admin123') {
+                                          const newQty = prompt(`Nhập số lượng tồn mới cho ${part.id}:`, String(qty));
+                                          if (newQty !== null) {
+                                            storageService.setInventoryQuantity(part.id, selectedStageDetail, 'IN', parseFloat(newQty) || 0);
+                                            refreshData();
+                                          }
+                                        } else if (pwd !== null) {
+                                          alert('Mật khẩu không chính xác!');
+                                        }
+                                      }}
+                                      className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors"
+                                      title="Sửa số lượng"
+                                    >
+                                      <Edit2 size={16} />
+                                    </button>
+                                    <button 
+                                      onClick={() => {
+                                        const pwd = prompt('Nhập mật khẩu admin để xóa tồn kho:');
+                                        if (pwd === 'admin123') {
+                                          if (confirm(`Bạn có chắc chắn muốn xóa tồn kho của ${part.id} tại ${STAGES.find(s => s.id === selectedStageDetail)?.name} (Kho IN)?`)) {
+                                            storageService.deleteInventoryItem(part.id, selectedStageDetail, 'IN');
+                                            refreshData();
+                                          }
+                                        } else if (pwd !== null) {
+                                          alert('Mật khẩu không chính xác!');
+                                        }
+                                      }}
+                                      className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-colors"
+                                      title="Xóa tồn kho"
+                                    >
+                                      <Trash2 size={16} />
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -972,8 +1010,45 @@ function DashboardView({ inventory, parts }: DashboardProps) {
                                   <div className="text-xs opacity-50">{part.name}</div>
                                 </td>
                                 <td className="p-4 text-right">
-                                  <span className="font-mono font-bold text-xl text-[#F27D26]">{displayQty}</span>
-                                  <span className="ml-2 text-xs font-mono opacity-40 uppercase">{part.unit}</span>
+                                  <div className="flex items-center justify-end gap-3">
+                                    <span className="font-mono font-bold text-xl text-[#F27D26]">{displayQty}</span>
+                                    <span className="text-xs font-mono opacity-40 uppercase mr-4">{part.unit}</span>
+                                    <button 
+                                      onClick={() => {
+                                        const pwd = prompt('Nhập mật khẩu admin để sửa tồn kho:');
+                                        if (pwd === 'admin123') {
+                                          const newQty = prompt(`Nhập số lượng tồn mới cho ${part.id}:`, String(qty));
+                                          if (newQty !== null) {
+                                            storageService.setInventoryQuantity(part.id, selectedStageDetail, 'OUT', parseFloat(newQty) || 0);
+                                            refreshData();
+                                          }
+                                        } else if (pwd !== null) {
+                                          alert('Mật khẩu không chính xác!');
+                                        }
+                                      }}
+                                      className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors"
+                                      title="Sửa số lượng"
+                                    >
+                                      <Edit2 size={16} />
+                                    </button>
+                                    <button 
+                                      onClick={() => {
+                                        const pwd = prompt('Nhập mật khẩu admin để xóa tồn kho:');
+                                        if (pwd === 'admin123') {
+                                          if (confirm(`Bạn có chắc chắn muốn xóa tồn kho của ${part.id} tại ${STAGES.find(s => s.id === selectedStageDetail)?.name} (Kho OUT)?`)) {
+                                            storageService.deleteInventoryItem(part.id, selectedStageDetail, 'OUT');
+                                            refreshData();
+                                          }
+                                        } else if (pwd !== null) {
+                                          alert('Mật khẩu không chính xác!');
+                                        }
+                                      }}
+                                      className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-colors"
+                                      title="Xóa tồn kho"
+                                    >
+                                      <Trash2 size={16} />
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -1109,6 +1184,11 @@ function ProduceView({
   useEffect(() => {
     const next = STAGES.find(s => s.id === selectedStage)?.nextStageId;
     if (next) setTargetStageId(next);
+    
+    // Auto-switch to OUT for stages with automatic BOM deduction
+    if (selectedStage === 'LASER' || selectedStage === 'WELDING') {
+      setSourceLocation('OUT');
+    }
   }, [selectedStage]);
 
   const currentStock = inventory.find(
@@ -1145,22 +1225,24 @@ function ProduceView({
             <div className="space-y-4">
               <label className="text-sm font-bold uppercase tracking-widest opacity-50">2. Vị trí xuất:</label>
               <div className="flex bg-gray-100 p-1 rounded-xl h-[68px]">
-                <button 
-                  type="button"
-                  onClick={() => setSourceLocation('IN')}
-                  className={cn(
-                    "flex-1 rounded-lg font-bold text-sm uppercase transition-all",
-                    sourceLocation === 'IN' ? "bg-gray-900 text-white shadow-sm" : "text-gray-400"
-                  )}
-                >
-                  Kho IN
-                </button>
+                {(selectedStage !== 'LASER' && selectedStage !== 'WELDING') && (
+                  <button 
+                    type="button"
+                    onClick={() => setSourceLocation('IN')}
+                    className={cn(
+                      "flex-1 rounded-lg font-bold text-sm uppercase transition-all",
+                      sourceLocation === 'IN' ? "bg-gray-900 text-white shadow-sm" : "text-gray-400"
+                    )}
+                  >
+                    Kho IN
+                  </button>
+                )}
                 <button 
                   type="button"
                   onClick={() => setSourceLocation('OUT')}
                   className={cn(
                     "flex-1 rounded-lg font-bold text-sm uppercase transition-all",
-                    sourceLocation === 'OUT' ? "bg-[#F27D26] text-white shadow-sm" : "text-gray-400"
+                    sourceLocation === 'OUT' ? (selectedStage === 'LASER' || selectedStage === 'WELDING' ? "bg-blue-600 text-white shadow-sm" : "bg-[#F27D26] text-white shadow-sm") : "text-gray-400"
                   )}
                 >
                   Kho OUT
@@ -1692,7 +1774,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
   const [resetPassword, setResetPassword] = useState('');
 
   const handleResetData = () => {
-    if (resetPassword === '123456') {
+    if (resetPassword === 'admin123') {
       storageService.resetAllData();
       window.location.reload();
     } else {

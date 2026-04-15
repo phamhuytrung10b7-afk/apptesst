@@ -101,6 +101,29 @@ export const storageService = {
     this.saveInventory(inventory);
   },
 
+  setInventoryQuantity(partId: string, stageId: StageId, location: 'IN' | 'OUT', quantity: number) {
+    const inventory = this.getInventory();
+    const index = inventory.findIndex(
+      (item) => item.partId === partId && item.stageId === stageId && item.location === location
+    );
+
+    if (index >= 0) {
+      inventory[index].quantity = Math.max(0, quantity);
+    } else {
+      inventory.push({ partId, stageId, location, quantity: Math.max(0, quantity) });
+    }
+
+    this.saveInventory(inventory);
+  },
+
+  deleteInventoryItem(partId: string, stageId: StageId, location: 'IN' | 'OUT') {
+    const inventory = this.getInventory();
+    const filtered = inventory.filter(
+      (item) => !(item.partId === partId && item.stageId === stageId && item.location === location)
+    );
+    this.saveInventory(filtered);
+  },
+
   applyBOMDeduction(partId: string, stageId: StageId, quantity: number) {
     const parts = this.getParts();
     
