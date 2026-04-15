@@ -18,6 +18,7 @@ import {
   AlertCircle,
   Printer,
   X,
+  RotateCcw,
   ChevronRight,
   ChevronDown,
   Search,
@@ -486,6 +487,7 @@ export default function App() {
                   parts={parts} 
                   onPrint={handlePrint}
                   onCopy={copyToClipboard}
+                  onRollback={refreshData}
                 />
               )}
               {currentView === 'history' && (
@@ -579,7 +581,7 @@ interface DashboardProps {
   key?: string;
 }
 
-function LabelHistoryView({ parts, onPrint, onCopy }: { parts: Part[], onPrint: (l: Transaction) => void, onCopy: (t: string) => void, key?: string }) {
+function LabelHistoryView({ parts, onPrint, onCopy, onRollback }: { parts: Part[], onPrint: (l: Transaction) => void, onCopy: (t: string) => void, onRollback: () => void, key?: string }) {
   const [labels, setLabels] = useState<Transaction[]>([]);
   const [showDeleteModal, setShowDeleteModal] = useState<string | null>(null);
   const [password, setPassword] = useState("");
@@ -589,14 +591,16 @@ function LabelHistoryView({ parts, onPrint, onCopy }: { parts: Part[], onPrint: 
     setLabels(storageService.getLabels());
   }, []);
 
-  const handleDelete = () => {
+  const handleRollback = () => {
     if (password === 'admin123') {
       if (showDeleteModal) {
-        storageService.deleteLabel(showDeleteModal);
+        storageService.rollbackTransaction(showDeleteModal);
         setLabels(storageService.getLabels());
+        onRollback();
         setShowDeleteModal(null);
         setPassword("");
         if (selectedLabel?.id === showDeleteModal) setSelectedLabel(null);
+        alert('Đã thu hồi lệnh xuất kho và hoàn trả số lượng vào kho thành công!');
       }
     } else {
       alert('Mật khẩu không chính xác!');
@@ -641,9 +645,10 @@ function LabelHistoryView({ parts, onPrint, onCopy }: { parts: Part[], onPrint: 
                     e.stopPropagation();
                     setShowDeleteModal(label.id);
                   }}
-                  className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                  className="p-2 text-orange-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                  title="Thu hồi lệnh xuất"
                 >
-                  <Trash2 size={16} />
+                  <RotateCcw size={16} />
                 </button>
               </div>
             ))
@@ -740,19 +745,20 @@ function LabelHistoryView({ parts, onPrint, onCopy }: { parts: Part[], onPrint: 
               exit={{ scale: 0.9, opacity: 0 }}
               className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl space-y-6"
             >
-              <div className="flex items-center gap-4 text-red-600">
-                <AlertCircle size={32} />
-                <h3 className="text-xl font-bold">Xác nhận xóa nhãn</h3>
+              <div className="flex items-center gap-4 text-orange-600">
+                <RotateCcw size={32} />
+                <h3 className="text-xl font-bold">Xác nhận thu hồi</h3>
               </div>
-              <p className="text-sm text-gray-500">Hành động này sẽ xóa vĩnh viễn nhãn QR này khỏi lịch sử. Không thể hoàn tác.</p>
+              <p className="text-sm text-gray-500">Hành động này sẽ xóa nhãn QR và <b>hoàn trả số lượng</b> vào kho xuất ban đầu. Vui lòng nhập mật khẩu để xác nhận.</p>
               <div className="space-y-2">
                 <label className="text-xs font-bold uppercase opacity-50">Nhập mật khẩu xác nhận</label>
                 <input 
                   type="password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  className="w-full p-4 rounded-lg border border-gray-200 focus:border-red-500 outline-none text-lg"
+                  className="w-full p-4 rounded-lg border border-gray-200 focus:border-orange-500 outline-none text-lg"
                   placeholder="Mật khẩu..."
+                  onKeyDown={(e) => e.key === 'Enter' && handleRollback()}
                   autoFocus
                 />
               </div>
@@ -764,10 +770,10 @@ function LabelHistoryView({ parts, onPrint, onCopy }: { parts: Part[], onPrint: 
                   Hủy bỏ
                 </button>
                 <button 
-                  onClick={handleDelete}
-                  className="flex-1 py-4 bg-red-600 text-white rounded-lg font-bold text-sm uppercase hover:bg-red-700 transition-all"
+                  onClick={handleRollback}
+                  className="flex-1 py-4 bg-orange-600 text-white rounded-lg font-bold text-sm uppercase hover:bg-orange-700 transition-all"
                 >
-                  Xác nhận xóa
+                  Xác nhận thu hồi
                 </button>
               </div>
             </motion.div>
@@ -936,7 +942,7 @@ function DashboardView({ inventory, parts, refreshData }: DashboardProps) {
                                     <span className="text-xs font-mono opacity-40 uppercase mr-4">{part.unit}</span>
                                     <button 
                                       onClick={() => {
-                                        const pwd = prompt('Nhập mật khẩu admin để sửa tồn kho:');
+                                        const pwd = prompt('Nhập mật khẩu để sửa tồn kho:');
                                         if (pwd === 'admin123') {
                                           const newQty = prompt(`Nhập số lượng tồn mới cho ${part.id}:`, String(qty));
                                           if (newQty !== null) {
@@ -954,7 +960,7 @@ function DashboardView({ inventory, parts, refreshData }: DashboardProps) {
                                     </button>
                                     <button 
                                       onClick={() => {
-                                        const pwd = prompt('Nhập mật khẩu admin để xóa tồn kho:');
+                                        const pwd = prompt('Nhập mật khẩu để xóa tồn kho:');
                                         if (pwd === 'admin123') {
                                           if (confirm(`Bạn có chắc chắn muốn xóa tồn kho của ${part.id} tại ${STAGES.find(s => s.id === selectedStageDetail)?.name} (Kho IN)?`)) {
                                             storageService.deleteInventoryItem(part.id, selectedStageDetail, 'IN');
@@ -1015,7 +1021,7 @@ function DashboardView({ inventory, parts, refreshData }: DashboardProps) {
                                     <span className="text-xs font-mono opacity-40 uppercase mr-4">{part.unit}</span>
                                     <button 
                                       onClick={() => {
-                                        const pwd = prompt('Nhập mật khẩu admin để sửa tồn kho:');
+                                        const pwd = prompt('Nhập mật khẩu để sửa tồn kho:');
                                         if (pwd === 'admin123') {
                                           const newQty = prompt(`Nhập số lượng tồn mới cho ${part.id}:`, String(qty));
                                           if (newQty !== null) {
@@ -1033,7 +1039,7 @@ function DashboardView({ inventory, parts, refreshData }: DashboardProps) {
                                     </button>
                                     <button 
                                       onClick={() => {
-                                        const pwd = prompt('Nhập mật khẩu admin để xóa tồn kho:');
+                                        const pwd = prompt('Nhập mật khẩu để xóa tồn kho:');
                                         if (pwd === 'admin123') {
                                           if (confirm(`Bạn có chắc chắn muốn xóa tồn kho của ${part.id} tại ${STAGES.find(s => s.id === selectedStageDetail)?.name} (Kho OUT)?`)) {
                                             storageService.deleteInventoryItem(part.id, selectedStageDetail, 'OUT');
@@ -2055,7 +2061,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                     value={resetPassword}
                     onChange={e => setResetPassword(e.target.value)}
                     className="w-full p-3 rounded-lg border border-gray-200 focus:border-red-500 outline-none"
-                    placeholder="Mật khẩu reset..."
+                    placeholder="Nhập mật khẩu..."
                   />
                 </div>
                 <div className="flex gap-3 pt-2">

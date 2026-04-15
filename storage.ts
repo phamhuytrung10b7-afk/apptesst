@@ -83,6 +83,37 @@ export const storageService = {
     localStorage.setItem('wip_labels', JSON.stringify(labels.filter(l => l.id !== id)));
   },
 
+  rollbackTransaction(txId: string) {
+    const transactions = this.getTransactions();
+    const txIndex = transactions.findIndex(t => t.id === txId);
+    if (txIndex === -1) {
+      // If not in transactions, check labels
+      const labels = this.getLabels();
+      const labelTx = labels.find(l => l.id === txId);
+      if (!labelTx) return;
+      
+      // Rollback logic for label
+      this.updateInventory(labelTx.partId, labelTx.stageId, 'OUT', labelTx.quantity);
+      this.deleteLabel(txId);
+      return;
+    }
+
+    const tx = transactions[txIndex];
+    
+    // Only rollback STAGE_OUT transactions that have QR data (meaning they were exported from OUT)
+    if (tx.type === 'STAGE_OUT' && tx.qrData) {
+      // Add quantity back to the source stage's OUT location
+      this.updateInventory(tx.partId, tx.stageId, 'OUT', tx.quantity);
+      
+      // Remove from transactions
+      transactions.splice(txIndex, 1);
+      this.saveTransactions(transactions);
+      
+      // Remove from labels
+      this.deleteLabel(txId);
+    }
+  },
+
   updateInventory(partId: string, stageId: StageId, location: 'IN' | 'OUT', delta: number) {
     const inventory = this.getInventory();
     const index = inventory.findIndex(
