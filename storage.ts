@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { InventoryItem, Transaction, StageId, STAGES, INITIAL_PARTS, Part, BOMDefinition, BOMDefinitionV2 } from './types';
+import { InventoryItem, Transaction, StageId, STAGES, INITIAL_PARTS, Part, BOMDefinition, BOMDefinitionV2, ProductionOrder, ModelBOMDefinition } from './types';
 
 const STORAGE_KEYS = {
   INVENTORY: 'wip_inventory',
@@ -12,6 +12,8 @@ const STORAGE_KEYS = {
   BOM: 'wip_bom',
   BOM_V2: 'wip_bom_v2',
   LABEL_SETTINGS: 'wip_label_settings',
+  PRODUCTION_ORDERS: 'wip_production_orders',
+  MODEL_BOM: 'wip_model_bom',
 };
 
 export const storageService = {
@@ -50,6 +52,15 @@ export const storageService = {
     localStorage.setItem(STORAGE_KEYS.BOM_V2, JSON.stringify(bom));
   },
 
+  getModelBOM(): ModelBOMDefinition[] {
+    const data = localStorage.getItem(STORAGE_KEYS.MODEL_BOM);
+    return data ? JSON.parse(data) : [];
+  },
+
+  saveModelBOM(bom: ModelBOMDefinition[]) {
+    localStorage.setItem(STORAGE_KEYS.MODEL_BOM, JSON.stringify(bom));
+  },
+
   getInventory(): InventoryItem[] {
     const data = localStorage.getItem(STORAGE_KEYS.INVENTORY);
     return data ? JSON.parse(data) : [];
@@ -75,7 +86,7 @@ export const storageService = {
 
   saveLabel(label: Transaction) {
     const labels = this.getLabels();
-    localStorage.setItem('wip_labels', JSON.stringify([label, ...labels].slice(0, 50)));
+    localStorage.setItem('wip_labels', JSON.stringify([label, ...labels]));
   },
 
   deleteLabel(id: string) {
@@ -355,12 +366,110 @@ export const storageService = {
     };
   },
 
+  getProductionOrders(): ProductionOrder[] {
+    const data = localStorage.getItem(STORAGE_KEYS.PRODUCTION_ORDERS);
+    return data ? JSON.parse(data) : [];
+  },
+
+  saveProductionOrders(orders: ProductionOrder[]) {
+    localStorage.setItem(STORAGE_KEYS.PRODUCTION_ORDERS, JSON.stringify(orders));
+  },
+
+  createMasterPO(modelId: string, quantity: number) {
+    const pos = this.getProductionOrders();
+    const masterPoId = `PO-${Date.now()}`;
+    const timestamp = Date.now();
+
+    // 1. Create Master PO (Model Level)
+    const masterPo: ProductionOrder = {
+      id: masterPoId,
+      partId: modelId,
+      quantity,
+      level: 0, // Model level
+      status: 'PENDING',
+      createdAt: timestamp
+    };
+    pos.unshift(masterPo);
+
+    // 2. Explode to Level 1
+    const modelBom = this.getModelBOM();
+    const level1Ingredients = modelBom.filter(b => b.modelId === modelId);
+    
+    for (const l1Ing of level1Ingredients) {
+      const l1Qty = quantity * l1Ing.quantity;
+      const l1PoId = `PO-L1-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const l1Po: ProductionOrder = {
+        id: l1PoId,
+        masterPoId: masterPoId,
+        parentPoId: masterPoId,
+        partId: l1Ing.partId,
+        quantity: l1Qty,
+        level: 1,
+        status: 'PENDING',
+        createdAt: timestamp
+      };
+      pos.unshift(l1Po);
+
+      // 3. Explode to Level 2
+      const bomV2 = this.getBOMV2();
+      const level2Ingredients = bomV2.filter(b => b.resultPartId === l1Ing.partId);
+      
+      for (const l2Ing of level2Ingredients) {
+        const l2Qty = l1Qty * l2Ing.quantity;
+        const l2PoId = `PO-L2-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        const l2Po: ProductionOrder = {
+          id: l2PoId,
+          masterPoId: masterPoId,
+          parentPoId: l1PoId,
+          partId: l2Ing.ingredientPartId,
+          quantity: l2Qty,
+          level: 2,
+          status: 'PENDING',
+          createdAt: timestamp
+        };
+        pos.unshift(l2Po);
+
+        // 4. Explode to Level 3
+        const bomV1 = this.getBOM();
+        const level3Ingredients = bomV1.filter(b => b.childPartId === l2Ing.ingredientPartId);
+        
+        for (const l3Ing of level3Ingredients) {
+          const l3Qty = l2Qty * (l3Ing.componentWeight + l3Ing.scrapWeight);
+          const l3PoId = `PO-L3-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+          const l3Po: ProductionOrder = {
+            id: l3PoId,
+            masterPoId: masterPoId,
+            parentPoId: l2PoId,
+            partId: l3Ing.parentPartId,
+            quantity: l3Qty,
+            level: 3,
+            status: 'PENDING',
+            createdAt: timestamp
+          };
+          pos.unshift(l3Po);
+        }
+      }
+    }
+
+    this.saveProductionOrders(pos);
+    return masterPo;
+  },
+
+  deletePO(id: string) {
+    const pos = this.getProductionOrders();
+    // If it's a master PO, delete all its children too
+    const filtered = pos.filter(p => p.id !== id && p.masterPoId !== id);
+    this.saveProductionOrders(filtered);
+  },
+
   resetAllData() {
     localStorage.removeItem(STORAGE_KEYS.INVENTORY);
     localStorage.removeItem(STORAGE_KEYS.TRANSACTIONS);
     localStorage.removeItem(STORAGE_KEYS.PARTS);
     localStorage.removeItem(STORAGE_KEYS.BOM);
     localStorage.removeItem(STORAGE_KEYS.BOM_V2);
+    localStorage.removeItem(STORAGE_KEYS.MODEL_BOM);
+    localStorage.removeItem(STORAGE_KEYS.PRODUCTION_ORDERS);
     localStorage.removeItem('wip_labels');
   },
 };

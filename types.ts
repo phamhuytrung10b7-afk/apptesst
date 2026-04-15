@@ -44,6 +44,23 @@ export interface BOMDefinitionV2 {
   quantity: number; // Amount of ingredient per unit of result
 }
 
+export interface ModelBOMDefinition {
+  modelId: string;
+  partId: string; // Level 1 part
+  quantity: number;
+}
+
+export interface ProductionOrder {
+  id: string;
+  masterPoId?: string; // Links to the top-level PO
+  parentPoId?: string; // Links to the immediate parent PO
+  partId: string;
+  quantity: number;
+  level: number;
+  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
+  createdAt: number;
+}
+
 export const STAGES: { id: StageId; name: string; nextStageId?: StageId }[] = [
   { id: 'LASER', name: 'Cắt Laser', nextStageId: 'BENDING' },
   { id: 'BENDING', name: 'Chấn/Dập', nextStageId: 'WELDING' },

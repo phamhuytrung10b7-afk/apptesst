@@ -26,7 +26,9 @@ import {
   Monitor,
   Menu,
   FileUp,
-  Layers
+  Layers,
+  FileText,
+  ClipboardList
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -45,7 +47,7 @@ import {
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
-import { STAGES, INITIAL_PARTS, StageId, Part, InventoryItem, Transaction, BOMDefinition, BOMDefinitionV2 } from './types';
+import { STAGES, INITIAL_PARTS, StageId, Part, InventoryItem, Transaction, BOMDefinition, BOMDefinitionV2, ProductionOrder, ModelBOMDefinition } from './types';
 import { storageService } from './storage';
 
 // Utility for tailwind classes
@@ -53,7 +55,7 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-type View = 'dashboard' | 'produce' | 'inbound' | 'history' | 'settings' | 'labels';
+type View = 'dashboard' | 'produce' | 'inbound' | 'history' | 'settings' | 'labels' | 'po';
 
 function SearchableSelect({ 
   options, 
@@ -230,6 +232,7 @@ export default function App() {
       refreshData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Đã xảy ra lỗi');
+      throw err;
     }
   };
 
@@ -394,6 +397,13 @@ export default function App() {
             collapsed={!isSidebarOpen}
           />
           <SidebarLink 
+            active={currentView === 'po'} 
+            onClick={() => setCurrentView('po')}
+            icon={<ClipboardList size={24} />}
+            label="Lệnh sản xuất (PO)"
+            collapsed={!isSidebarOpen}
+          />
+          <SidebarLink 
             active={currentView === 'history'} 
             onClick={() => setCurrentView('history')}
             icon={<History size={24} />}
@@ -429,6 +439,7 @@ export default function App() {
               {currentView === 'produce' && 'Xuất kho & In nhãn QR'}
               {currentView === 'inbound' && 'Nhập kho linh kiện'}
               {currentView === 'labels' && 'Danh sách nhãn QR đã xuất'}
+              {currentView === 'po' && 'Quản lý Lệnh sản xuất (PO)'}
               {currentView === 'history' && 'Nhật ký biến động kho'}
               {currentView === 'settings' && 'Cài đặt danh mục linh kiện'}
             </h2>
@@ -489,6 +500,9 @@ export default function App() {
                   onCopy={copyToClipboard}
                   onRollback={refreshData}
                 />
+              )}
+              {currentView === 'po' && (
+                <ProductionOrderView parts={parts} />
               )}
               {currentView === 'history' && (
                 <HistoryView key="history" transactions={transactions} parts={parts} />
@@ -581,21 +595,245 @@ interface DashboardProps {
   key?: string;
 }
 
+function ProductionOrderView({ parts }: { parts: Part[] }) {
+  const [orders, setOrders] = useState<ProductionOrder[]>([]);
+  const [selectedPart, setSelectedPart] = useState("");
+  const [quantity, setQuantity] = useState(0);
+  const [showDeleteModal, setShowDeleteModal] = useState<string | null>(null);
+  const [password, setPassword] = useState("");
+
+  useEffect(() => {
+    setOrders(storageService.getProductionOrders());
+  }, []);
+
+  const handleCreatePO = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPart || quantity <= 0) return;
+    
+    try {
+      storageService.createMasterPO(selectedPart, quantity);
+      setOrders(storageService.getProductionOrders());
+      setSelectedPart("");
+      setQuantity(0);
+      alert('Đã tạo lệnh sản xuất PO Tổng và các PO Con thành công!');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Lỗi khi tạo PO');
+    }
+  };
+
+  const handleDeletePO = () => {
+    if (password === 'admin123') {
+      if (showDeleteModal) {
+        storageService.deletePO(showDeleteModal);
+        setOrders(storageService.getProductionOrders());
+        setShowDeleteModal(null);
+        setPassword("");
+      }
+    } else {
+      alert('Mật khẩu không chính xác!');
+    }
+  };
+
+  // Group orders by masterPoId
+  const masterOrders = orders.filter(o => !o.masterPoId);
+  
+  return (
+    <div className="space-y-8">
+      {/* Create PO Form */}
+      <div className="bg-white p-8 rounded-3xl border border-gray-200 shadow-sm">
+        <h2 className="text-2xl font-bold mb-6 flex items-center gap-3">
+          <ClipboardList className="text-blue-600" />
+          Tạo Lệnh Sản Xuất (PO Tổng)
+        </h2>
+        <form onSubmit={handleCreatePO} className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
+          <div className="space-y-2">
+            <label className="text-sm font-bold uppercase opacity-50">Chọn Model</label>
+            <SearchableSelect 
+              options={Array.from(new Set(storageService.getModelBOM().map(b => b.modelId))).map(id => ({ 
+                id, 
+                label: parts.find(p => p.id === id)?.name || id 
+              }))}
+              value={selectedPart}
+              onChange={setSelectedPart}
+              placeholder="Chọn model..."
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-bold uppercase opacity-50">Số lượng</label>
+            <input 
+              type="number"
+              step="any"
+              value={quantity || ''}
+              onChange={e => setQuantity(parseFloat(e.target.value) || 0)}
+              className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none"
+              placeholder="Nhập số lượng..."
+            />
+          </div>
+          <button 
+            type="submit"
+            className="bg-blue-600 text-white py-5 rounded-xl font-bold uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
+          >
+            Tạo Lệnh PO
+          </button>
+        </form>
+      </div>
+
+      {/* PO List */}
+      <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="p-8 border-b border-gray-100 flex justify-between items-center">
+          <h2 className="text-2xl font-bold">Danh sách Lệnh Sản Xuất</h2>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead className="bg-gray-50 text-xs font-bold uppercase tracking-wider text-gray-500">
+              <tr>
+                <th className="px-8 py-5">Mã PO</th>
+                <th className="px-8 py-5">Linh kiện / Thành phẩm</th>
+                <th className="px-8 py-5">Cấp</th>
+                <th className="px-8 py-5 text-right">Số lượng</th>
+                <th className="px-8 py-5">Ngày tạo</th>
+                <th className="px-8 py-5">Trạng thái</th>
+                <th className="px-8 py-5 text-center">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {masterOrders.map(master => (
+                <React.Fragment key={master.id}>
+                  <tr className="bg-blue-50/30 font-bold">
+                    <td className="px-8 py-5 font-mono text-blue-700">{master.id}</td>
+                    <td className="px-8 py-5">{parts.find(p => p.id === master.partId)?.name || master.partId}</td>
+                    <td className="px-8 py-5"><span className="px-2 py-1 bg-blue-600 text-white rounded text-[10px]">MODEL</span></td>
+                    <td className="px-8 py-5 text-right text-xl">{master.quantity}</td>
+                    <td className="px-8 py-5 text-gray-400 text-sm">{format(master.createdAt, 'dd/MM/yyyy HH:mm')}</td>
+                    <td className="px-8 py-5">
+                      <span className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-bold">CHỜ SẢN XUẤT</span>
+                    </td>
+                    <td className="px-8 py-5 text-center">
+                      <button 
+                        onClick={() => setShowDeleteModal(master.id)}
+                        className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </td>
+                  </tr>
+                  {orders.filter(o => o.masterPoId === master.id).sort((a, b) => a.level - b.level).map(sub => (
+                    <tr key={sub.id} className="text-sm text-gray-600">
+                      <td className="px-8 py-4 pl-16 font-mono opacity-50">{sub.id}</td>
+                      <td className="px-8 py-4">{parts.find(p => p.id === sub.partId)?.name}</td>
+                      <td className="px-8 py-4">
+                        <span className={cn(
+                          "px-2 py-1 rounded text-[10px]",
+                          sub.level === 1 ? "bg-blue-100 text-blue-700" :
+                          sub.level === 2 ? "bg-green-100 text-green-700" : "bg-purple-100 text-purple-700"
+                        )}>
+                          Cấp {sub.level}
+                        </span>
+                      </td>
+                      <td className="px-8 py-4 text-right font-bold">{sub.quantity}</td>
+                      <td className="px-8 py-4 text-gray-400 text-xs">{format(sub.createdAt, 'dd/MM HH:mm')}</td>
+                      <td className="px-8 py-4">
+                        <span className="px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full text-[10px]">THEO PO TỔNG</span>
+                      </td>
+                      <td className="px-8 py-4"></td>
+                    </tr>
+                  ))}
+                </React.Fragment>
+              ))}
+              {masterOrders.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-8 py-20 text-center text-gray-400 italic">Chưa có lệnh sản xuất nào.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {showDeleteModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl space-y-6"
+            >
+              <div className="flex items-center gap-4 text-red-600">
+                <Trash2 size={32} />
+                <h3 className="text-xl font-bold">Xác nhận xóa PO</h3>
+              </div>
+              <p className="text-sm text-gray-500">Hành động này sẽ xóa PO Tổng và <b>tất cả các PO Con</b> liên quan. Vui lòng nhập mật khẩu để xác nhận.</p>
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase opacity-50">Nhập mật khẩu xác nhận</label>
+                <input 
+                  type="password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  className="w-full p-4 rounded-lg border border-gray-200 focus:border-red-500 outline-none text-lg"
+                  placeholder="Nhập mật khẩu..."
+                  onKeyDown={(e) => e.key === 'Enter' && handleDeletePO()}
+                  autoFocus
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button 
+                  onClick={() => { setShowDeleteModal(null); setPassword(''); }}
+                  className="flex-1 py-4 bg-gray-100 rounded-lg font-bold text-sm uppercase hover:bg-gray-200 transition-all"
+                >
+                  Hủy
+                </button>
+                <button 
+                  onClick={handleDeletePO}
+                  className="flex-1 py-4 bg-red-600 text-white rounded-lg font-bold text-sm uppercase hover:bg-red-700 transition-all shadow-lg shadow-red-200"
+                >
+                  Xác nhận xóa
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 function LabelHistoryView({ parts, onPrint, onCopy, onRollback }: { parts: Part[], onPrint: (l: Transaction) => void, onCopy: (t: string) => void, onRollback: () => void, key?: string }) {
   const [labels, setLabels] = useState<Transaction[]>([]);
+  const [scannedIds, setScannedIds] = useState<Set<string>>(new Set());
   const [showDeleteModal, setShowDeleteModal] = useState<string | null>(null);
   const [password, setPassword] = useState("");
   const [selectedLabel, setSelectedLabel] = useState<Transaction | null>(null);
+  const [dateFilter, setDateFilter] = useState("");
+  const [limit, setLimit] = useState(50);
 
   useEffect(() => {
-    setLabels(storageService.getLabels());
+    const allLabels = storageService.getLabels();
+    const allTransactions = storageService.getTransactions();
+    
+    // Identify which labels have been scanned
+    const scanned = new Set<string>();
+    allTransactions.forEach(tx => {
+      if (tx.type === 'STAGE_IN' && tx.qrData) {
+        // Extract txId from qrData: partId|quantity|sourceStageId|timestamp|txId|targetStageId
+        const qrParts = tx.qrData.split('|');
+        if (qrParts.length >= 5) {
+          scanned.add(qrParts[4]);
+        }
+      }
+    });
+    
+    setLabels(allLabels);
+    setScannedIds(scanned);
   }, []);
 
   const handleRollback = () => {
     if (password === 'admin123') {
       if (showDeleteModal) {
         storageService.rollbackTransaction(showDeleteModal);
-        setLabels(storageService.getLabels());
+        const updatedLabels = storageService.getLabels();
+        setLabels(updatedLabels);
         onRollback();
         setShowDeleteModal(null);
         setPassword("");
@@ -607,6 +845,14 @@ function LabelHistoryView({ parts, onPrint, onCopy, onRollback }: { parts: Part[
     }
   };
 
+  const filteredLabels = labels.filter(label => {
+    if (!dateFilter) return true;
+    const labelDate = format(label.timestamp, 'yyyy-MM-dd');
+    return labelDate === dateFilter;
+  });
+
+  const displayedLabels = filteredLabels.slice(0, limit);
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
@@ -614,44 +860,101 @@ function LabelHistoryView({ parts, onPrint, onCopy, onRollback }: { parts: Part[
       exit={{ opacity: 0, y: -20 }}
       className="grid grid-cols-1 lg:grid-cols-3 gap-8"
     >
-      <div className="lg:col-span-1 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-[700px]">
-        <div className="p-6 border-b border-gray-100 bg-gray-50/50">
-          <h2 className="font-bold text-xl tracking-tight">Danh sách nhãn QR</h2>
-          <p className="text-xs text-gray-400 mt-1">Lưu trữ 50 nhãn gần nhất</p>
-        </div>
-        <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
-          {labels.length === 0 ? (
-            <div className="p-12 text-center text-gray-400 italic">Chưa có nhãn nào được tạo.</div>
-          ) : (
-            labels.map(label => (
-              <div 
-                key={label.id}
-                onClick={() => setSelectedLabel(label)}
-                className={cn(
-                  "p-5 cursor-pointer transition-all hover:bg-gray-50 flex justify-between items-center group",
-                  selectedLabel?.id === label.id && "bg-blue-50 border-l-4 border-blue-600"
-                )}
-              >
-                <div className="flex flex-col gap-1">
-                  <span className="font-bold text-sm">{parts.find(p => p.id === label.partId)?.name || label.partId}</span>
-                  <div className="flex items-center gap-2 text-[10px] font-mono opacity-50">
-                    <span>{format(label.timestamp, 'dd/MM HH:mm')}</span>
-                    <span>•</span>
-                    <span>{label.quantity} {parts.find(p => p.id === label.partId)?.unit}</span>
-                  </div>
-                </div>
-                <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowDeleteModal(label.id);
-                  }}
-                  className="p-2 text-orange-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
-                  title="Thu hồi lệnh xuất"
-                >
-                  <RotateCcw size={16} />
-                </button>
+      <div className="lg:col-span-1 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-[750px]">
+        <div className="p-6 border-b border-gray-100 bg-gray-50/50 space-y-4">
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="font-bold text-xl tracking-tight">Danh sách nhãn QR</h2>
+              <p className="text-xs text-gray-400 mt-1">Tổng số: {labels.length} nhãn</p>
+            </div>
+            <div className="flex gap-2">
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 rounded-full bg-green-500" />
+                <span className="text-[10px] font-bold opacity-40 uppercase">Đã nhập</span>
               </div>
-            ))
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 rounded-full bg-gray-200 border border-gray-300" />
+                <span className="text-[10px] font-bold opacity-40 uppercase">Chờ nhập</span>
+              </div>
+            </div>
+          </div>
+          
+          <div className="relative">
+            <input 
+              type="date"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 focus:border-blue-600 outline-none text-sm font-mono"
+            />
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            {dateFilter && (
+              <button 
+                onClick={() => setDateFilter("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
+          {filteredLabels.length === 0 ? (
+            <div className="p-12 text-center text-gray-400 italic">
+              {dateFilter ? `Không tìm thấy nhãn nào trong ngày ${format(new Date(dateFilter), 'dd/MM/yyyy')}` : 'Chưa có nhãn nào được tạo.'}
+            </div>
+          ) : (
+            <>
+              {displayedLabels.map(label => {
+                const isScanned = scannedIds.has(label.id);
+                return (
+                  <div 
+                    key={label.id}
+                    onClick={() => setSelectedLabel(label)}
+                    className={cn(
+                      "p-5 cursor-pointer transition-all hover:bg-gray-50 flex justify-between items-center group relative",
+                      selectedLabel?.id === label.id && "ring-2 ring-inset ring-blue-600 z-10",
+                      isScanned ? "bg-green-50/50" : "bg-white"
+                    )}
+                  >
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        {isScanned && <CheckCircle2 size={14} className="text-green-600" />}
+                        <span className="font-bold text-sm">{parts.find(p => p.id === label.partId)?.name || label.partId}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] font-mono opacity-50">
+                        <span>{format(label.timestamp, 'dd/MM HH:mm')}</span>
+                        <span>•</span>
+                        <span>{label.quantity} {parts.find(p => p.id === label.partId)?.unit}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {isScanned && (
+                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-green-100 text-green-700 rounded">Đã nhập</span>
+                      )}
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowDeleteModal(label.id);
+                        }}
+                        className="p-2 text-orange-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                        title="Thu hồi lệnh xuất"
+                      >
+                        <RotateCcw size={16} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+              {limit < filteredLabels.length && (
+                <button 
+                  onClick={() => setLimit(prev => prev + 50)}
+                  className="w-full py-4 text-sm font-bold text-blue-600 hover:bg-blue-50 transition-colors uppercase tracking-widest"
+                >
+                  Xem thêm ({filteredLabels.length - limit} nhãn còn lại)
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -1516,15 +1819,26 @@ function InboundView({ selectedStage, setSelectedStage, onScanSuccess, parts, on
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (manualPart && manualQty > 0) {
-      onManualInbound(manualPart, selectedStage, targetLocation, manualQty);
-      setLastScanned({
-        partId: manualPart,
-        quantity: manualQty,
-        partName: parts.find((p: any) => p.id === manualPart)?.name || manualPart,
-        status: 'success',
-        isManual: true
-      });
-      setManualQty(0);
+      try {
+        onManualInbound(manualPart, selectedStage, targetLocation, manualQty);
+        setLastScanned({
+          partId: manualPart,
+          quantity: manualQty,
+          partName: parts.find((p: any) => p.id === manualPart)?.name || manualPart,
+          status: 'success',
+          isManual: true
+        });
+        setManualQty(0);
+      } catch (err) {
+        setLastScanned({
+          partId: manualPart,
+          quantity: manualQty,
+          partName: parts.find((p: any) => p.id === manualPart)?.name || manualPart,
+          status: 'error',
+          isManual: true,
+          errorMsg: err instanceof Error ? err.message : 'Lỗi không xác định'
+        });
+      }
     }
   };
 
@@ -1773,8 +2087,9 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
   const [isImporting, setIsImporting] = useState(false);
   const [isImportingBOM, setIsImportingBOM] = useState(false);
   const [isImportingBOMV2, setIsImportingBOMV2] = useState(false);
+  const [isImportingModelBOM, setIsImportingModelBOM] = useState(false);
 
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'parts' | 'bom' | 'label' | 'bom_v2'>('parts');
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'parts' | 'bom' | 'label' | 'bom_v2' | 'model_bom'>('parts');
 
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetPassword, setResetPassword] = useState('');
@@ -2114,6 +2429,15 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
             Định mức Hàn (BOM v2)
           </button>
           <button 
+            onClick={() => setActiveSettingsTab('model_bom')}
+            className={cn(
+              "flex-1 py-5 text-base font-bold uppercase tracking-widest transition-all border-b-2",
+              activeSettingsTab === 'model_bom' ? "border-blue-600 text-blue-600" : "border-transparent text-gray-400 hover:text-gray-600"
+            )}
+          >
+            Định mức Model
+          </button>
+          <button 
             onClick={() => setActiveSettingsTab('label')}
             className={cn(
               "flex-1 py-5 text-base font-bold uppercase tracking-widest transition-all border-b-2",
@@ -2205,6 +2529,96 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                           <div className="text-xs font-mono opacity-50">{b.ingredientPartId}</div>
                         </td>
                         <td className="p-6 text-center font-mono font-bold text-orange-600 text-xl">
+                          x{b.quantity}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : activeSettingsTab === 'model_bom' ? (
+          <div className="p-10 space-y-8">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-4">
+                <div className="bg-purple-600 p-3 rounded-xl text-white">
+                  <ClipboardList size={24} />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold tracking-tight">Định mức Model (Model BOM)</h2>
+                  <p className="text-sm text-gray-500">Liên kết Model với các linh kiện Level 1</p>
+                </div>
+              </div>
+              <div className="flex gap-4">
+                <label className="bg-white border-2 border-purple-600 text-purple-600 px-6 py-3 rounded-xl font-bold uppercase cursor-pointer hover:bg-purple-50 transition-all flex items-center gap-2">
+                  <FileUp size={20} />
+                  {isImportingModelBOM ? 'Đang xử lý...' : 'Nhập Excel Model BOM'}
+                  <input type="file" accept=".xlsx, .xls" className="hidden" onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setIsImportingModelBOM(true);
+                    const reader = new FileReader();
+                    reader.onload = (evt) => {
+                      try {
+                        const bstr = evt.target?.result;
+                        const wb = XLSX.read(bstr, { type: 'binary' });
+                        const wsname = wb.SheetNames[0];
+                        const ws = wb.Sheets[wsname];
+                        const data = XLSX.utils.sheet_to_json(ws) as any[];
+                        
+                        // Expected columns: ModelID, PartID, Quantity
+                        const imported: ModelBOMDefinition[] = data.map(row => ({
+                          modelId: String(row['ModelID'] || row['Mã model'] || '').trim(),
+                          partId: String(row['PartID'] || row['Mã linh kiện'] || row['Mã con'] || '').trim(),
+                          quantity: parseFloat(row['Quantity'] || row['Số lượng'] || '1')
+                        })).filter(b => b.modelId && b.partId && b.quantity > 0);
+
+                        if (imported.length === 0) {
+                          alert('Không tìm thấy dữ liệu hợp lệ. Cần các cột: ModelID, PartID, Quantity');
+                        } else {
+                          storageService.saveModelBOM(imported);
+                          alert(`Đã nhập thành công ${imported.length} định mức Model!`);
+                        }
+                      } catch (err) {
+                        alert('Lỗi khi đọc file.');
+                      } finally {
+                        setIsImportingModelBOM(false);
+                        if (e.target) e.target.value = '';
+                      }
+                    };
+                    reader.readAsBinaryString(file);
+                  }} />
+                </label>
+              </div>
+            </div>
+
+            <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="p-6 text-xs font-bold uppercase opacity-50">Tên Model</th>
+                    <th className="p-6 text-xs font-bold uppercase opacity-50">Linh kiện Level 1</th>
+                    <th className="p-6 text-xs font-bold uppercase opacity-50 text-center">Số lượng</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {storageService.getModelBOM().length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="p-20 text-center text-gray-400 italic">Chưa có dữ liệu định mức Model. Vui lòng nhập từ Excel.</td>
+                    </tr>
+                  ) : (
+                    storageService.getModelBOM().map((b, i) => (
+                      <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                        <td className="p-6">
+                          <div className="font-bold">{parts.find(p => p.id === b.modelId)?.name || b.modelId}</div>
+                          <div className="text-xs font-mono opacity-50">{b.modelId}</div>
+                        </td>
+                        <td className="p-6">
+                          <div className="font-bold">{parts.find(p => p.id === b.partId)?.name || b.partId}</div>
+                          <div className="text-xs font-mono opacity-50">{b.partId}</div>
+                        </td>
+                        <td className="p-6 text-center font-mono font-bold text-purple-600 text-xl">
                           x{b.quantity}
                         </td>
                       </tr>
