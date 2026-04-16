@@ -192,7 +192,7 @@ export default function App() {
     }
   };
 
-  const handleProduce = (e: React.FormEvent, sourceLocation: 'IN' | 'OUT' = 'IN', targetStageId?: StageId) => {
+  const handleProduce = (e: React.FormEvent, sourceLocation: 'IN' | 'OUT' = 'IN', targetStageId?: StageId, poId?: string) => {
     e.preventDefault();
     if (quantity <= 0) {
       setError('Vui lòng nhập số lượng hợp lệ');
@@ -200,7 +200,7 @@ export default function App() {
     }
 
     try {
-      const tx = storageService.recordStageOut(selectedPart, selectedStage, quantity, sourceLocation, targetStageId);
+      const tx = storageService.recordStageOut(selectedPart, selectedStage, quantity, sourceLocation, targetStageId, poId);
       setLastTransaction(tx);
       const partName = parts.find(p => p.id === selectedPart)?.name || selectedPart;
       const locationName = sourceLocation === 'IN' ? 'KHO_IN' : 'KHO_OUT';
@@ -953,6 +953,11 @@ function LabelHistoryView({ parts, onPrint, onCopy, onRollback }: { parts: Part[
                         {isScanned && <CheckCircle2 size={14} className="text-green-600" />}
                         <span className="font-bold text-sm">{parts.find(p => p.id === label.partId)?.name || label.partId}</span>
                       </div>
+                      {label.poId && (
+                        <div className="text-[10px] font-mono font-bold text-blue-600">
+                          {label.poId}
+                        </div>
+                      )}
                       <div className="flex items-center gap-2 text-[10px] font-mono opacity-50">
                         <span>{format(label.timestamp, 'dd/MM HH:mm')}</span>
                         <span>•</span>
@@ -1016,6 +1021,9 @@ function LabelHistoryView({ parts, onPrint, onCopy, onRollback }: { parts: Part[
 
               <div className="w-full space-y-4 text-center">
                 <p className="font-bold text-4xl leading-tight tracking-tight">{parts.find(p => p.id === selectedLabel.partId)?.name}</p>
+                {selectedLabel.poId && (
+                  <p className="font-mono text-xl font-bold text-blue-600 uppercase">{selectedLabel.poId}</p>
+                )}
                 <div className="flex justify-center gap-12 py-4">
                   <div className="flex flex-col">
                     <span className="text-xs font-mono uppercase opacity-40">Số lượng</span>
@@ -1503,6 +1511,7 @@ function ProduceView({
   onCopy
 }: any) {
   const [sourceLocation, setSourceLocation] = useState<'IN' | 'OUT'>('IN');
+  const [selectedPoId, setSelectedPoId] = useState<string>("");
   const [targetStageId, setTargetStageId] = useState<StageId>(
     STAGES.find(s => s.id === selectedStage)?.nextStageId || STAGES[0].id
   );
@@ -1514,12 +1523,24 @@ function ProduceView({
     return true;
   });
 
+  const availablePos = storageService.getProductionOrders().filter(
+    p => p.partId === selectedPart && p.stageId === selectedStage && p.status !== 'COMPLETED'
+  );
+
   // Auto-select first filtered part if current selection is not in list
   useEffect(() => {
     if (filteredParts.length > 0 && !filteredParts.find((p: any) => p.id === selectedPart)) {
       setSelectedPart(filteredParts[0].id);
     }
   }, [selectedStage, filteredParts, selectedPart, setSelectedPart]);
+
+  useEffect(() => {
+    if (availablePos.length > 0) {
+      setSelectedPoId(availablePos[0].id);
+    } else {
+      setSelectedPoId("");
+    }
+  }, [selectedPart, selectedStage, availablePos.length]);
 
   useEffect(() => {
     const next = STAGES.find(s => s.id === selectedStage)?.nextStageId;
@@ -1535,9 +1556,7 @@ function ProduceView({
     (i: any) => i.partId === selectedPart && i.stageId === selectedStage && i.location === sourceLocation
   )?.quantity || 0;
 
-  const activePo = storageService.getProductionOrders().find(
-    p => p.partId === selectedPart && p.stageId === selectedStage && p.status !== 'COMPLETED'
-  );
+  const activePo = availablePos.find(p => p.id === selectedPoId) || availablePos[0];
 
   return (
     <motion.div 
@@ -1564,7 +1583,7 @@ function ProduceView({
           <p className="text-base text-gray-500">Ghi nhận hoàn thành công đoạn hoặc xuất linh kiện từ kho thành phẩm để in nhãn QR.</p>
         </div>
         
-        <form onSubmit={(e) => handleProduce(e, sourceLocation, sourceLocation === 'OUT' ? targetStageId : undefined)} className="space-y-8">
+        <form onSubmit={(e) => handleProduce(e, sourceLocation, sourceLocation === 'OUT' ? targetStageId : undefined, selectedPoId)} className="space-y-8">
           <div className="grid grid-cols-2 gap-8">
             <div className="space-y-4">
               <label className="text-sm font-bold uppercase tracking-widest opacity-50">1. Công đoạn hiện tại</label>
@@ -1616,6 +1635,23 @@ function ProduceView({
               placeholder="Tìm mã linh kiện..."
             />
           </div>
+
+          {sourceLocation === 'IN' && availablePos.length > 0 && (
+            <div className="space-y-4">
+              <label className="text-sm font-bold uppercase tracking-widest opacity-50">Chọn Lệnh PO (Tiến độ)</label>
+              <select 
+                value={selectedPoId}
+                onChange={(e) => setSelectedPoId(e.target.value)}
+                className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none bg-white cursor-pointer"
+              >
+                {availablePos.map(po => (
+                  <option key={po.id} value={po.id}>
+                    {po.id} ({po.producedQuantity}/{po.targetQuantity})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {sourceLocation === 'OUT' && (
             <div className="space-y-4">
@@ -1712,6 +1748,9 @@ function ProduceView({
 
               <div className="w-full space-y-4 text-center">
                 <p className="font-bold text-4xl leading-tight tracking-tight">{parts.find(p => p.id === lastTransaction.partId)?.name}</p>
+                {lastTransaction.poId && (
+                  <p className="font-mono text-xl font-bold text-blue-600 uppercase">{lastTransaction.poId}</p>
+                )}
                 <div className="flex justify-center gap-12 py-4">
                   <div className="flex flex-col">
                     <span className="text-xs font-mono uppercase opacity-40">Số lượng</span>
@@ -1779,6 +1818,7 @@ function InboundView({ selectedStage, setSelectedStage, onScanSuccess, parts, on
   const [targetLocation, setTargetLocation] = useState<'IN' | 'OUT'>('IN');
   const [manualPart, setManualPart] = useState('');
   const [manualQty, setManualQty] = useState(0);
+  const [selectedPoId, setSelectedPoId] = useState<string>("");
   
   const [scanInput, setScanInput] = useState('');
   const [lastScanned, setLastScanned] = useState<any>(null);
@@ -1863,17 +1903,30 @@ function InboundView({ selectedStage, setSelectedStage, onScanSuccess, parts, on
     }
   }, [selectedStage, filteredParts, manualPart, setManualPart, mode]);
 
+  const availablePos = storageService.getProductionOrders().filter(
+    p => p.partId === manualPart && p.stageId === selectedStage && p.status !== 'COMPLETED'
+  );
+
+  useEffect(() => {
+    if (availablePos.length > 0) {
+      setSelectedPoId(availablePos[0].id);
+    } else {
+      setSelectedPoId("");
+    }
+  }, [manualPart, selectedStage, availablePos.length]);
+
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (manualPart && manualQty > 0) {
       try {
-        onManualInbound(manualPart, selectedStage, targetLocation, manualQty);
+        onManualInbound(manualPart, selectedStage, targetLocation, manualQty, selectedPoId);
         setLastScanned({
           partId: manualPart,
           quantity: manualQty,
           partName: parts.find((p: any) => p.id === manualPart)?.name || manualPart,
           status: 'success',
-          isManual: true
+          isManual: true,
+          poId: selectedPoId
         });
         setManualQty(0);
       } catch (err) {
@@ -1989,6 +2042,24 @@ function InboundView({ selectedStage, setSelectedStage, onScanSuccess, parts, on
                   placeholder="Tìm mã linh kiện..."
                 />
               </div>
+
+              {targetLocation === 'OUT' && availablePos.length > 0 && (
+                <div className="space-y-4">
+                  <label className="text-sm font-bold uppercase tracking-widest opacity-50">Chọn Lệnh PO (Tiến độ)</label>
+                  <select 
+                    value={selectedPoId}
+                    onChange={(e) => setSelectedPoId(e.target.value)}
+                    className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none bg-white cursor-pointer"
+                  >
+                    {availablePos.map(po => (
+                      <option key={po.id} value={po.id}>
+                        {po.id} ({po.producedQuantity}/{po.targetQuantity})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
                   <label className="text-sm font-bold uppercase tracking-widest opacity-50">Số lượng nhập:</label>

@@ -4,6 +4,7 @@
  */
 
 import { InventoryItem, Transaction, StageId, STAGES, INITIAL_PARTS, Part, BOMDefinition, BOMDefinitionV2, ProductionOrder, ModelBOMDefinition } from './types';
+import { format } from 'date-fns';
 
 const STORAGE_KEYS = {
   INVENTORY: 'wip_inventory',
@@ -223,7 +224,7 @@ export const storageService = {
     }
   },
 
-  recordStageOut(partId: string, stageId: StageId, quantity: number, sourceLocation: 'IN' | 'OUT' = 'IN', targetStageId?: StageId) {
+  recordStageOut(partId: string, stageId: StageId, quantity: number, sourceLocation: 'IN' | 'OUT' = 'IN', targetStageId?: StageId, poId?: string) {
     // Validation: Check if source location has enough quantity
     const inventory = this.getInventory();
     const stock = inventory.find(
@@ -234,13 +235,15 @@ export const storageService = {
       throw new Error(`Lỗi: Số lượng xuất (${quantity}) lớn hơn tồn kho tại ${STAGES.find(s => s.id === stageId)?.name}_${sourceLocation} (${stock?.quantity || 0})`);
     }
 
-    let linkedPoId: string | undefined;
+    let linkedPoId = poId;
 
     // 0. Update Production Order progress if producing (IN -> OUT)
     if (sourceLocation === 'IN') {
       const pos = this.getProductionOrders();
-      // Find the first pending or in-progress PO for this part and stage
-      const poIndex = pos.findIndex(p => p.partId === partId && p.stageId === stageId && p.status !== 'COMPLETED');
+      // Find the specific PO or the first pending/in-progress one
+      const poIndex = poId 
+        ? pos.findIndex(p => p.id === poId)
+        : pos.findIndex(p => p.partId === partId && p.stageId === stageId && p.status !== 'COMPLETED');
       
       if (poIndex !== -1) {
         const po = pos[poIndex];
@@ -293,10 +296,9 @@ export const storageService = {
     const timestamp = Date.now();
     
     // ONLY generate QR data if exporting from OUT
-    // Format: partId|quantity|sourceStageId|timestamp|txId|targetStageId
-    // Removed Vietnamese names to avoid scan errors with non-UTF8 scanners
+    // Format: poIdOrPartId|quantity|sourceStageId|timestamp|txId|targetStageId
     const qrData = sourceLocation === 'OUT' 
-      ? `${partId}|${quantity}|${stageId}|${timestamp}|${txId}|${targetStageId || ''}`
+      ? `${linkedPoId || partId}|${quantity}|${stageId}|${timestamp}|${txId}|${targetStageId || ''}`
       : undefined;
 
     const newTransaction: Transaction = {
@@ -326,9 +328,21 @@ export const storageService = {
       throw new Error('Định dạng mã QR không hợp lệ hoặc không phải mã xuất kho OUT.');
     }
     
-    // New Format: partId|quantity|sourceStageId|timestamp|txId|targetStageId
-    const [partId, quantityStr, sourceStageId, , sourceTxId, targetStageId] = parts;
+    // Format: poIdOrPartId|quantity|sourceStageId|timestamp|txId|targetStageId
+    const [idOrPo, quantityStr, sourceStageId, , sourceTxId, targetStageId] = parts;
     const quantity = parseFloat(quantityStr);
+
+    let partId = idOrPo;
+    let linkedPoId: string | undefined;
+
+    if (idOrPo.startsWith('PO-')) {
+      linkedPoId = idOrPo;
+      const pos = this.getProductionOrders();
+      const po = pos.find(p => p.id === idOrPo);
+      if (po) {
+        partId = po.partId;
+      }
+    }
 
     // 1. Check if this QR (Transaction ID) has already been scanned
     const transactions = this.getTransactions();
@@ -361,6 +375,7 @@ export const storageService = {
       sourceStageId: sourceStageId as StageId,
       timestamp: Date.now(),
       qrData,
+      poId: linkedPoId
     };
     transactions.unshift(newTransaction);
     this.saveTransactions(transactions);
@@ -372,8 +387,8 @@ export const storageService = {
     return newTransaction;
   },
 
-  recordManualInbound(partId: string, stageId: StageId, location: 'IN' | 'OUT', quantity: number) {
-    let linkedPoId: string | undefined;
+  recordManualInbound(partId: string, stageId: StageId, location: 'IN' | 'OUT', quantity: number, poId?: string) {
+    let linkedPoId = poId;
 
     // Apply BOM logic if entering into OUT (Production result)
     if (location === 'OUT') {
@@ -381,7 +396,10 @@ export const storageService = {
 
       // Update PO progress
       const pos = this.getProductionOrders();
-      const poIndex = pos.findIndex(p => p.partId === partId && p.stageId === stageId && p.status !== 'COMPLETED');
+      const poIndex = poId 
+        ? pos.findIndex(p => p.id === poId)
+        : pos.findIndex(p => p.partId === partId && p.stageId === stageId && p.status !== 'COMPLETED');
+      
       if (poIndex !== -1) {
         const po = pos[poIndex];
         if (po.producedQuantity + quantity > po.targetQuantity) {
@@ -448,8 +466,10 @@ export const storageService = {
 
   createMasterPO(modelId: string, quantity: number) {
     const pos = this.getProductionOrders();
-    const masterPoId = `PO-${Date.now()}`;
     const timestamp = Date.now();
+    const dateStr = format(timestamp, 'ddMM');
+    const modelPrefix = modelId.substring(0, 8).toUpperCase();
+    const masterPoId = `PO-${modelPrefix}-${dateStr}-${Math.random().toString(36).substring(2, 5).toUpperCase()}`;
 
     // 1. Create Master PO (Model Level)
     const masterPo: ProductionOrder = {
@@ -471,7 +491,7 @@ export const storageService = {
       
       // PO for Welding
       pos.unshift({
-        id: `PO-WELD-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+        id: `PO-${modelPrefix}-${dateStr}-WELD-${Math.random().toString(36).substring(2, 4).toUpperCase()}`,
         masterPoId: masterPoId,
         partId: l1Ing.partId,
         stageId: 'WELDING',
@@ -483,7 +503,7 @@ export const storageService = {
 
       // PO for Painting
       pos.unshift({
-        id: `PO-PAINT-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+        id: `PO-${modelPrefix}-${dateStr}-PAINT-${Math.random().toString(36).substring(2, 4).toUpperCase()}`,
         masterPoId: masterPoId,
         partId: l1Ing.partId,
         stageId: 'PAINTING',
@@ -502,7 +522,7 @@ export const storageService = {
         
         // PO for Laser
         pos.unshift({
-          id: `PO-LASER-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+          id: `PO-${modelPrefix}-${dateStr}-LASER-${Math.random().toString(36).substring(2, 4).toUpperCase()}`,
           masterPoId: masterPoId,
           partId: l2Ing.ingredientPartId,
           stageId: 'LASER',
@@ -514,7 +534,7 @@ export const storageService = {
 
         // PO for Bending
         pos.unshift({
-          id: `PO-BEND-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+          id: `PO-${modelPrefix}-${dateStr}-BEND-${Math.random().toString(36).substring(2, 4).toUpperCase()}`,
           masterPoId: masterPoId,
           partId: l2Ing.ingredientPartId,
           stageId: 'BENDING',
