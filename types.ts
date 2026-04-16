@@ -29,6 +29,7 @@ export interface Transaction {
   qrData?: string;
   sourceStageId?: StageId; // For STAGE_IN, where it came from
   targetStageId?: StageId; // For STAGE_OUT, where it is intended to go
+  poId?: string; // Link to production order
 }
 
 export interface BOMDefinition {
@@ -52,11 +53,11 @@ export interface ModelBOMDefinition {
 
 export interface ProductionOrder {
   id: string;
-  masterPoId?: string; // Links to the top-level PO
-  parentPoId?: string; // Links to the immediate parent PO
+  masterPoId?: string; // Links to the top-level Model PO
   partId: string;
-  quantity: number;
-  level: number;
+  stageId?: StageId; // Which stage this PO is for (null for Model PO)
+  targetQuantity: number;
+  producedQuantity: number;
   status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
   createdAt: number;
 }

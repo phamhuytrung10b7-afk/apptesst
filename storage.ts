@@ -234,6 +234,43 @@ export const storageService = {
       throw new Error(`Lỗi: Số lượng xuất (${quantity}) lớn hơn tồn kho tại ${STAGES.find(s => s.id === stageId)?.name}_${sourceLocation} (${stock?.quantity || 0})`);
     }
 
+    let linkedPoId: string | undefined;
+
+    // 0. Update Production Order progress if producing (IN -> OUT)
+    if (sourceLocation === 'IN') {
+      const pos = this.getProductionOrders();
+      // Find the first pending or in-progress PO for this part and stage
+      const poIndex = pos.findIndex(p => p.partId === partId && p.stageId === stageId && p.status !== 'COMPLETED');
+      
+      if (poIndex !== -1) {
+        const po = pos[poIndex];
+        if (po.producedQuantity + quantity > po.targetQuantity) {
+          throw new Error(`Lỗi: Số lượng sản xuất (${po.producedQuantity + quantity}) vượt quá mục tiêu PO (${po.targetQuantity}) cho ${partId} tại ${stageId}`);
+        }
+        
+        po.producedQuantity += quantity;
+        po.status = po.producedQuantity >= po.targetQuantity ? 'COMPLETED' : 'IN_PROGRESS';
+        linkedPoId = po.id;
+
+        // Check if all sub-POs for this master are completed
+        if (po.masterPoId) {
+          const masterPo = pos.find(p => p.id === po.masterPoId);
+          if (masterPo) {
+            const otherSubs = pos.filter(p => p.masterPoId === po.masterPoId && p.id !== po.id);
+            const allSubsCompleted = po.status === 'COMPLETED' && otherSubs.every(s => s.status === 'COMPLETED');
+            if (allSubsCompleted) {
+              masterPo.status = 'COMPLETED';
+              masterPo.producedQuantity = masterPo.targetQuantity; 
+            } else {
+              masterPo.status = 'IN_PROGRESS';
+            }
+          }
+        }
+
+        this.saveProductionOrders(pos);
+      }
+    }
+
     // 1. Inventory movement
     if (sourceLocation === 'IN') {
       // Move IN -> OUT (Finish production)
@@ -270,6 +307,7 @@ export const storageService = {
       stageId,
       timestamp: Date.now(),
       qrData,
+      poId: linkedPoId
     };
     transactions.unshift(newTransaction);
     this.saveTransactions(transactions);
@@ -335,9 +373,41 @@ export const storageService = {
   },
 
   recordManualInbound(partId: string, stageId: StageId, location: 'IN' | 'OUT', quantity: number) {
+    let linkedPoId: string | undefined;
+
     // Apply BOM logic if entering into OUT (Production result)
     if (location === 'OUT') {
       this.applyBOMDeduction(partId, stageId, quantity);
+
+      // Update PO progress
+      const pos = this.getProductionOrders();
+      const poIndex = pos.findIndex(p => p.partId === partId && p.stageId === stageId && p.status !== 'COMPLETED');
+      if (poIndex !== -1) {
+        const po = pos[poIndex];
+        if (po.producedQuantity + quantity > po.targetQuantity) {
+          throw new Error(`Lỗi: Số lượng sản xuất (${po.producedQuantity + quantity}) vượt quá mục tiêu PO (${po.targetQuantity}) cho ${partId} tại ${stageId}`);
+        }
+        po.producedQuantity += quantity;
+        po.status = po.producedQuantity >= po.targetQuantity ? 'COMPLETED' : 'IN_PROGRESS';
+        linkedPoId = po.id;
+
+        // Check if all sub-POs for this master are completed
+        if (po.masterPoId) {
+          const masterPo = pos.find(p => p.id === po.masterPoId);
+          if (masterPo) {
+            const otherSubs = pos.filter(p => p.masterPoId === po.masterPoId && p.id !== po.id);
+            const allSubsCompleted = po.status === 'COMPLETED' && otherSubs.every(s => s.status === 'COMPLETED');
+            if (allSubsCompleted) {
+              masterPo.status = 'COMPLETED';
+              masterPo.producedQuantity = masterPo.targetQuantity; 
+            } else {
+              masterPo.status = 'IN_PROGRESS';
+            }
+          }
+        }
+
+        this.saveProductionOrders(pos);
+      }
     }
 
     this.updateInventory(partId, stageId, location, quantity);
@@ -350,7 +420,8 @@ export const storageService = {
       quantity,
       stageId,
       timestamp: Date.now(),
-      qrData: 'MANUAL_ENTRY'
+      qrData: 'MANUAL_ENTRY',
+      poId: linkedPoId
     };
     transactions.unshift(newTransaction);
     this.saveTransactions(transactions);
@@ -384,8 +455,8 @@ export const storageService = {
     const masterPo: ProductionOrder = {
       id: masterPoId,
       partId: modelId,
-      quantity,
-      level: 0, // Model level
+      targetQuantity: quantity,
+      producedQuantity: 0,
       status: 'PENDING',
       createdAt: timestamp
     };
@@ -397,18 +468,30 @@ export const storageService = {
     
     for (const l1Ing of level1Ingredients) {
       const l1Qty = quantity * l1Ing.quantity;
-      const l1PoId = `PO-L1-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-      const l1Po: ProductionOrder = {
-        id: l1PoId,
+      
+      // PO for Welding
+      pos.unshift({
+        id: `PO-WELD-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
         masterPoId: masterPoId,
-        parentPoId: masterPoId,
         partId: l1Ing.partId,
-        quantity: l1Qty,
-        level: 1,
+        stageId: 'WELDING',
+        targetQuantity: l1Qty,
+        producedQuantity: 0,
         status: 'PENDING',
         createdAt: timestamp
-      };
-      pos.unshift(l1Po);
+      });
+
+      // PO for Painting
+      pos.unshift({
+        id: `PO-PAINT-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+        masterPoId: masterPoId,
+        partId: l1Ing.partId,
+        stageId: 'PAINTING',
+        targetQuantity: l1Qty,
+        producedQuantity: 0,
+        status: 'PENDING',
+        createdAt: timestamp
+      });
 
       // 3. Explode to Level 2
       const bomV2 = this.getBOMV2();
@@ -416,38 +499,32 @@ export const storageService = {
       
       for (const l2Ing of level2Ingredients) {
         const l2Qty = l1Qty * l2Ing.quantity;
-        const l2PoId = `PO-L2-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-        const l2Po: ProductionOrder = {
-          id: l2PoId,
+        
+        // PO for Laser
+        pos.unshift({
+          id: `PO-LASER-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
           masterPoId: masterPoId,
-          parentPoId: l1PoId,
           partId: l2Ing.ingredientPartId,
-          quantity: l2Qty,
-          level: 2,
+          stageId: 'LASER',
+          targetQuantity: l2Qty,
+          producedQuantity: 0,
           status: 'PENDING',
           createdAt: timestamp
-        };
-        pos.unshift(l2Po);
+        });
 
-        // 4. Explode to Level 3
-        const bomV1 = this.getBOM();
-        const level3Ingredients = bomV1.filter(b => b.childPartId === l2Ing.ingredientPartId);
-        
-        for (const l3Ing of level3Ingredients) {
-          const l3Qty = l2Qty * (l3Ing.componentWeight + l3Ing.scrapWeight);
-          const l3PoId = `PO-L3-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-          const l3Po: ProductionOrder = {
-            id: l3PoId,
-            masterPoId: masterPoId,
-            parentPoId: l2PoId,
-            partId: l3Ing.parentPartId,
-            quantity: l3Qty,
-            level: 3,
-            status: 'PENDING',
-            createdAt: timestamp
-          };
-          pos.unshift(l3Po);
-        }
+        // PO for Bending
+        pos.unshift({
+          id: `PO-BEND-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+          masterPoId: masterPoId,
+          partId: l2Ing.ingredientPartId,
+          stageId: 'BENDING',
+          targetQuantity: l2Qty,
+          producedQuantity: 0,
+          status: 'PENDING',
+          createdAt: timestamp
+        });
+
+        // Level 3 is raw material (sheets), no PO needed as per request
       }
     }
 

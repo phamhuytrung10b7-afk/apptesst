@@ -689,57 +689,88 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
               <tr>
                 <th className="px-8 py-5">Mã PO</th>
                 <th className="px-8 py-5">Linh kiện / Thành phẩm</th>
-                <th className="px-8 py-5">Cấp</th>
-                <th className="px-8 py-5 text-right">Số lượng</th>
-                <th className="px-8 py-5">Ngày tạo</th>
+                <th className="px-8 py-5">Công đoạn</th>
+                <th className="px-8 py-5 text-right">Mục tiêu</th>
+                <th className="px-8 py-5 text-right">Thực tế</th>
+                <th className="px-8 py-5">Tiến độ</th>
                 <th className="px-8 py-5">Trạng thái</th>
                 <th className="px-8 py-5 text-center">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {masterOrders.map(master => (
-                <React.Fragment key={master.id}>
-                  <tr className="bg-blue-50/30 font-bold">
-                    <td className="px-8 py-5 font-mono text-blue-700">{master.id}</td>
-                    <td className="px-8 py-5">{parts.find(p => p.id === master.partId)?.name || master.partId}</td>
-                    <td className="px-8 py-5"><span className="px-2 py-1 bg-blue-600 text-white rounded text-[10px]">MODEL</span></td>
-                    <td className="px-8 py-5 text-right text-xl">{master.quantity}</td>
-                    <td className="px-8 py-5 text-gray-400 text-sm">{format(master.createdAt, 'dd/MM/yyyy HH:mm')}</td>
-                    <td className="px-8 py-5">
-                      <span className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-bold">CHỜ SẢN XUẤT</span>
-                    </td>
-                    <td className="px-8 py-5 text-center">
-                      <button 
-                        onClick={() => setShowDeleteModal(master.id)}
-                        className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </td>
-                  </tr>
-                  {orders.filter(o => o.masterPoId === master.id).sort((a, b) => a.level - b.level).map(sub => (
-                    <tr key={sub.id} className="text-sm text-gray-600">
-                      <td className="px-8 py-4 pl-16 font-mono opacity-50">{sub.id}</td>
-                      <td className="px-8 py-4">{parts.find(p => p.id === sub.partId)?.name}</td>
-                      <td className="px-8 py-4">
+              {masterOrders.map(master => {
+                const subOrders = orders.filter(o => o.masterPoId === master.id);
+                const totalTarget = subOrders.reduce((sum, o) => sum + o.targetQuantity, 0);
+                const totalProduced = subOrders.reduce((sum, o) => sum + o.producedQuantity, 0);
+                const overallProgress = totalTarget > 0 ? (totalProduced / totalTarget) * 100 : 0;
+
+                return (
+                  <React.Fragment key={master.id}>
+                    <tr className="bg-blue-50/30 font-bold">
+                      <td className="px-8 py-5 font-mono text-blue-700">{master.id}</td>
+                      <td className="px-8 py-5">{parts.find(p => p.id === master.partId)?.name || master.partId}</td>
+                      <td className="px-8 py-5"><span className="px-2 py-1 bg-blue-600 text-white rounded text-[10px]">MODEL</span></td>
+                      <td className="px-8 py-5 text-right text-xl">{master.targetQuantity}</td>
+                      <td className="px-8 py-5 text-right text-xl text-blue-600">{master.producedQuantity}</td>
+                      <td className="px-8 py-5">
+                        <div className="w-full bg-gray-200 rounded-full h-2.5">
+                          <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: `${overallProgress}%` }}></div>
+                        </div>
+                        <span className="text-[10px] opacity-50">{overallProgress.toFixed(1)}%</span>
+                      </td>
+                      <td className="px-8 py-5">
                         <span className={cn(
-                          "px-2 py-1 rounded text-[10px]",
-                          sub.level === 1 ? "bg-blue-100 text-blue-700" :
-                          sub.level === 2 ? "bg-green-100 text-green-700" : "bg-purple-100 text-purple-700"
+                          "px-3 py-1 rounded-full text-xs font-bold",
+                          master.status === 'COMPLETED' ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
                         )}>
-                          Cấp {sub.level}
+                          {master.status === 'COMPLETED' ? 'HOÀN THÀNH' : 'ĐANG CHẠY'}
                         </span>
                       </td>
-                      <td className="px-8 py-4 text-right font-bold">{sub.quantity}</td>
-                      <td className="px-8 py-4 text-gray-400 text-xs">{format(sub.createdAt, 'dd/MM HH:mm')}</td>
-                      <td className="px-8 py-4">
-                        <span className="px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full text-[10px]">THEO PO TỔNG</span>
+                      <td className="px-8 py-5 text-center">
+                        <button 
+                          onClick={() => setShowDeleteModal(master.id)}
+                          className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                        >
+                          <Trash2 size={18} />
+                        </button>
                       </td>
-                      <td className="px-8 py-4"></td>
                     </tr>
-                  ))}
-                </React.Fragment>
-              ))}
+                    {subOrders.sort((a, b) => (a.stageId || '').localeCompare(b.stageId || '')).map(sub => {
+                      const progress = (sub.producedQuantity / sub.targetQuantity) * 100;
+                      return (
+                        <tr key={sub.id} className="text-sm text-gray-600">
+                          <td className="px-8 py-4 pl-16 font-mono opacity-50">{sub.id}</td>
+                          <td className="px-8 py-4">{parts.find(p => p.id === sub.partId)?.name}</td>
+                          <td className="px-8 py-4">
+                            <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-[10px] font-bold">
+                              {STAGES.find(s => s.id === sub.stageId)?.name}
+                            </span>
+                          </td>
+                          <td className="px-8 py-4 text-right font-bold">{sub.targetQuantity}</td>
+                          <td className="px-8 py-4 text-right font-bold text-blue-600">{sub.producedQuantity}</td>
+                          <td className="px-8 py-4">
+                            <div className="w-full bg-gray-100 rounded-full h-1.5">
+                              <div className={cn(
+                                "h-1.5 rounded-full",
+                                progress >= 100 ? "bg-green-500" : "bg-blue-400"
+                              )} style={{ width: `${Math.min(progress, 100)}%` }}></div>
+                            </div>
+                          </td>
+                          <td className="px-8 py-4">
+                            <span className={cn(
+                              "px-2 py-0.5 rounded-full text-[10px] font-bold",
+                              sub.status === 'COMPLETED' ? "bg-green-50 text-green-600" : "bg-gray-100 text-gray-500"
+                            )}>
+                              {sub.status === 'COMPLETED' ? 'XONG' : 'ĐANG SX'}
+                            </span>
+                          </td>
+                          <td className="px-8 py-4"></td>
+                        </tr>
+                      );
+                    })}
+                  </React.Fragment>
+                );
+              })}
               {masterOrders.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-8 py-20 text-center text-gray-400 italic">Chưa có lệnh sản xuất nào.</td>
@@ -1504,6 +1535,10 @@ function ProduceView({
     (i: any) => i.partId === selectedPart && i.stageId === selectedStage && i.location === sourceLocation
   )?.quantity || 0;
 
+  const activePo = storageService.getProductionOrders().find(
+    p => p.partId === selectedPart && p.stageId === selectedStage && p.status !== 'COMPLETED'
+  );
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
@@ -1512,6 +1547,18 @@ function ProduceView({
       className="grid grid-cols-1 lg:grid-cols-2 gap-8"
     >
       <div className="bg-white p-10 rounded-2xl border border-gray-200 shadow-sm space-y-8">
+        {activePo && sourceLocation === 'IN' && (
+          <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl flex justify-between items-center">
+            <div>
+              <div className="text-xs font-bold uppercase text-blue-600 opacity-70">Lệnh PO đang chạy</div>
+              <div className="font-mono font-bold text-blue-800">{activePo.id}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-xs font-bold uppercase text-blue-600 opacity-70">Tiến độ</div>
+              <div className="font-mono font-bold text-blue-800">{activePo.producedQuantity} / {activePo.targetQuantity}</div>
+            </div>
+          </div>
+        )}
         <div>
           <h2 className="text-3xl font-bold tracking-tight mb-3">Xuất kho (Finish & Label)</h2>
           <p className="text-base text-gray-500">Ghi nhận hoàn thành công đoạn hoặc xuất linh kiện từ kho thành phẩm để in nhãn QR.</p>
