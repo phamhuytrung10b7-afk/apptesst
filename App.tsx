@@ -27,6 +27,7 @@ import {
   Menu,
   FileUp,
   Layers,
+  Flame,
   FileText,
   ClipboardList
 } from 'lucide-react';
@@ -55,7 +56,7 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-type View = 'dashboard' | 'produce' | 'inbound' | 'laser_inbound' | 'manual_inbound' | 'history' | 'settings' | 'labels' | 'po';
+type View = 'dashboard' | 'produce' | 'inbound' | 'laser_inbound' | 'welding_inbound' | 'manual_inbound' | 'history' | 'settings' | 'labels' | 'po';
 
 function SearchableSelect({ 
   options, 
@@ -397,10 +398,10 @@ export default function App() {
             collapsed={!isSidebarOpen}
           />
           <SidebarLink 
-            active={currentView === 'manual_inbound'} 
-            onClick={() => setCurrentView('manual_inbound')}
-            icon={<Edit2 size={24} />}
-            label="Nhập kho thủ công"
+            active={currentView === 'welding_inbound'} 
+            onClick={() => setCurrentView('welding_inbound')}
+            icon={<Flame size={24} />}
+            label="Nhập kho Hàn"
             collapsed={!isSidebarOpen}
           />
           <SidebarLink 
@@ -422,6 +423,13 @@ export default function App() {
             onClick={() => setCurrentView('history')}
             icon={<History size={24} />}
             label="Lịch sử giao dịch"
+            collapsed={!isSidebarOpen}
+          />
+          <SidebarLink 
+            active={currentView === 'manual_inbound'} 
+            onClick={() => setCurrentView('manual_inbound')}
+            icon={<Edit2 size={24} />}
+            label="Nhập kho thủ công"
             collapsed={!isSidebarOpen}
           />
           <SidebarLink 
@@ -453,6 +461,7 @@ export default function App() {
               {currentView === 'produce' && 'Xuất kho & In nhãn QR'}
               {currentView === 'inbound' && 'Nhập kho (Quét mã QR)'}
               {currentView === 'laser_inbound' && 'Nhập kho Laser (Thủ công)'}
+              {currentView === 'welding_inbound' && 'Nhập kho Hàn (Thủ công)'}
               {currentView === 'manual_inbound' && 'Nhập kho thủ công (Admin)'}
               {currentView === 'labels' && 'Danh sách nhãn QR đã xuất'}
               {currentView === 'po' && 'Quản lý Lệnh sản xuất (PO)'}
@@ -510,6 +519,13 @@ export default function App() {
               {currentView === 'laser_inbound' && (
                 <LaserInboundView 
                   key="laser_inbound"
+                  parts={parts}
+                  onManualInbound={handleManualInbound}
+                />
+              )}
+              {currentView === 'welding_inbound' && (
+                <WeldingInboundView 
+                  key="welding_inbound"
                   parts={parts}
                   onManualInbound={handleManualInbound}
                 />
@@ -1608,7 +1624,12 @@ function ProduceView({
     if (selectedStage === 'LASER' || selectedStage === 'WELDING') {
       setSourceLocation('OUT');
     }
-  }, [selectedStage]);
+
+    // Special case for Painting OUT: target is always DCLR
+    if (selectedStage === 'PAINTING' && sourceLocation === 'OUT') {
+      setTargetStageId('DCLR');
+    }
+  }, [selectedStage, sourceLocation]);
 
   const currentStock = inventory.find(
     (i: any) => i.partId === selectedPart && i.stageId === selectedStage && i.location === sourceLocation
@@ -1715,7 +1736,7 @@ function ProduceView({
             </div>
           )}
 
-          {sourceLocation === 'OUT' && (
+          {sourceLocation === 'OUT' && selectedStage !== 'PAINTING' && (
             <div className="space-y-4">
               <label className="text-sm font-bold uppercase tracking-widest opacity-50">4. Công đoạn đích (Nhập kho IN)</label>
               <select 
@@ -1727,6 +1748,15 @@ function ProduceView({
                   <option key={stage.id} value={stage.id}>{stage.name}</option>
                 ))}
               </select>
+            </div>
+          )}
+
+          {sourceLocation === 'OUT' && selectedStage === 'PAINTING' && (
+            <div className="space-y-4">
+              <label className="text-sm font-bold uppercase tracking-widest opacity-50">4. Công đoạn đích (Nhập kho IN)</label>
+              <div className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg bg-gray-50 text-gray-500">
+                DCLR (Mặc định)
+              </div>
             </div>
           )}
 
@@ -1868,6 +1898,239 @@ function ProduceView({
               <Printer size={64} strokeWidth={1} />
               <p className="mt-6 font-medium">Sau khi xác nhận sản xuất,<br />nhãn QR sẽ hiển thị tại đây để in.</p>
             </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </motion.div>
+  );
+}
+
+function WeldingInboundView({ parts, onManualInbound }: any) {
+  const [manualPart, setManualPart] = useState('');
+  const [manualQty, setManualQty] = useState(0);
+  const [selectedPoId, setSelectedPoId] = useState<string>("");
+  const [lastScanned, setLastScanned] = useState<any>(null);
+
+  const selectedStage = 'WELDING';
+  const targetLocation = 'OUT';
+
+  useEffect(() => {
+    if (parts.length > 0 && !manualPart) {
+      // For Welding OUT, Level 1 is result
+      const weldingParts = parts.filter((p: any) => p.level === 1);
+      if (weldingParts.length > 0) setManualPart(weldingParts[0].id);
+    }
+  }, [parts]);
+
+  const filteredParts = parts.filter((p: any) => p.level === 1);
+
+  useEffect(() => {
+    if (filteredParts.length > 0 && !filteredParts.find((p: any) => p.id === manualPart)) {
+      setManualPart(filteredParts[0].id);
+    }
+  }, [filteredParts, manualPart]);
+
+  const availablePos = storageService.getProductionOrders().filter(
+    p => p.partId === manualPart && p.stageId === selectedStage && p.status !== 'COMPLETED'
+  );
+
+  useEffect(() => {
+    if (availablePos.length > 0) {
+      setSelectedPoId(availablePos[0].id);
+    } else {
+      setSelectedPoId("");
+    }
+  }, [manualPart, availablePos.length]);
+
+  const handleManualSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (manualPart && manualQty > 0) {
+      try {
+        onManualInbound(manualPart, selectedStage, targetLocation, manualQty, selectedPoId);
+        setLastScanned({
+          partId: manualPart,
+          quantity: manualQty,
+          partName: parts.find((p: any) => p.id === manualPart)?.name || manualPart,
+          status: 'success',
+          isManual: true,
+          poId: selectedPoId
+        });
+        setManualQty(0);
+      } catch (err) {
+        setLastScanned({
+          partId: manualPart,
+          quantity: manualQty,
+          partName: parts.find((p: any) => p.id === manualPart)?.name || manualPart,
+          status: 'error',
+          isManual: true,
+          errorMsg: err instanceof Error ? err.message : 'Lỗi không xác định'
+        });
+      }
+    }
+  };
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8"
+    >
+      <div className="bg-white p-10 rounded-3xl border border-gray-200 shadow-xl space-y-8">
+        <div className="flex items-center gap-4 mb-2">
+          <div className="bg-blue-600 p-3 rounded-xl text-white">
+            <Flame size={24} />
+          </div>
+          <div>
+            <h3 className="text-xl font-bold uppercase tracking-tight">Nhập kho Hàn</h3>
+            <p className="text-sm text-gray-500">Nhập linh kiện (IN) hoặc kết quả hàn (OUT) thủ công</p>
+          </div>
+        </div>
+
+        <form onSubmit={handleManualSubmit} className="space-y-8 text-left">
+          <div className="grid grid-cols-2 gap-8">
+            <div className="space-y-4">
+              <label className="text-sm font-bold uppercase tracking-widest opacity-50">Công đoạn:</label>
+              <div className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg bg-gray-50 text-gray-500">
+                HÀN
+              </div>
+            </div>
+            <div className="space-y-4">
+              <label className="text-sm font-bold uppercase tracking-widest opacity-50">Vị trí nhập:</label>
+              <div className="flex bg-gray-100 p-1 rounded-xl h-[68px]">
+                <div className="flex-1 rounded-lg font-bold text-sm uppercase bg-[#F27D26] text-white shadow-sm flex items-center justify-center">
+                  Kho OUT (Thành phẩm)
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <label className="text-sm font-bold uppercase tracking-widest opacity-50">Chọn mã thành phẩm:</label>
+            <SearchableSelect 
+              options={filteredParts.map((p: any) => ({ id: p.id, label: `${p.id} - ${p.name}` }))}
+              value={manualPart}
+              onChange={setManualPart}
+              placeholder="Tìm kiếm..."
+            />
+          </div>
+
+          {targetLocation === 'OUT' && availablePos.length > 0 && (
+            <div className="space-y-4">
+              <label className="text-sm font-bold uppercase tracking-widest opacity-50">Chọn Lệnh PO (Tiến độ)</label>
+              <select 
+                value={selectedPoId}
+                onChange={(e) => setSelectedPoId(e.target.value)}
+                className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none bg-white cursor-pointer"
+              >
+                {availablePos.map(po => (
+                  <option key={po.id} value={po.id}>
+                    {po.id} ({po.producedQuantity}/{po.targetQuantity})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <label className="text-sm font-bold uppercase tracking-widest opacity-50">Số lượng nhập:</label>
+              {manualPart && (
+                <span className="text-xs font-mono font-bold text-gray-400 uppercase">
+                  Đơn vị: {parts.find((p: any) => p.id === manualPart)?.unit}
+                </span>
+              )}
+            </div>
+            <input 
+              type="number"
+              step="any"
+              value={manualQty || ''}
+              onChange={(e) => setManualQty(parseFloat(e.target.value) || 0)}
+              className="w-full p-5 rounded-xl border-2 border-gray-100 font-mono text-2xl font-bold focus:border-blue-600 outline-none"
+              placeholder="Nhập số lượng..."
+            />
+          </div>
+
+          <button 
+            type="submit"
+            className="w-full bg-blue-600 text-white py-6 rounded-xl font-bold uppercase tracking-widest flex items-center justify-center gap-4 hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 text-xl"
+          >
+            <CheckCircle2 size={28} />
+            Xác nhận nhập kho Hàn
+          </button>
+        </form>
+      </div>
+
+      <div className="flex flex-col">
+        <AnimatePresence mode="wait">
+          {lastScanned ? (
+            <motion.div
+              key="scan-result"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className={cn(
+                "p-10 rounded-3xl border-2 shadow-2xl h-full flex flex-col items-center justify-center space-y-6 bg-white",
+                lastScanned.status === 'success' ? "border-green-500" : "border-red-500"
+              )}
+            >
+              <div className={cn(
+                "w-16 h-16 rounded-full flex items-center justify-center",
+                lastScanned.status === 'success' ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"
+              )}>
+                {lastScanned.status === 'success' ? <CheckCircle2 size={32} /> : <AlertCircle size={32} />}
+              </div>
+              <div className="text-center space-y-2">
+                <h3 className="text-xl font-bold">
+                  {lastScanned.status === 'success' ? 'Nhập kho thành công!' : 'Lỗi nhập kho!'}
+                </h3>
+                <p className="text-gray-500 text-sm">
+                  {lastScanned.status === 'success' 
+                    ? 'Thông tin linh kiện vừa nhập tay:' 
+                    : lastScanned.errorMsg}
+                </p>
+              </div>
+              
+              {lastScanned.partId && (
+                <div className="w-full bg-gray-50 p-8 rounded-2xl space-y-6">
+                  <div className="flex justify-between items-center border-b border-gray-200 pb-4">
+                    <span className="text-sm font-mono uppercase opacity-50">Linh kiện</span>
+                    <span className="font-bold text-xl">{lastScanned.partName}</span>
+                  </div>
+                  <div className="flex justify-between items-center border-b border-gray-200 pb-4">
+                    <span className="text-sm font-mono uppercase opacity-50">Số lượng</span>
+                    <span className="font-bold text-2xl">{lastScanned.quantity}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-mono uppercase opacity-50">Đích</span>
+                    <div className="flex items-center gap-3 font-bold text-[#F27D26] text-xl">
+                      <span>HÀN</span>
+                      <ArrowRight size={20} />
+                      <span className="px-3 py-1 rounded text-xs bg-orange-100 text-orange-700">
+                        KHO_OUT
+                      </span>
+                    </div>
+                  </div>
+                  {lastScanned.poId && (
+                    <div className="flex justify-between items-center pt-4 border-t border-gray-200">
+                      <span className="text-xs font-mono uppercase opacity-50">Lệnh PO</span>
+                      <span className="text-sm font-bold text-blue-600">{lastScanned.poId}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <button 
+                onClick={() => setLastScanned(null)}
+                className="w-full py-4 text-sm font-bold uppercase tracking-widest text-gray-400 hover:text-[#141414] transition-colors"
+              >
+                Đóng thông báo
+              </button>
+            </motion.div>
+          ) : (
+            <div className="bg-gray-100 rounded-3xl border-2 border-dashed border-gray-300 h-full flex flex-col items-center justify-center p-12 text-center text-gray-400">
+              <Package size={64} strokeWidth={1} />
+              <p className="mt-6 font-medium">Chi tiết nhập kho Hàn<br />sẽ hiển thị tại đây.</p>
+            </div>
           )}
         </AnimatePresence>
       </div>
