@@ -55,7 +55,7 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-type View = 'dashboard' | 'produce' | 'inbound' | 'history' | 'settings' | 'labels' | 'po';
+type View = 'dashboard' | 'produce' | 'inbound' | 'laser_inbound' | 'manual_inbound' | 'history' | 'settings' | 'labels' | 'po';
 
 function SearchableSelect({ 
   options, 
@@ -160,7 +160,7 @@ export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [parts, setParts] = useState<Part[]>([]);
   const [selectedStage, setSelectedStage] = useState<StageId>(STAGES[0].id);
-  const [scanStage, setScanStage] = useState<StageId>(STAGES[0].id);
+  const [scanStage, setScanStage] = useState<StageId>(STAGES.find(s => s.id !== 'LASER')?.id || STAGES[0].id);
   const [selectedPart, setSelectedPart] = useState<string>('');
   const [quantity, setQuantity] = useState<number>(0);
   const [lastTransaction, setLastTransaction] = useState<Transaction | null>(null);
@@ -225,9 +225,9 @@ export default function App() {
     }
   };
 
-  const handleManualInbound = (partId: string, stageId: StageId, location: 'IN' | 'OUT', qty: number) => {
+  const handleManualInbound = (partId: string, stageId: StageId, location: 'IN' | 'OUT', qty: number, poId?: string) => {
     try {
-      storageService.recordManualInbound(partId, stageId, location, qty);
+      storageService.recordManualInbound(partId, stageId, location, qty, poId);
       setSuccess('Nhập kho thủ công thành công!');
       refreshData();
     } catch (err) {
@@ -385,8 +385,22 @@ export default function App() {
           <SidebarLink 
             active={currentView === 'inbound'} 
             onClick={() => setCurrentView('inbound')}
-            icon={<PackagePlus size={24} />}
-            label="Nhập kho linh kiện"
+            icon={<QrCode size={24} />}
+            label="Nhập kho (Quét mã)"
+            collapsed={!isSidebarOpen}
+          />
+          <SidebarLink 
+            active={currentView === 'laser_inbound'} 
+            onClick={() => setCurrentView('laser_inbound')}
+            icon={<Layers size={24} />}
+            label="Nhập kho Laser"
+            collapsed={!isSidebarOpen}
+          />
+          <SidebarLink 
+            active={currentView === 'manual_inbound'} 
+            onClick={() => setCurrentView('manual_inbound')}
+            icon={<Edit2 size={24} />}
+            label="Nhập kho thủ công"
             collapsed={!isSidebarOpen}
           />
           <SidebarLink 
@@ -437,7 +451,9 @@ export default function App() {
             <h2 className="font-bold text-2xl uppercase tracking-tight">
               {currentView === 'dashboard' && 'Báo cáo tồn kho WIP'}
               {currentView === 'produce' && 'Xuất kho & In nhãn QR'}
-              {currentView === 'inbound' && 'Nhập kho linh kiện'}
+              {currentView === 'inbound' && 'Nhập kho (Quét mã QR)'}
+              {currentView === 'laser_inbound' && 'Nhập kho Laser (Thủ công)'}
+              {currentView === 'manual_inbound' && 'Nhập kho thủ công (Admin)'}
               {currentView === 'labels' && 'Danh sách nhãn QR đã xuất'}
               {currentView === 'po' && 'Quản lý Lệnh sản xuất (PO)'}
               {currentView === 'history' && 'Nhật ký biến động kho'}
@@ -488,6 +504,19 @@ export default function App() {
                   selectedStage={scanStage}
                   setSelectedStage={setScanStage}
                   onScanSuccess={onScanSuccess}
+                  parts={parts}
+                />
+              )}
+              {currentView === 'laser_inbound' && (
+                <LaserInboundView 
+                  key="laser_inbound"
+                  parts={parts}
+                  onManualInbound={handleManualInbound}
+                />
+              )}
+              {currentView === 'manual_inbound' && (
+                <ManualInboundView 
+                  key="manual_inbound"
                   parts={parts}
                   onManualInbound={handleManualInbound}
                 />
@@ -1846,28 +1875,583 @@ function ProduceView({
   );
 }
 
-function InboundView({ selectedStage, setSelectedStage, onScanSuccess, parts, onManualInbound }: any) {
-  const [mode, setMode] = useState<'manual' | 'scan'>('manual');
+function LaserInboundView({ parts, onManualInbound }: any) {
   const [targetLocation, setTargetLocation] = useState<'IN' | 'OUT'>('IN');
   const [manualPart, setManualPart] = useState('');
   const [manualQty, setManualQty] = useState(0);
   const [selectedPoId, setSelectedPoId] = useState<string>("");
-  
-  const [scanInput, setScanInput] = useState('');
   const [lastScanned, setLastScanned] = useState<any>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+
+  const selectedStage = 'LASER';
 
   useEffect(() => {
-    if (mode === 'scan') {
-      inputRef.current?.focus();
+    if (parts.length > 0 && !manualPart) {
+      const laserParts = parts.filter((p: any) => targetLocation === 'IN' ? p.level === 3 : p.level === 2);
+      if (laserParts.length > 0) setManualPart(laserParts[0].id);
     }
-  }, [mode]);
+  }, [parts, targetLocation]);
+
+  const filteredParts = parts.filter((p: any) => {
+    if (targetLocation === 'IN') return p.level === 3;
+    return p.level === 2;
+  });
+
+  useEffect(() => {
+    if (filteredParts.length > 0 && !filteredParts.find((p: any) => p.id === manualPart)) {
+      setManualPart(filteredParts[0].id);
+    }
+  }, [filteredParts, manualPart]);
+
+  const availablePos = storageService.getProductionOrders().filter(
+    p => p.partId === manualPart && p.stageId === selectedStage && p.status !== 'COMPLETED'
+  );
+
+  useEffect(() => {
+    if (availablePos.length > 0) {
+      setSelectedPoId(availablePos[0].id);
+    } else {
+      setSelectedPoId("");
+    }
+  }, [manualPart, availablePos.length]);
+
+  const handleManualSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (manualPart && manualQty > 0) {
+      try {
+        onManualInbound(manualPart, selectedStage, targetLocation, manualQty, selectedPoId);
+        setLastScanned({
+          partId: manualPart,
+          quantity: manualQty,
+          partName: parts.find((p: any) => p.id === manualPart)?.name || manualPart,
+          status: 'success',
+          isManual: true,
+          poId: selectedPoId
+        });
+        setManualQty(0);
+      } catch (err) {
+        setLastScanned({
+          partId: manualPart,
+          quantity: manualQty,
+          partName: parts.find((p: any) => p.id === manualPart)?.name || manualPart,
+          status: 'error',
+          isManual: true,
+          errorMsg: err instanceof Error ? err.message : 'Lỗi không xác định'
+        });
+      }
+    }
+  };
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8"
+    >
+      <div className="bg-white p-10 rounded-3xl border border-gray-200 shadow-xl space-y-8">
+        <div className="flex items-center gap-4 mb-2">
+          <div className="bg-blue-600 p-3 rounded-xl text-white">
+            <Layers size={24} />
+          </div>
+          <div>
+            <h3 className="text-xl font-bold uppercase tracking-tight">Nhập kho Laser</h3>
+            <p className="text-sm text-gray-500">Nhập tôn (IN) hoặc kết quả cắt (OUT) thủ công</p>
+          </div>
+        </div>
+
+        <form onSubmit={handleManualSubmit} className="space-y-8 text-left">
+          <div className="grid grid-cols-2 gap-8">
+            <div className="space-y-4">
+              <label className="text-sm font-bold uppercase tracking-widest opacity-50">Công đoạn:</label>
+              <div className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg bg-gray-50 text-gray-500">
+                CẮT LASER
+              </div>
+            </div>
+            <div className="space-y-4">
+              <label className="text-sm font-bold uppercase tracking-widest opacity-50">Vị trí nhập:</label>
+              <div className="flex bg-gray-100 p-1 rounded-xl h-[68px]">
+                <button 
+                  type="button"
+                  onClick={() => setTargetLocation('IN')}
+                  className={cn(
+                    "flex-1 rounded-lg font-bold text-sm uppercase transition-all",
+                    targetLocation === 'IN' ? "bg-gray-900 text-white shadow-sm" : "text-gray-400"
+                  )}
+                >
+                  Kho IN (Tôn)
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setTargetLocation('OUT')}
+                  className={cn(
+                    "flex-1 rounded-lg font-bold text-sm uppercase transition-all",
+                    targetLocation === 'OUT' ? "bg-[#F27D26] text-white shadow-sm" : "text-gray-400"
+                  )}
+                >
+                  Kho OUT (LK)
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <label className="text-sm font-bold uppercase tracking-widest opacity-50">Chọn {targetLocation === 'IN' ? 'mã tôn' : 'mã linh kiện'}:</label>
+            <SearchableSelect 
+              options={filteredParts.map((p: any) => ({ id: p.id, label: `${p.id} - ${p.name}` }))}
+              value={manualPart}
+              onChange={setManualPart}
+              placeholder="Tìm kiếm..."
+            />
+          </div>
+
+          {targetLocation === 'OUT' && availablePos.length > 0 && (
+            <div className="space-y-4">
+              <label className="text-sm font-bold uppercase tracking-widest opacity-50">Chọn Lệnh PO (Tiến độ)</label>
+              <select 
+                value={selectedPoId}
+                onChange={(e) => setSelectedPoId(e.target.value)}
+                className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none bg-white cursor-pointer"
+              >
+                {availablePos.map(po => (
+                  <option key={po.id} value={po.id}>
+                    {po.id} ({po.producedQuantity}/{po.targetQuantity})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <label className="text-sm font-bold uppercase tracking-widest opacity-50">Số lượng nhập:</label>
+              {manualPart && (
+                <span className="text-xs font-mono font-bold text-gray-400 uppercase">
+                  Đơn vị: {parts.find((p: any) => p.id === manualPart)?.unit}
+                </span>
+              )}
+            </div>
+            <input 
+              type="number"
+              step="any"
+              value={manualQty || ''}
+              onChange={(e) => setManualQty(parseFloat(e.target.value) || 0)}
+              className="w-full p-5 rounded-xl border-2 border-gray-100 font-mono text-2xl font-bold focus:border-blue-600 outline-none"
+              placeholder="Nhập số lượng..."
+            />
+          </div>
+
+          <button 
+            type="submit"
+            className="w-full bg-blue-600 text-white py-6 rounded-xl font-bold uppercase tracking-widest flex items-center justify-center gap-4 hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 text-xl"
+          >
+            <CheckCircle2 size={28} />
+            Xác nhận nhập kho Laser
+          </button>
+        </form>
+      </div>
+
+      <div className="flex flex-col">
+        <AnimatePresence mode="wait">
+          {lastScanned ? (
+            <motion.div
+              key="scan-result"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className={cn(
+                "p-10 rounded-3xl border-2 shadow-2xl h-full flex flex-col items-center justify-center space-y-6 bg-white",
+                lastScanned.status === 'success' ? "border-green-500" : "border-red-500"
+              )}
+            >
+              <div className={cn(
+                "w-16 h-16 rounded-full flex items-center justify-center",
+                lastScanned.status === 'success' ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"
+              )}>
+                {lastScanned.status === 'success' ? <CheckCircle2 size={32} /> : <AlertCircle size={32} />}
+              </div>
+              <div className="text-center space-y-2">
+                <h3 className="text-xl font-bold">
+                  {lastScanned.status === 'success' ? 'Nhập kho thành công!' : 'Lỗi nhập kho!'}
+                </h3>
+                <p className="text-gray-500 text-sm">
+                  {lastScanned.status === 'success' 
+                    ? 'Thông tin linh kiện vừa nhập tay:' 
+                    : lastScanned.errorMsg}
+                </p>
+              </div>
+              
+              {lastScanned.partId && (
+                <div className="w-full bg-gray-50 p-8 rounded-2xl space-y-6">
+                  <div className="flex justify-between items-center border-b border-gray-200 pb-4">
+                    <span className="text-sm font-mono uppercase opacity-50">Linh kiện</span>
+                    <span className="font-bold text-xl">{lastScanned.partName}</span>
+                  </div>
+                  <div className="flex justify-between items-center border-b border-gray-200 pb-4">
+                    <span className="text-sm font-mono uppercase opacity-50">Số lượng</span>
+                    <span className="font-bold text-2xl">{lastScanned.quantity}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-mono uppercase opacity-50">Đích</span>
+                    <div className="flex items-center gap-3 font-bold text-[#F27D26] text-xl">
+                      <span>CẮT LASER</span>
+                      <ArrowRight size={20} />
+                      <span className={cn(
+                        "px-3 py-1 rounded text-xs",
+                        targetLocation === 'IN' ? "bg-blue-100 text-blue-700" : "bg-orange-100 text-orange-700"
+                      )}>
+                        KHO_{targetLocation}
+                      </span>
+                    </div>
+                  </div>
+                  {lastScanned.poId && (
+                    <div className="flex justify-between items-center pt-4 border-t border-gray-200">
+                      <span className="text-xs font-mono uppercase opacity-50">Lệnh PO</span>
+                      <span className="text-sm font-bold text-blue-600">{lastScanned.poId}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <button 
+                onClick={() => setLastScanned(null)}
+                className="w-full py-4 text-sm font-bold uppercase tracking-widest text-gray-400 hover:text-[#141414] transition-colors"
+              >
+                Đóng thông báo
+              </button>
+            </motion.div>
+          ) : (
+            <div className="bg-gray-100 rounded-3xl border-2 border-dashed border-gray-300 h-full flex flex-col items-center justify-center p-12 text-center text-gray-400">
+              <Package size={64} strokeWidth={1} />
+              <p className="mt-6 font-medium">Chi tiết nhập kho Laser<br />sẽ hiển thị tại đây.</p>
+            </div>
+          )}
+        </AnimatePresence>
+      </div>
+    </motion.div>
+  );
+}
+
+function ManualInboundView({ parts, onManualInbound }: any) {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [password, setPassword] = useState('');
+  const [selectedStage, setSelectedStage] = useState<StageId>(STAGES[0].id);
+  const [targetLocation, setTargetLocation] = useState<'IN' | 'OUT'>('IN');
+  const [manualPart, setManualPart] = useState('');
+  const [manualQty, setManualQty] = useState(0);
+  const [selectedPoId, setSelectedPoId] = useState<string>("");
+  const [lastScanned, setLastScanned] = useState<any>(null);
 
   useEffect(() => {
     if (parts.length > 0 && !manualPart) {
       setManualPart(parts[0].id);
     }
   }, [parts]);
+
+  const handleAuth = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password === 'admin123') {
+      setIsAuthenticated(true);
+    } else {
+      alert('Mật khẩu không chính xác!');
+    }
+  };
+
+  const filteredParts = parts.filter((p: any) => {
+    if (selectedStage === 'LASER') {
+      if (targetLocation === 'IN') return p.level === 3;
+      if (targetLocation === 'OUT') return p.level === 2;
+    }
+    if (selectedStage === 'BENDING') return p.level === 2;
+    if (selectedStage === 'WELDING') {
+      if (targetLocation === 'IN') return p.level === 2;
+      if (targetLocation === 'OUT') return p.level === 1;
+    }
+    if (selectedStage === 'PAINTING') return p.level === 1;
+    return true;
+  });
+
+  useEffect(() => {
+    if (filteredParts.length > 0 && !filteredParts.find((p: any) => p.id === manualPart)) {
+      setManualPart(filteredParts[0].id);
+    }
+  }, [selectedStage, filteredParts, manualPart]);
+
+  const availablePos = storageService.getProductionOrders().filter(
+    p => p.partId === manualPart && p.stageId === selectedStage && p.status !== 'COMPLETED'
+  );
+
+  useEffect(() => {
+    if (availablePos.length > 0) {
+      setSelectedPoId(availablePos[0].id);
+    } else {
+      setSelectedPoId("");
+    }
+  }, [manualPart, selectedStage, availablePos.length]);
+
+  const handleManualSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (manualPart && manualQty > 0) {
+      try {
+        onManualInbound(manualPart, selectedStage, targetLocation, manualQty, selectedPoId);
+        setLastScanned({
+          partId: manualPart,
+          quantity: manualQty,
+          partName: parts.find((p: any) => p.id === manualPart)?.name || manualPart,
+          status: 'success',
+          isManual: true,
+          poId: selectedPoId
+        });
+        setManualQty(0);
+      } catch (err) {
+        setLastScanned({
+          partId: manualPart,
+          quantity: manualQty,
+          partName: parts.find((p: any) => p.id === manualPart)?.name || manualPart,
+          status: 'error',
+          isManual: true,
+          errorMsg: err instanceof Error ? err.message : 'Lỗi không xác định'
+        });
+      }
+    }
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="max-w-md mx-auto mt-20 bg-white p-10 rounded-3xl border border-gray-200 shadow-2xl text-center space-y-8"
+      >
+        <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center mx-auto">
+          <AlertCircle size={40} />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-2xl font-bold uppercase tracking-tight">Xác thực Admin</h2>
+          <p className="text-gray-500 text-sm">Vui lòng nhập mật khẩu để sử dụng chức năng nhập kho thủ công.</p>
+        </div>
+        <form onSubmit={handleAuth} className="space-y-6">
+          <input 
+            autoFocus
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Nhập mật khẩu..."
+            className="w-full p-5 rounded-xl border-2 border-gray-100 text-center font-mono text-xl focus:border-orange-500 outline-none"
+          />
+          <button 
+            type="submit"
+            className="w-full bg-orange-600 text-white py-5 rounded-xl font-bold uppercase tracking-widest hover:bg-orange-700 transition-all shadow-lg shadow-orange-200"
+          >
+            Mở khóa chức năng
+          </button>
+        </form>
+      </motion.div>
+    );
+  }
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8"
+    >
+      <div className="bg-white p-10 rounded-3xl border border-gray-200 shadow-xl space-y-8">
+        <div className="flex items-center gap-4 mb-2">
+          <div className="bg-orange-600 p-3 rounded-xl text-white">
+            <Edit2 size={24} />
+          </div>
+          <div>
+            <h3 className="text-xl font-bold uppercase tracking-tight">Nhập kho thủ công (Admin)</h3>
+            <p className="text-sm text-gray-500">Điều chỉnh tồn kho bằng cách nhập liệu trực tiếp</p>
+          </div>
+        </div>
+
+        <form onSubmit={handleManualSubmit} className="space-y-8 text-left">
+          <div className="grid grid-cols-2 gap-8">
+            <div className="space-y-4">
+              <label className="text-sm font-bold uppercase tracking-widest opacity-50">Công đoạn tiếp nhận:</label>
+              <select 
+                value={selectedStage}
+                onChange={(e) => setSelectedStage(e.target.value as StageId)}
+                className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none bg-white cursor-pointer"
+              >
+                {STAGES.map(stage => (
+                  <option key={stage.id} value={stage.id}>{stage.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-4">
+              <label className="text-sm font-bold uppercase tracking-widest opacity-50">Vị trí nhập:</label>
+              <div className="flex bg-gray-100 p-1 rounded-xl h-[68px]">
+                <button 
+                  type="button"
+                  onClick={() => setTargetLocation('IN')}
+                  className={cn(
+                    "flex-1 rounded-lg font-bold text-sm uppercase transition-all",
+                    targetLocation === 'IN' ? "bg-gray-900 text-white shadow-sm" : "text-gray-400"
+                  )}
+                >
+                  Kho IN
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setTargetLocation('OUT')}
+                  className={cn(
+                    "flex-1 rounded-lg font-bold text-sm uppercase transition-all",
+                    targetLocation === 'OUT' ? "bg-[#F27D26] text-white shadow-sm" : "text-gray-400"
+                  )}
+                >
+                  Kho OUT
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <label className="text-sm font-bold uppercase tracking-widest opacity-50">Chọn linh kiện:</label>
+            <SearchableSelect 
+              options={filteredParts.map((p: any) => ({ id: p.id, label: `${p.id} - ${p.name}` }))}
+              value={manualPart}
+              onChange={setManualPart}
+              placeholder="Tìm mã linh kiện..."
+            />
+          </div>
+
+          {availablePos.length > 0 && (
+            <div className="space-y-4">
+              <label className="text-sm font-bold uppercase tracking-widest opacity-50">Chọn Lệnh PO (Tiến độ)</label>
+              <select 
+                value={selectedPoId}
+                onChange={(e) => setSelectedPoId(e.target.value)}
+                className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none bg-white cursor-pointer"
+              >
+                {availablePos.map(po => (
+                  <option key={po.id} value={po.id}>
+                    {po.id} ({po.producedQuantity}/{po.targetQuantity})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <label className="text-sm font-bold uppercase tracking-widest opacity-50">Số lượng nhập:</label>
+              {manualPart && (
+                <span className="text-xs font-mono font-bold text-gray-400 uppercase">
+                  Đơn vị: {parts.find((p: any) => p.id === manualPart)?.unit}
+                </span>
+              )}
+            </div>
+            <input 
+              type="number"
+              step="any"
+              value={manualQty || ''}
+              onChange={(e) => setManualQty(parseFloat(e.target.value) || 0)}
+              className="w-full p-5 rounded-xl border-2 border-gray-100 font-mono text-2xl font-bold focus:border-blue-600 outline-none"
+              placeholder="Nhập số lượng..."
+            />
+          </div>
+
+          <button 
+            type="submit"
+            className="w-full bg-blue-600 text-white py-6 rounded-xl font-bold uppercase tracking-widest flex items-center justify-center gap-4 hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 text-xl"
+          >
+            <CheckCircle2 size={28} />
+            Xác nhận nhập kho thủ công
+          </button>
+        </form>
+      </div>
+
+      <div className="flex flex-col">
+        <AnimatePresence mode="wait">
+          {lastScanned ? (
+            <motion.div
+              key="scan-result"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className={cn(
+                "p-10 rounded-3xl border-2 shadow-2xl h-full flex flex-col items-center justify-center space-y-6 bg-white",
+                lastScanned.status === 'success' ? "border-green-500" : "border-red-500"
+              )}
+            >
+              <div className={cn(
+                "w-16 h-16 rounded-full flex items-center justify-center",
+                lastScanned.status === 'success' ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"
+              )}>
+                {lastScanned.status === 'success' ? <CheckCircle2 size={32} /> : <AlertCircle size={32} />}
+              </div>
+              <div className="text-center space-y-2">
+                <h3 className="text-xl font-bold">
+                  {lastScanned.status === 'success' ? 'Nhập kho thành công!' : 'Lỗi nhập kho!'}
+                </h3>
+                <p className="text-gray-500 text-sm">
+                  {lastScanned.status === 'success' 
+                    ? 'Thông tin linh kiện vừa nhập tay:' 
+                    : lastScanned.errorMsg}
+                </p>
+              </div>
+              
+              {lastScanned.partId && (
+                <div className="w-full bg-gray-50 p-8 rounded-2xl space-y-6">
+                  <div className="flex justify-between items-center border-b border-gray-200 pb-4">
+                    <span className="text-sm font-mono uppercase opacity-50">Linh kiện</span>
+                    <span className="font-bold text-xl">{lastScanned.partName}</span>
+                  </div>
+                  <div className="flex justify-between items-center border-b border-gray-200 pb-4">
+                    <span className="text-sm font-mono uppercase opacity-50">Số lượng</span>
+                    <span className="font-bold text-2xl">{lastScanned.quantity}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-mono uppercase opacity-50">Đích</span>
+                    <div className="flex items-center gap-3 font-bold text-[#F27D26] text-xl">
+                      <span>{STAGES.find(s => s.id === selectedStage)?.name}</span>
+                      <ArrowRight size={20} />
+                      <span className={cn(
+                        "px-3 py-1 rounded text-xs",
+                        targetLocation === 'IN' ? "bg-blue-100 text-blue-700" : "bg-orange-100 text-orange-700"
+                      )}>
+                        KHO_{targetLocation}
+                      </span>
+                    </div>
+                  </div>
+                  {lastScanned.poId && (
+                    <div className="flex justify-between items-center pt-4 border-t border-gray-200">
+                      <span className="text-xs font-mono uppercase opacity-50">Lệnh PO</span>
+                      <span className="text-sm font-bold text-blue-600">{lastScanned.poId}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <button 
+                onClick={() => setLastScanned(null)}
+                className="w-full py-4 text-sm font-bold uppercase tracking-widest text-gray-400 hover:text-[#141414] transition-colors"
+              >
+                Đóng thông báo
+              </button>
+            </motion.div>
+          ) : (
+            <div className="bg-gray-100 rounded-3xl border-2 border-dashed border-gray-300 h-full flex flex-col items-center justify-center p-12 text-center text-gray-400">
+              <Package size={64} strokeWidth={1} />
+              <p className="mt-6 font-medium">Chi tiết nhập kho thủ công<br />sẽ hiển thị tại đây.</p>
+            </div>
+          )}
+        </AnimatePresence>
+      </div>
+    </motion.div>
+  );
+}
+
+function InboundView({ selectedStage, setSelectedStage, onScanSuccess, parts }: any) {
+  const [targetLocation, setTargetLocation] = useState<'IN' | 'OUT'>('IN');
+  const [scanInput, setScanInput] = useState('');
+  const [lastScanned, setLastScanned] = useState<any>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
 
   const handleScanSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1914,67 +2498,6 @@ function InboundView({ selectedStage, setSelectedStage, onScanSuccess, parts, on
     }
   };
 
-  // Filter parts for manual entry based on stage
-  const filteredParts = parts.filter((p: any) => {
-    if (selectedStage === 'LASER') {
-      if (targetLocation === 'IN') return p.level === 3;
-      if (targetLocation === 'OUT') return p.level === 2;
-    }
-    if (selectedStage === 'BENDING') return p.level === 2;
-    if (selectedStage === 'WELDING') {
-      if (targetLocation === 'IN') return p.level === 2;
-      if (targetLocation === 'OUT') return p.level === 1;
-    }
-    if (selectedStage === 'PAINTING') return p.level === 1;
-    return true;
-  });
-
-  // Auto-select first filtered part if current selection is not in list
-  useEffect(() => {
-    if (mode === 'manual' && filteredParts.length > 0 && !filteredParts.find((p: any) => p.id === manualPart)) {
-      setManualPart(filteredParts[0].id);
-    }
-  }, [selectedStage, filteredParts, manualPart, setManualPart, mode]);
-
-  const availablePos = storageService.getProductionOrders().filter(
-    p => p.partId === manualPart && p.stageId === selectedStage && p.status !== 'COMPLETED'
-  );
-
-  useEffect(() => {
-    if (availablePos.length > 0) {
-      setSelectedPoId(availablePos[0].id);
-    } else {
-      setSelectedPoId("");
-    }
-  }, [manualPart, selectedStage, availablePos.length]);
-
-  const handleManualSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (manualPart && manualQty > 0) {
-      try {
-        onManualInbound(manualPart, selectedStage, targetLocation, manualQty, selectedPoId);
-        setLastScanned({
-          partId: manualPart,
-          quantity: manualQty,
-          partName: parts.find((p: any) => p.id === manualPart)?.name || manualPart,
-          status: 'success',
-          isManual: true,
-          poId: selectedPoId
-        });
-        setManualQty(0);
-      } catch (err) {
-        setLastScanned({
-          partId: manualPart,
-          quantity: manualQty,
-          partName: parts.find((p: any) => p.id === manualPart)?.name || manualPart,
-          status: 'error',
-          isManual: true,
-          errorMsg: err instanceof Error ? err.message : 'Lỗi không xác định'
-        });
-      }
-    }
-  };
-
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
@@ -1983,27 +2506,14 @@ function InboundView({ selectedStage, setSelectedStage, onScanSuccess, parts, on
       className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8"
     >
       <div className="bg-white p-10 rounded-3xl border border-gray-200 shadow-xl space-y-8">
-        <div className="flex bg-gray-100 p-1.5 rounded-2xl">
-          <button 
-            onClick={() => setMode('manual')}
-            className={cn(
-              "flex-1 py-4 rounded-xl font-bold text-base uppercase tracking-widest transition-all flex items-center justify-center gap-3",
-              mode === 'manual' ? "bg-white text-gray-900 shadow-sm" : "text-gray-400 hover:text-gray-600"
-            )}
-          >
-            <Edit2 size={22} />
-            Nhập kho thủ công
-          </button>
-          <button 
-            onClick={() => setMode('scan')}
-            className={cn(
-              "flex-1 py-4 rounded-xl font-bold text-base uppercase tracking-widest transition-all flex items-center justify-center gap-3",
-              mode === 'scan' ? "bg-white text-gray-900 shadow-sm" : "text-gray-400 hover:text-gray-600"
-            )}
-          >
-            <QrCode size={22} />
-            Nhập bằng mã (QR)
-          </button>
+        <div className="flex items-center gap-4 mb-2">
+          <div className="bg-blue-600 p-3 rounded-xl text-white">
+            <QrCode size={24} />
+          </div>
+          <div>
+            <h3 className="text-xl font-bold uppercase tracking-tight">Nhập kho bằng mã QR</h3>
+            <p className="text-sm text-gray-500">Sử dụng súng quét để nhập linh kiện vào kho</p>
+          </div>
         </div>
 
         <div className="space-y-8">
@@ -2012,10 +2522,10 @@ function InboundView({ selectedStage, setSelectedStage, onScanSuccess, parts, on
               <label className="text-sm font-bold uppercase tracking-widest opacity-50">Công đoạn tiếp nhận:</label>
               <select 
                 value={selectedStage}
-                onChange={(e) => setSelectedStage(e.target.value)}
+                onChange={(e) => setSelectedStage(e.target.value as StageId)}
                 className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none bg-white cursor-pointer"
               >
-                {STAGES.map(stage => (
+                {STAGES.filter(s => s.id !== 'LASER').map(stage => (
                   <option key={stage.id} value={stage.id}>{stage.name}</option>
                 ))}
               </select>
@@ -2023,128 +2533,41 @@ function InboundView({ selectedStage, setSelectedStage, onScanSuccess, parts, on
             <div className="space-y-4 text-left">
               <label className="text-sm font-bold uppercase tracking-widest opacity-50">Vị trí nhập:</label>
               <div className="flex bg-gray-100 p-1 rounded-xl h-[68px]">
-                <button 
-                  onClick={() => setTargetLocation('IN')}
-                  className={cn(
-                    "flex-1 rounded-lg font-bold text-sm uppercase transition-all",
-                    targetLocation === 'IN' ? "bg-gray-900 text-white shadow-sm" : "text-gray-400"
-                  )}
-                >
+                <div className="flex-1 rounded-lg font-bold text-sm uppercase bg-gray-900 text-white shadow-sm flex items-center justify-center">
                   Kho IN
-                </button>
-                {mode === 'manual' && (
-                  <button 
-                    onClick={() => setTargetLocation('OUT')}
-                    className={cn(
-                      "flex-1 rounded-lg font-bold text-sm uppercase transition-all",
-                      targetLocation === 'OUT' ? "bg-[#F27D26] text-white shadow-sm" : "text-gray-400"
-                    )}
-                  >
-                    Kho OUT
-                  </button>
-                )}
+                </div>
               </div>
             </div>
           </div>
 
-          {mode === 'scan' ? (
-            <form onSubmit={handleScanSubmit} className="space-y-8">
-              <div className="relative">
-                <input 
-                  ref={inputRef}
-                  type="text"
-                  value={scanInput}
-                  onChange={(e) => setScanInput(e.target.value)}
-                  placeholder="Nhập mã hoặc dùng súng quét..."
-                  className="w-full p-10 rounded-3xl border-4 border-gray-900 bg-gray-50 text-center font-mono text-3xl font-bold focus:ring-8 ring-black/5 outline-none placeholder:text-gray-300"
-                  autoComplete="off"
-                />
-                <div className="absolute right-8 top-1/2 -translate-y-1/2 flex items-center gap-3 text-xs font-mono font-bold text-blue-600 bg-blue-50 px-4 py-2 rounded-full border border-blue-100">
-                  <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                  READY
-                </div>
+          <form onSubmit={handleScanSubmit} className="space-y-8">
+            <div className="relative">
+              <input 
+                ref={inputRef}
+                type="text"
+                value={scanInput}
+                onChange={(e) => setScanInput(e.target.value)}
+                placeholder="Nhập mã hoặc dùng súng quét..."
+                className="w-full p-10 rounded-3xl border-4 border-gray-900 bg-gray-50 text-center font-mono text-3xl font-bold focus:ring-8 ring-black/5 outline-none placeholder:text-gray-300"
+                autoComplete="off"
+              />
+              <div className="absolute right-8 top-1/2 -translate-y-1/2 flex items-center gap-3 text-xs font-mono font-bold text-blue-600 bg-blue-50 px-4 py-2 rounded-full border border-blue-100">
+                <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                READY
               </div>
-              <p className="text-xs font-mono text-gray-400 uppercase tracking-widest text-center">Hệ thống xử lý sau khi nhập mã hoặc súng quét gửi dữ liệu</p>
-            </form>
-          ) : (
-            <form onSubmit={handleManualSubmit} className="space-y-8 text-left">
-              <div className="space-y-4">
-                <label className="text-sm font-bold uppercase tracking-widest opacity-50">Chọn linh kiện:</label>
-                <SearchableSelect 
-                  options={filteredParts.map((p: any) => ({ id: p.id, label: `${p.id} - ${p.name}` }))}
-                  value={manualPart}
-                  onChange={setManualPart}
-                  placeholder="Tìm mã linh kiện..."
-                />
-              </div>
-
-              {targetLocation === 'OUT' && availablePos.length > 0 && (
-                <div className="space-y-4">
-                  <label className="text-sm font-bold uppercase tracking-widest opacity-50">Chọn Lệnh PO (Tiến độ)</label>
-                  <select 
-                    value={selectedPoId}
-                    onChange={(e) => setSelectedPoId(e.target.value)}
-                    className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none bg-white cursor-pointer"
-                  >
-                    {availablePos.map(po => (
-                      <option key={po.id} value={po.id}>
-                        {po.id} ({po.producedQuantity}/{po.targetQuantity})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <label className="text-sm font-bold uppercase tracking-widest opacity-50">Số lượng nhập:</label>
-                  {manualPart && (
-                    <span className="text-xs font-mono font-bold text-gray-400 uppercase">
-                      Đơn vị: {parts.find((p: any) => p.id === manualPart)?.unit}
-                    </span>
-                  )}
-                </div>
-                <input 
-                  type="number"
-                  step="any"
-                  value={manualQty || ''}
-                  onChange={(e) => setManualQty(parseFloat(e.target.value) || 0)}
-                  className="w-full p-5 rounded-xl border-2 border-gray-100 font-mono text-2xl font-bold focus:border-blue-600 outline-none"
-                  placeholder="Nhập số lượng..."
-                />
-              </div>
-              <button 
-                type="submit"
-                className="w-full bg-blue-600 text-white py-6 rounded-xl font-bold uppercase tracking-widest flex items-center justify-center gap-4 hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 text-xl"
-              >
-                <CheckCircle2 size={28} />
-                Xác nhận nhập kho
-              </button>
-            </form>
-          )}
+            </div>
+            <p className="text-xs font-mono text-gray-400 uppercase tracking-widest text-center">Hệ thống xử lý sau khi nhập mã hoặc súng quét gửi dữ liệu</p>
+          </form>
         </div>
 
-        <div className="grid grid-cols-2 gap-8 pt-6">
-          <div className="p-8 bg-blue-50 border border-blue-100 rounded-3xl text-left space-y-3">
-            <div className="flex items-center gap-3 text-blue-600">
-              <AlertCircle size={22} />
-              <span className="font-bold text-sm uppercase">Hướng dẫn</span>
-            </div>
-            <p className="text-sm text-blue-800 leading-relaxed">
-              {mode === 'scan' 
-                ? 'Súng quét sẽ tự động gửi mã và phím "Enter". Nếu súng không tự gửi, hãy nhấn Enter trên bàn phím.'
-                : 'Nhập tay thông tin linh kiện và số lượng, sau đó nhấn Enter hoặc nút Xác nhận.'}
-            </p>
+        <div className="p-8 bg-blue-50 border border-blue-100 rounded-3xl text-left space-y-3">
+          <div className="flex items-center gap-3 text-blue-600">
+            <AlertCircle size={22} />
+            <span className="font-bold text-sm uppercase">Hướng dẫn</span>
           </div>
-          <div className="p-8 bg-orange-50 border border-orange-100 rounded-3xl text-left space-y-3">
-            <div className="flex items-center gap-3 text-orange-600">
-              <CheckCircle2 size={22} />
-              <span className="font-bold text-sm uppercase">Linh hoạt</span>
-            </div>
-            <p className="text-sm text-orange-800 leading-relaxed">
-              Bạn có thể nhập trực tiếp vào kho IN hoặc kho OUT của bất kỳ công đoạn nào để điều chỉnh tồn kho.
-            </p>
-          </div>
+          <p className="text-sm text-blue-800 leading-relaxed">
+            Súng quét sẽ tự động gửi mã và phím "Enter". Nếu súng không tự gửi, hãy nhấn Enter trên bàn phím.
+          </p>
         </div>
       </div>
 
