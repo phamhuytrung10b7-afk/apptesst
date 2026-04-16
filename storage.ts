@@ -263,13 +263,26 @@ export const storageService = {
             const allSubsCompleted = po.status === 'COMPLETED' && otherSubs.every(s => s.status === 'COMPLETED');
             if (allSubsCompleted) {
               masterPo.status = 'COMPLETED';
-              masterPo.producedQuantity = masterPo.targetQuantity; 
+              // masterPo.producedQuantity = masterPo.targetQuantity; 
             } else {
               masterPo.status = 'IN_PROGRESS';
             }
           }
         }
 
+        this.saveProductionOrders(pos);
+      }
+    } else if (sourceLocation === 'OUT') {
+      // EXPORTING: Update exportedQuantity
+      const pos = this.getProductionOrders();
+      const poIndex = poId ? pos.findIndex(p => p.id === poId) : -1;
+      
+      if (poIndex !== -1) {
+        const po = pos[poIndex];
+        if ((po.exportedQuantity || 0) + quantity > po.producedQuantity) {
+          throw new Error(`Lỗi: Số lượng xuất (${(po.exportedQuantity || 0) + quantity}) vượt quá số lượng đã sản xuất (${po.producedQuantity}) cho PO ${po.id}`);
+        }
+        po.exportedQuantity = (po.exportedQuantity || 0) + quantity;
         this.saveProductionOrders(pos);
       }
     }
@@ -363,7 +376,9 @@ export const storageService = {
     }
 
     // 3. Add to currentStage target location
-    this.updateInventory(partId, currentStageId, targetLocation, quantity);
+    // FORCE targetLocation to 'IN' when scanning QR code as per user request
+    const finalTargetLocation = 'IN';
+    this.updateInventory(partId, currentStageId, finalTargetLocation, quantity);
 
     // 4. Record transaction
     const newTransaction: Transaction = {
@@ -417,7 +432,7 @@ export const storageService = {
             const allSubsCompleted = po.status === 'COMPLETED' && otherSubs.every(s => s.status === 'COMPLETED');
             if (allSubsCompleted) {
               masterPo.status = 'COMPLETED';
-              masterPo.producedQuantity = masterPo.targetQuantity; 
+              // masterPo.producedQuantity = masterPo.targetQuantity; 
             } else {
               masterPo.status = 'IN_PROGRESS';
             }
@@ -469,7 +484,15 @@ export const storageService = {
     const timestamp = Date.now();
     const dateStr = format(timestamp, 'ddMM');
     const modelPrefix = modelId.substring(0, 8).toUpperCase();
-    const masterPoId = `PO-${modelPrefix}-${dateStr}-${Math.random().toString(36).substring(2, 5).toUpperCase()}`;
+    const generateUniqueId = (prefix: string) => {
+      let newId = "";
+      do {
+        newId = `${prefix}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+      } while (pos.some(p => p.id === newId));
+      return newId;
+    };
+
+    const masterPoId = generateUniqueId(`PO-${modelPrefix}-${dateStr}`);
 
     // 1. Create Master PO (Model Level)
     const masterPo: ProductionOrder = {
@@ -477,6 +500,7 @@ export const storageService = {
       partId: modelId,
       targetQuantity: quantity,
       producedQuantity: 0,
+      exportedQuantity: 0,
       status: 'PENDING',
       createdAt: timestamp
     };
@@ -491,24 +515,26 @@ export const storageService = {
       
       // PO for Welding
       pos.unshift({
-        id: `PO-${modelPrefix}-${dateStr}-WELD-${Math.random().toString(36).substring(2, 4).toUpperCase()}`,
+        id: generateUniqueId(`PO-${modelPrefix}-${dateStr}-WELD`),
         masterPoId: masterPoId,
         partId: l1Ing.partId,
         stageId: 'WELDING',
         targetQuantity: l1Qty,
         producedQuantity: 0,
+        exportedQuantity: 0,
         status: 'PENDING',
         createdAt: timestamp
       });
 
       // PO for Painting
       pos.unshift({
-        id: `PO-${modelPrefix}-${dateStr}-PAINT-${Math.random().toString(36).substring(2, 4).toUpperCase()}`,
+        id: generateUniqueId(`PO-${modelPrefix}-${dateStr}-PAINT`),
         masterPoId: masterPoId,
         partId: l1Ing.partId,
         stageId: 'PAINTING',
         targetQuantity: l1Qty,
         producedQuantity: 0,
+        exportedQuantity: 0,
         status: 'PENDING',
         createdAt: timestamp
       });
@@ -522,29 +548,29 @@ export const storageService = {
         
         // PO for Laser
         pos.unshift({
-          id: `PO-${modelPrefix}-${dateStr}-LASER-${Math.random().toString(36).substring(2, 4).toUpperCase()}`,
+          id: generateUniqueId(`PO-${modelPrefix}-${dateStr}-LASER`),
           masterPoId: masterPoId,
           partId: l2Ing.ingredientPartId,
           stageId: 'LASER',
           targetQuantity: l2Qty,
           producedQuantity: 0,
+          exportedQuantity: 0,
           status: 'PENDING',
           createdAt: timestamp
         });
 
         // PO for Bending
         pos.unshift({
-          id: `PO-${modelPrefix}-${dateStr}-BEND-${Math.random().toString(36).substring(2, 4).toUpperCase()}`,
+          id: generateUniqueId(`PO-${modelPrefix}-${dateStr}-BEND`),
           masterPoId: masterPoId,
           partId: l2Ing.ingredientPartId,
           stageId: 'BENDING',
           targetQuantity: l2Qty,
           producedQuantity: 0,
+          exportedQuantity: 0,
           status: 'PENDING',
           createdAt: timestamp
         });
-
-        // Level 3 is raw material (sheets), no PO needed as per request
       }
     }
 

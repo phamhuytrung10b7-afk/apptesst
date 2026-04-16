@@ -58,6 +58,7 @@ export interface ProductionOrder {
   stageId?: StageId; // Which stage this PO is for (null for Model PO)
   targetQuantity: number;
   producedQuantity: number;
+  exportedQuantity: number;
   status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
   createdAt: number;
 }

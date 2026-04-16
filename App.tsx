@@ -601,10 +601,21 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
   const [quantity, setQuantity] = useState(0);
   const [showDeleteModal, setShowDeleteModal] = useState<string | null>(null);
   const [password, setPassword] = useState("");
+  const [expandedMasterPos, setExpandedMasterPos] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setOrders(storageService.getProductionOrders());
   }, []);
+
+  const toggleExpand = (masterPoId: string) => {
+    const newExpanded = new Set(expandedMasterPos);
+    if (newExpanded.has(masterPoId)) {
+      newExpanded.delete(masterPoId);
+    } else {
+      newExpanded.add(masterPoId);
+    }
+    setExpandedMasterPos(newExpanded);
+  };
 
   const handleCreatePO = (e: React.FormEvent) => {
     e.preventDefault();
@@ -692,26 +703,40 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
                 <th className="px-8 py-5">Công đoạn</th>
                 <th className="px-8 py-5 text-right">Mục tiêu</th>
                 <th className="px-8 py-5 text-right">Thực tế</th>
+                <th className="px-8 py-5 text-right">Đã xuất</th>
                 <th className="px-8 py-5">Tiến độ</th>
                 <th className="px-8 py-5">Trạng thái</th>
                 <th className="px-8 py-5 text-center">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {masterOrders.map(master => {
+              {masterOrders.map((master, idx) => {
                 const subOrders = orders.filter(o => o.masterPoId === master.id);
                 const totalTarget = subOrders.reduce((sum, o) => sum + o.targetQuantity, 0);
                 const totalProduced = subOrders.reduce((sum, o) => sum + o.producedQuantity, 0);
                 const overallProgress = totalTarget > 0 ? (totalProduced / totalTarget) * 100 : 0;
+                const isExpanded = expandedMasterPos.has(master.id);
 
                 return (
-                  <React.Fragment key={master.id}>
-                    <tr className="bg-blue-50/30 font-bold">
-                      <td className="px-8 py-5 font-mono text-blue-700">{master.id}</td>
+                  <React.Fragment key={`${master.id}-${idx}`}>
+                    <tr 
+                      className={cn(
+                        "bg-blue-50/30 font-bold cursor-pointer hover:bg-blue-50 transition-colors group",
+                        isExpanded && "bg-blue-100/50"
+                      )}
+                      onClick={() => toggleExpand(master.id)}
+                    >
+                      <td className="px-8 py-5 font-mono text-blue-700 flex items-center gap-3">
+                        <div className={cn("transition-transform duration-200", isExpanded ? "rotate-90" : "rotate-0")}>
+                          <ChevronRight size={18} />
+                        </div>
+                        {master.id}
+                      </td>
                       <td className="px-8 py-5">{parts.find(p => p.id === master.partId)?.name || master.partId}</td>
                       <td className="px-8 py-5"><span className="px-2 py-1 bg-blue-600 text-white rounded text-[10px]">MODEL</span></td>
                       <td className="px-8 py-5 text-right text-xl">{master.targetQuantity}</td>
                       <td className="px-8 py-5 text-right text-xl text-blue-600">{master.producedQuantity}</td>
+                      <td className="px-8 py-5 text-right text-xl text-orange-600">{master.exportedQuantity || 0}</td>
                       <td className="px-8 py-5">
                         <div className="w-full bg-gray-200 rounded-full h-2.5">
                           <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: `${overallProgress}%` }}></div>
@@ -728,17 +753,20 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
                       </td>
                       <td className="px-8 py-5 text-center">
                         <button 
-                          onClick={() => setShowDeleteModal(master.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowDeleteModal(master.id);
+                          }}
                           className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
                         >
                           <Trash2 size={18} />
                         </button>
                       </td>
                     </tr>
-                    {subOrders.sort((a, b) => (a.stageId || '').localeCompare(b.stageId || '')).map(sub => {
+                    {isExpanded && subOrders.sort((a, b) => (a.stageId || '').localeCompare(b.stageId || '')).map((sub, subIdx) => {
                       const progress = (sub.producedQuantity / sub.targetQuantity) * 100;
                       return (
-                        <tr key={sub.id} className="text-sm text-gray-600">
+                        <tr key={`${sub.id}-${subIdx}`} className="text-sm text-gray-600 bg-gray-50/50">
                           <td className="px-8 py-4 pl-16 font-mono opacity-50">{sub.id}</td>
                           <td className="px-8 py-4">{parts.find(p => p.id === sub.partId)?.name}</td>
                           <td className="px-8 py-4">
@@ -748,6 +776,7 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
                           </td>
                           <td className="px-8 py-4 text-right font-bold">{sub.targetQuantity}</td>
                           <td className="px-8 py-4 text-right font-bold text-blue-600">{sub.producedQuantity}</td>
+                          <td className="px-8 py-4 text-right font-bold text-orange-600">{sub.exportedQuantity || 0}</td>
                           <td className="px-8 py-4">
                             <div className="w-full bg-gray-100 rounded-full h-1.5">
                               <div className={cn(
@@ -1566,15 +1595,19 @@ function ProduceView({
       className="grid grid-cols-1 lg:grid-cols-2 gap-8"
     >
       <div className="bg-white p-10 rounded-2xl border border-gray-200 shadow-sm space-y-8">
-        {activePo && sourceLocation === 'IN' && (
+        {activePo && (
           <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl flex justify-between items-center">
             <div>
               <div className="text-xs font-bold uppercase text-blue-600 opacity-70">Lệnh PO đang chạy</div>
               <div className="font-mono font-bold text-blue-800">{activePo.id}</div>
             </div>
             <div className="text-right">
-              <div className="text-xs font-bold uppercase text-blue-600 opacity-70">Tiến độ</div>
-              <div className="font-mono font-bold text-blue-800">{activePo.producedQuantity} / {activePo.targetQuantity}</div>
+              <div className="text-xs font-bold uppercase text-blue-600 opacity-70">
+                {sourceLocation === 'IN' ? 'Tiến độ SX' : 'Tiến độ Xuất'}
+              </div>
+              <div className="font-mono font-bold text-blue-800">
+                {sourceLocation === 'IN' ? activePo.producedQuantity : activePo.exportedQuantity || 0} / {activePo.targetQuantity}
+              </div>
             </div>
           </div>
         )}
@@ -1636,7 +1669,7 @@ function ProduceView({
             />
           </div>
 
-          {sourceLocation === 'IN' && availablePos.length > 0 && (
+          {availablePos.length > 0 && (
             <div className="space-y-4">
               <label className="text-sm font-bold uppercase tracking-widest opacity-50">Chọn Lệnh PO (Tiến độ)</label>
               <select 
@@ -1646,7 +1679,7 @@ function ProduceView({
               >
                 {availablePos.map(po => (
                   <option key={po.id} value={po.id}>
-                    {po.id} ({po.producedQuantity}/{po.targetQuantity})
+                    {po.id} ({sourceLocation === 'IN' ? po.producedQuantity : po.exportedQuantity || 0}/{po.targetQuantity})
                   </option>
                 ))}
               </select>
@@ -1999,15 +2032,17 @@ function InboundView({ selectedStage, setSelectedStage, onScanSuccess, parts, on
                 >
                   Kho IN
                 </button>
-                <button 
-                  onClick={() => setTargetLocation('OUT')}
-                  className={cn(
-                    "flex-1 rounded-lg font-bold text-sm uppercase transition-all",
-                    targetLocation === 'OUT' ? "bg-[#F27D26] text-white shadow-sm" : "text-gray-400"
-                  )}
-                >
-                  Kho OUT
-                </button>
+                {mode === 'manual' && (
+                  <button 
+                    onClick={() => setTargetLocation('OUT')}
+                    className={cn(
+                      "flex-1 rounded-lg font-bold text-sm uppercase transition-all",
+                      targetLocation === 'OUT' ? "bg-[#F27D26] text-white shadow-sm" : "text-gray-400"
+                    )}
+                  >
+                    Kho OUT
+                  </button>
+                )}
               </div>
             </div>
           </div>
