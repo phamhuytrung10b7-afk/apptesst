@@ -342,6 +342,9 @@ export const storageService = {
   },
 
   recordStageIn(qrData: string, currentStageId: StageId, targetLocation: 'IN' | 'OUT' = 'IN') {
+    if (!qrData || typeof qrData !== 'string') {
+      throw new Error('Mã QR không hợp lệ');
+    }
     const parts = qrData.split('|');
     if (parts.length < 5) {
       throw new Error('Định dạng mã QR không hợp lệ hoặc không phải mã xuất kho OUT.');

@@ -331,7 +331,7 @@ export default function App() {
                 <span className="uppercase">{STAGES.find(s => s.id === lastTransaction.stageId)?.name}</span>
                 <span className="text-xl">→</span>
                 <span className="uppercase">
-                  {STAGES.find(s => s.id === lastTransaction.targetStageId || lastTransaction.qrData!.split('|')[5])?.name || 'KẾ THÚC'}
+                  {STAGES.find(s => s.id === (lastTransaction.targetStageId || lastTransaction.qrData?.split('|')?.[5]))?.name || 'KẾ THÚC'}
                 </span>
               </div>
             </div>
@@ -1908,7 +1908,7 @@ function ProduceView({
                   <div className="flex items-center justify-center gap-4 font-black text-xl italic group">
                     <span>{STAGES.find(s => s.id === lastTransaction.stageId)?.name}</span>
                     <ArrowRight size={24} strokeWidth={3} className="text-[#F27D26]" />
-                    <span>{STAGES.find(s => s.id === lastTransaction.targetStageId || lastTransaction.qrData!.split('|')[5])?.name || 'HOÀN THÀNH'}</span>
+                    <span>{STAGES.find(s => s.id === (lastTransaction.targetStageId || lastTransaction.qrData?.split('|')?.[5]))?.name || 'HOÀN THÀNH'}</span>
                   </div>
                 </div>
 
