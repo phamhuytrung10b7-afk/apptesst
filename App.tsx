@@ -356,7 +356,7 @@ export default function App() {
               </div>
               <div className="flex justify-between items-center text-[9px] text-gray-500 italic">
                 <span>Mục tiêu PO Con:</span>
-                <span>{lastTransaction.qrData?.split('|')?.[8] || storageService.getProductionOrders().find(p => p.id === lastTransaction.poId)?.targetQuantity || 0}</span>
+                <span>{lastTransaction.qrData?.split('|')?.[8] || storageService.getProductionOrders().find(p => p.id === lastTransaction.poId)?.targetQuantity || 0} linh kiện</span>
               </div>
               {(() => {
                 const po = storageService.getProductionOrders().find(p => p.id === lastTransaction.poId);
@@ -369,7 +369,7 @@ export default function App() {
                     </div>
                     <div className="flex justify-between items-center text-[9px] text-gray-500 italic">
                       <span>Mục tiêu PO Tổng:</span>
-                      <span>{lastTransaction.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0}</span>
+                      <span>{lastTransaction.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0} máy</span>
                     </div>
                   </>
                 );
@@ -1953,7 +1953,7 @@ function ProduceView({
                   </div>
                   <div className="flex justify-between items-center text-[10px] text-gray-500 italic">
                     <span>Mục tiêu PO Con:</span>
-                    <span>{lastTransaction.qrData?.split('|')?.[8] || storageService.getProductionOrders().find(p => p.id === lastTransaction.poId)?.targetQuantity || 0}</span>
+                    <span>{lastTransaction.qrData?.split('|')?.[8] || storageService.getProductionOrders().find(p => p.id === lastTransaction.poId)?.targetQuantity || 0} linh kiện</span>
                   </div>
                   {(() => {
                     const po = storageService.getProductionOrders().find(p => p.id === lastTransaction.poId);
@@ -1966,7 +1966,7 @@ function ProduceView({
                         </div>
                         <div className="flex justify-between items-center text-[10px] text-gray-500 italic">
                           <span>Mục tiêu PO Tổng:</span>
-                          <span>{lastTransaction.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0}</span>
+                          <span>{lastTransaction.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0} máy</span>
                         </div>
                       </>
                     );
