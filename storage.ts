@@ -325,6 +325,7 @@ export const storageService = {
       partId,
       quantity,
       stageId,
+      targetStageId,
       timestamp: Date.now(),
       qrData,
       poId: linkedPoId

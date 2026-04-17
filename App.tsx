@@ -1621,7 +1621,7 @@ function ProduceView({
   const [sourceLocation, setSourceLocation] = useState<'IN' | 'OUT'>('IN');
   const [selectedPoId, setSelectedPoId] = useState<string>("");
   const [targetStageId, setTargetStageId] = useState<StageId>(
-    STAGES.find(s => s.id === selectedStage)?.nextStageId || STAGES[0].id
+    (STAGES.find(s => s.id === selectedStage)?.nextStageId || '') as StageId
   );
 
   // Filter parts based on stage and BOM level
@@ -1652,16 +1652,17 @@ function ProduceView({
 
   useEffect(() => {
     const next = STAGES.find(s => s.id === selectedStage)?.nextStageId;
-    if (next) setTargetStageId(next);
+    if (next) {
+      setTargetStageId(next);
+    } else if (selectedStage === 'PAINTING') {
+      setTargetStageId('DCLR');
+    } else {
+      setTargetStageId('' as StageId);
+    }
     
     // Auto-switch to OUT for stages with automatic BOM deduction
     if (selectedStage === 'LASER' || selectedStage === 'WELDING') {
       setSourceLocation('OUT');
-    }
-
-    // Special case for Painting OUT: target is always DCLR
-    if (selectedStage === 'PAINTING' && sourceLocation === 'OUT') {
-      setTargetStageId('DCLR');
     }
   }, [selectedStage, sourceLocation]);
 
@@ -1778,7 +1779,10 @@ function ProduceView({
                 onChange={(e) => setTargetStageId(e.target.value as StageId)}
                 className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none bg-white cursor-pointer"
               >
-                {STAGES.filter(s => s.id !== selectedStage).map(stage => (
+                {STAGES.filter((s, idx) => {
+                  const currentIdx = STAGES.findIndex(st => st.id === selectedStage);
+                  return idx > currentIdx;
+                }).map(stage => (
                   <option key={stage.id} value={stage.id}>{stage.name}</option>
                 ))}
               </select>
