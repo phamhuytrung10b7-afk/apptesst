@@ -304,14 +304,19 @@ export const storageService = {
     const transactions = this.getTransactions();
     const parts = this.getParts();
     const stage = STAGES.find(s => s.id === stageId);
+    const part = parts.find(p => p.id === partId);
+    
+    // Get master PO ID if exists
+    const po = this.getProductionOrders().find(p => p.id === linkedPoId);
+    const masterPoId = po?.masterPoId || '';
     
     const txId = crypto.randomUUID();
     const timestamp = Date.now();
     
     // ONLY generate QR data if exporting from OUT
-    // Format: poIdOrPartId|quantity|sourceStageId|timestamp|txId|targetStageId
+    // Format: poIdOrPartId|quantity|sourceStageId|timestamp|txId|targetStageId|partName|masterPoId
     const qrData = sourceLocation === 'OUT' 
-      ? `${linkedPoId || partId}|${quantity}|${stageId}|${timestamp}|${txId}|${targetStageId || ''}`
+      ? `${linkedPoId || partId}|${quantity}|${stageId}|${timestamp}|${txId}|${targetStageId || ''}|${part?.name || ''}|${masterPoId}`
       : undefined;
 
     const newTransaction: Transaction = {

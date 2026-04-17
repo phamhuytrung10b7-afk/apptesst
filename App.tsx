@@ -294,13 +294,13 @@ export default function App() {
         {lastTransaction && (
           <div className="w-full h-full bg-white text-black flex flex-col items-center p-4 box-border border-2 border-black">
             {/* QR Code Section */}
-            <div className="mb-4 border-4 border-black p-2">
-              <QRCodeSVG value={lastTransaction.qrData || ''} size={labelSettings.qrSize * 1.5} level="H" />
+            <div className="mb-4 border-2 border-black p-1">
+              <QRCodeSVG value={lastTransaction.qrData || ''} size={labelSettings.qrSize * 1.8} level="H" />
             </div>
 
             {/* Part Name & ID */}
-            <div className="text-center w-full mb-4">
-              <h1 className="font-black uppercase leading-tight" style={{ fontSize: `${labelSettings.fontSize + 10}px` }}>
+            <div className="text-center w-full mb-3">
+              <h1 className="font-black uppercase leading-tight" style={{ fontSize: `${labelSettings.qrSize / 6}px` }}>
                 {parts.find(p => p.id === lastTransaction.partId)?.name || 'N/A'}
               </h1>
               <p className="font-mono font-bold mt-1" style={{ fontSize: `${labelSettings.fontSize}px` }}>
@@ -309,39 +309,73 @@ export default function App() {
             </div>
 
             {/* Quantity & Source Stage */}
-            <div className="grid grid-cols-2 w-full border-t-2 border-b-2 border-black py-4 mb-4">
+            <div className="grid grid-cols-2 w-full border-t-2 border-b-2 border-black py-3 mb-3">
               <div className="flex flex-col items-center border-r-2 border-black">
                 <span className="text-[10px] font-bold uppercase opacity-60 mb-1">Số lượng:</span>
-                <span className="font-black" style={{ fontSize: `${labelSettings.fontSize + 14}px` }}>
+                <span className="font-black" style={{ fontSize: `${labelSettings.fontSize + 12}px` }}>
                   {lastTransaction.quantity} {parts.find(p => p.id === lastTransaction.partId)?.unit}
                 </span>
               </div>
               <div className="flex flex-col items-center">
                 <span className="text-[10px] font-bold uppercase opacity-60 mb-1">Từ công đoạn:</span>
-                <span className="font-black uppercase" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
+                <span className="font-black uppercase text-center" style={{ fontSize: `${labelSettings.fontSize + 4}px` }}>
                   {STAGES.find(s => s.id === lastTransaction.stageId)?.name}
                 </span>
               </div>
             </div>
 
             {/* Route / Destination */}
-            {lastTransaction.qrData?.split('|')[5] && (
-              <div className="w-full bg-gray-100 p-3 rounded-lg border border-black mb-4 text-center">
-                <span className="text-[10px] font-bold uppercase opacity-60 block mb-1">Đích tiếp theo:</span>
-                <div className="flex items-center justify-center gap-4 font-black" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
-                  <span className="uppercase">{STAGES.find(s => s.id === lastTransaction.stageId)?.name}</span>
-                  <span className="text-2xl">→</span>
-                  <span className="uppercase">
-                    {STAGES.find(s => s.id === lastTransaction.qrData!.split('|')[5])?.name || lastTransaction.qrData!.split('|')[5]}
-                  </span>
-                </div>
+            <div className="w-full border-2 border-black rounded p-2 mb-3 text-center">
+              <span className="text-[10px] font-bold uppercase opacity-60 block mb-1">Đích tiếp theo:</span>
+              <div className="flex items-center justify-center gap-4 font-black italic" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
+                <span className="uppercase">{STAGES.find(s => s.id === lastTransaction.stageId)?.name}</span>
+                <span className="text-xl">→</span>
+                <span className="uppercase">
+                  {STAGES.find(s => s.id === lastTransaction.targetStageId || lastTransaction.qrData!.split('|')[5])?.name || 'KẾ THÚC'}
+                </span>
               </div>
-            )}
+            </div>
+
+            {/* PO Details Section (NEW) */}
+            <div className="w-full space-y-1 mb-4 text-[11px] font-bold border border-black/20 p-2 rounded">
+              <div className="flex justify-between items-center">
+                <span className="opacity-50 uppercase">LOẠI PO:</span>
+                {(() => {
+                  const po = storageService.getProductionOrders().find(p => p.id === lastTransaction.poId);
+                  return (
+                    <span className="text-[9px] uppercase">
+                      {po?.masterPoId ? 'PO Con (Sub)' : 'PO Tổng (Master)'}
+                    </span>
+                  );
+                })()}
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="opacity-50 uppercase">MÃ PO:</span>
+                <span className="font-mono">{lastTransaction.poId || 'N/A'}</span>
+              </div>
+              {(() => {
+                const po = storageService.getProductionOrders().find(p => p.id === lastTransaction.poId);
+                return po?.masterPoId && (
+                  <div className="flex justify-between items-center">
+                    <span className="opacity-50 uppercase">PO TỔNG:</span>
+                    <span className="font-mono">{po.masterPoId}</span>
+                  </div>
+                );
+              })()}
+              <div className="flex justify-between items-center pt-1 border-t border-black/5">
+                <span className="opacity-50 uppercase">Bắt đầu đi:</span>
+                <span className="font-mono">{format(lastTransaction.timestamp, 'HH:mm:ss')}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="opacity-50 uppercase">Đến dự kiến:</span>
+                <span className="font-mono">--:--:--</span>
+              </div>
+            </div>
 
             {/* Footer: ID & Time */}
-            <div className="mt-auto w-full flex justify-between items-end font-mono border-t border-black pt-2" style={{ fontSize: `${labelSettings.fontSize - 4}px` }}>
-              <div className="flex flex-col">
-                <span className="font-bold">ID: {lastTransaction.id.toUpperCase()}</span>
+            <div className="mt-auto w-full flex justify-between items-end font-mono border-t border-black pt-2" style={{ fontSize: `${labelSettings.fontSize - 6}px` }}>
+              <div className="flex flex-col leading-tight">
+                <span className="font-bold">ID: {lastTransaction.id}</span>
                 <span>Thời gian: {format(lastTransaction.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
               </div>
               <div className="font-black italic">
@@ -1822,62 +1856,113 @@ function ProduceView({
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white p-10 rounded-2xl border-2 border-dashed border-[#141414] flex flex-col items-center space-y-8 h-full"
+              className="bg-white p-8 rounded-2xl border-2 border-dashed border-[#141414] flex flex-col items-center space-y-6 h-full"
             >
-              <div className="flex justify-between w-full items-center">
-                <div className="flex items-center gap-3">
-                  <Printer size={24} className="text-[#F27D26]" />
-                  <h3 className="font-mono text-sm uppercase font-bold tracking-widest">Nhãn Pallet sẵn sàng in</h3>
+              <div className="flex justify-between w-full items-center no-print">
+                <div className="flex items-center gap-2">
+                  <Printer size={20} className="text-[#F27D26]" />
+                  <h3 className="font-mono text-xs uppercase font-bold tracking-widest">Xem trước nhãn In</h3>
                 </div>
                 <button onClick={() => setLastTransaction(null)} className="text-gray-400 hover:text-black transition-colors">
-                  <X size={32} />
+                  <X size={24} />
                 </button>
               </div>
               
-              <div className="bg-white p-10 border-4 border-black shadow-xl">
-                <QRCodeSVG value={lastTransaction.qrData || ''} size={300} level="H" />
-              </div>
+              <div id="qr-label-display" className="w-[420px] bg-white border-2 border-black p-6 flex flex-col items-center">
+                {/* QR Section */}
+                <div className="mb-6 border-[3px] border-black p-1">
+                  <QRCodeSVG value={lastTransaction.qrData || ''} size={240} level="H" />
+                </div>
 
-              <div className="w-full space-y-4 text-center">
-                <p className="font-bold text-4xl leading-tight tracking-tight">{parts.find(p => p.id === lastTransaction.partId)?.name}</p>
-                {lastTransaction.poId && (
-                  <p className="font-mono text-xl font-bold text-blue-600 uppercase">{lastTransaction.poId}</p>
-                )}
-                <div className="flex justify-center gap-12 py-4">
-                  <div className="flex flex-col">
-                    <span className="text-xs font-mono uppercase opacity-40">Số lượng</span>
-                    <span className="text-3xl font-mono font-bold">{lastTransaction.quantity} {parts.find(p => p.id === lastTransaction.partId)?.unit}</span>
+                {/* Part Info */}
+                <div className="w-full text-center mb-6">
+                  <h2 className="text-3xl font-black uppercase tracking-tight leading-none mb-2">
+                    {parts.find(p => p.id === lastTransaction.partId)?.name}
+                  </h2>
+                  <p className="font-mono text-lg font-bold opacity-80">
+                    Mã LK: {lastTransaction.partId}
+                  </p>
+                </div>
+
+                {/* Main Stats */}
+                <div className="w-full grid grid-cols-2 border-t-[3px] border-black py-4">
+                  <div className="text-center border-r-[3px] border-black px-2 flex flex-col justify-center">
+                    <span className="text-[10px] font-bold uppercase opacity-60 mb-1">Số lượng:</span>
+                    <span className="text-3xl font-black">{lastTransaction.quantity} {parts.find(p => p.id === lastTransaction.partId)?.unit}</span>
                   </div>
-                  <div className="flex flex-col">
-                    <span className="text-xs font-mono uppercase opacity-40">Từ công đoạn</span>
-                    <span className="text-3xl font-mono font-bold uppercase">{STAGES.find(s => s.id === lastTransaction.stageId)?.name}</span>
+                  <div className="text-center px-2 flex flex-col justify-center">
+                    <span className="text-[10px] font-bold uppercase opacity-60 mb-1">Từ công đoạn:</span>
+                    <span className="text-2xl font-black uppercase leading-tight">
+                      {STAGES.find(s => s.id === lastTransaction.stageId)?.name}
+                    </span>
                   </div>
                 </div>
-                
-                {lastTransaction.qrData?.split('|')[5] && (
-                  <div className="bg-[#F27D26]/5 p-4 rounded-xl border border-[#F27D26]/20">
-                    <span className="text-xs font-mono uppercase opacity-60 block mb-2">Đích tiếp theo</span>
-                    <div className="flex items-center justify-center gap-3 text-[#F27D26] font-bold text-xl">
-                      <span>{STAGES.find(s => s.id === lastTransaction.stageId)?.name}</span>
-                      <ArrowRight size={20} />
-                      <span>{STAGES.find(s => s.id === lastTransaction.qrData!.split('|')[5])?.name || lastTransaction.qrData!.split('|')[5]}</span>
-                    </div>
-                  </div>
-                )}
 
-                <div className="pt-6 border-t border-gray-100">
-                  <p className="font-mono text-sm opacity-50">ID: {lastTransaction.id.split('-')[0].toUpperCase()}</p>
-                  <p className="font-mono text-sm opacity-50">{format(lastTransaction.timestamp, 'dd/MM/yyyy HH:mm:ss')}</p>
+                {/* Destination Box */}
+                <div className="w-full border-[3px] border-black rounded-lg p-4 my-4 text-center">
+                  <span className="text-[10px] font-bold uppercase opacity-60 block mb-2">Đích tiếp theo:</span>
+                  <div className="flex items-center justify-center gap-4 font-black text-xl italic group">
+                    <span>{STAGES.find(s => s.id === lastTransaction.stageId)?.name}</span>
+                    <ArrowRight size={24} strokeWidth={3} className="text-[#F27D26]" />
+                    <span>{STAGES.find(s => s.id === lastTransaction.targetStageId || lastTransaction.qrData!.split('|')[5])?.name || 'HOÀN THÀNH'}</span>
+                  </div>
+                </div>
+
+                {/* PO Details Section */}
+                <div className="w-full space-y-1 mb-6 text-[11px] font-bold bg-gray-50 p-3 border border-black/10 rounded">
+                  <div className="flex justify-between items-center">
+                    <span className="opacity-50">LOẠI PO:</span>
+                    {(() => {
+                      const po = storageService.getProductionOrders().find(p => p.id === lastTransaction.poId);
+                      return (
+                        <span className={cn(
+                          "px-2 py-0.5 rounded text-[9px] uppercase",
+                          po?.masterPoId ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"
+                        )}>
+                          {po?.masterPoId ? 'PO Con (Sub)' : 'PO Tổng (Master)'}
+                        </span>
+                      );
+                    })()}
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="opacity-50 uppercase">Mã PO:</span>
+                    <span className="font-mono text-[12px]">{lastTransaction.poId || 'N/A'}</span>
+                  </div>
+                  {(() => {
+                    const po = storageService.getProductionOrders().find(p => p.id === lastTransaction.poId);
+                    return po?.masterPoId && (
+                      <div className="flex justify-between items-center">
+                        <span className="opacity-50 uppercase">Thuộc PO Tổng:</span>
+                        <span className="font-mono text-[12px] text-red-600">{po.masterPoId}</span>
+                      </div>
+                    );
+                  })()}
+                  <div className="flex justify-between items-center pt-1 border-t border-black/5 mt-1">
+                    <span className="opacity-50 uppercase">Bắt đầu đi:</span>
+                    <span className="font-mono">{format(lastTransaction.timestamp, 'HH:mm:ss')}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="opacity-50 uppercase">Đến dự kiến:</span>
+                    <span className="font-mono">--:--:--</span>
+                  </div>
+                </div>
+
+                <div className="w-full border-t-[3px] border-black pt-4 flex justify-between items-end">
+                  <div className="flex flex-col text-[11px] font-mono leading-none">
+                    <span className="font-black mb-1">ID: {lastTransaction.id}</span>
+                    <span className="opacity-60">Thời gian: {format(lastTransaction.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
+                  </div>
+                  <span className="text-[11px] font-black tracking-tighter italic opacity-40">WIP TRACKING</span>
                 </div>
               </div>
 
-              <div className="w-full flex gap-4 no-print">
+              <div className="w-full flex gap-4 no-print mt-auto">
                 <button 
                   onClick={() => onPrint(lastTransaction)}
-                  className="flex-1 bg-blue-600 text-white py-5 rounded-xl flex items-center justify-center gap-3 font-bold text-lg uppercase hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
+                  className="flex-1 bg-black text-white py-5 rounded-xl flex items-center justify-center gap-3 font-bold text-lg uppercase hover:bg-black/90 active:scale-[0.98] transition-all"
                 >
                   <Printer size={24} />
-                  In nhãn (PDF)
+                  In nhãn QR
                 </button>
                 <button 
                   onClick={() => onCopy(lastTransaction.qrData || '')}

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type StageId = 'LASER' | 'BENDING' | 'WELDING' | 'PAINTING';
+export type StageId = 'LASER' | 'BENDING' | 'WELDING' | 'PAINTING' | 'DCLR';
 
 export interface Part {
   id: string;
@@ -67,7 +67,8 @@ export const STAGES: { id: StageId; name: string; nextStageId?: StageId }[] = [
   { id: 'LASER', name: 'Cắt Laser', nextStageId: 'BENDING' },
   { id: 'BENDING', name: 'Chấn/Dập', nextStageId: 'WELDING' },
   { id: 'WELDING', name: 'Hàn', nextStageId: 'PAINTING' },
-  { id: 'PAINTING', name: 'Sơn' },
+  { id: 'PAINTING', name: 'Sơn', nextStageId: 'DCLR' },
+  { id: 'DCLR', name: 'Lắp ráp (DCLR)' },
 ];
 
 export const INITIAL_PARTS: Part[] = [];
