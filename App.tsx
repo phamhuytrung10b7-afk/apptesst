@@ -354,13 +354,24 @@ export default function App() {
                 <span className="opacity-50 uppercase">MÃ PO:</span>
                 <span className="font-mono">{lastTransaction.poId || 'N/A'}</span>
               </div>
+              <div className="flex justify-between items-center text-[9px] text-gray-500 italic">
+                <span>Mục tiêu PO Con:</span>
+                <span>{lastTransaction.qrData?.split('|')?.[8] || storageService.getProductionOrders().find(p => p.id === lastTransaction.poId)?.targetQuantity || 0}</span>
+              </div>
               {(() => {
                 const po = storageService.getProductionOrders().find(p => p.id === lastTransaction.poId);
-                return po?.masterPoId && (
-                  <div className="flex justify-between items-center">
-                    <span className="opacity-50 uppercase">PO TỔNG:</span>
-                    <span className="font-mono">{po.masterPoId}</span>
-                  </div>
+                const masterId = po?.masterPoId || lastTransaction.qrData?.split('|')?.[7];
+                return masterId && (
+                  <>
+                    <div className="flex justify-between items-center">
+                      <span className="opacity-50 uppercase">PO TỔNG:</span>
+                      <span className="font-mono">{masterId}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-[9px] text-gray-500 italic">
+                      <span>Mục tiêu PO Tổng:</span>
+                      <span>{lastTransaction.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0}</span>
+                    </div>
+                  </>
                 );
               })()}
               <div className="flex justify-between items-center pt-1 border-t border-black/5">
@@ -1940,13 +1951,24 @@ function ProduceView({
                     <span className="opacity-50 uppercase">Mã PO:</span>
                     <span className="font-mono text-[12px]">{lastTransaction.poId || 'N/A'}</span>
                   </div>
+                  <div className="flex justify-between items-center text-[10px] text-gray-500 italic">
+                    <span>Mục tiêu PO Con:</span>
+                    <span>{lastTransaction.qrData?.split('|')?.[8] || storageService.getProductionOrders().find(p => p.id === lastTransaction.poId)?.targetQuantity || 0}</span>
+                  </div>
                   {(() => {
                     const po = storageService.getProductionOrders().find(p => p.id === lastTransaction.poId);
-                    return po?.masterPoId && (
-                      <div className="flex justify-between items-center">
-                        <span className="opacity-50 uppercase">Thuộc PO Tổng:</span>
-                        <span className="font-mono text-[12px] text-red-600">{po.masterPoId}</span>
-                      </div>
+                    const masterId = po?.masterPoId || lastTransaction.qrData?.split('|')?.[7];
+                    return masterId && (
+                      <>
+                        <div className="flex justify-between items-center">
+                          <span className="opacity-50 uppercase">Thuộc PO Tổng:</span>
+                          <span className="font-mono text-[12px] text-red-600">{masterId}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[10px] text-gray-500 italic">
+                          <span>Mục tiêu PO Tổng:</span>
+                          <span>{lastTransaction.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0}</span>
+                        </div>
+                      </>
                     );
                   })()}
                   <div className="flex justify-between items-center pt-1 border-t border-black/5 mt-1">

@@ -324,17 +324,21 @@ export const storageService = {
     const stage = STAGES.find(s => s.id === stageId);
     const part = parts.find(p => p.id === partId);
     
-    // Get master PO ID if exists
-    const po = this.getProductionOrders().find(p => p.id === linkedPoId);
+    // Get master PO ID and target quantities if exists
+    const pos = this.getProductionOrders();
+    const po = pos.find(p => p.id === linkedPoId);
     const masterPoId = po?.masterPoId || '';
+    const subPoTargetQty = po?.targetQuantity || 0;
+    const masterPo = masterPoId ? pos.find(p => p.id === masterPoId) : undefined;
+    const masterPoTargetQty = masterPo?.targetQuantity || 0;
     
     const txId = crypto.randomUUID();
     const timestamp = Date.now();
     
     // ONLY generate QR data if exporting from OUT
-    // Format: poIdOrPartId|quantity|sourceStageId|timestamp|txId|targetStageId|partName|masterPoId
+    // Format: poIdOrPartId|quantity|sourceStageId|timestamp|txId|targetStageId|partName|masterPoId|subPoTargetQty|masterPoTargetQty
     const qrData = sourceLocation === 'OUT' 
-      ? `${linkedPoId || partId}|${quantity}|${stageId}|${timestamp}|${txId}|${targetStageId || ''}|${part?.name || ''}|${masterPoId}`
+      ? `${linkedPoId || partId}|${quantity}|${stageId}|${timestamp}|${txId}|${targetStageId || ''}|${part?.name || ''}|${masterPoId}|${subPoTargetQty}|${masterPoTargetQty}`
       : undefined;
 
     const newTransaction: Transaction = {
