@@ -336,9 +336,10 @@ export const storageService = {
     const timestamp = Date.now();
     
     // ONLY generate QR data if exporting from OUT
-    // Format: poIdOrPartId|quantity|sourceStageId|timestamp|txId|targetStageId|partName|masterPoId|subPoTargetQty|masterPoTargetQty
+    // Format: poIdOrPartId|quantity|sourceStageId|timestamp|txId|targetStageId|REMOVED_PART_NAME|masterPoId|subPoTargetQty|masterPoTargetQty
+    // Note: partName is removed to avoid UTF-8 encoding issues with hardware scanners.
     const qrData = sourceLocation === 'OUT' 
-      ? `${linkedPoId || partId}|${quantity}|${stageId}|${timestamp}|${txId}|${targetStageId || ''}|${part?.name || ''}|${masterPoId}|${subPoTargetQty}|${masterPoTargetQty}`
+      ? `${linkedPoId || partId}|${quantity}|${stageId}|${timestamp}|${txId}|${targetStageId || ''}||${masterPoId}|${subPoTargetQty}|${masterPoTargetQty}`
       : undefined;
 
     const newTransaction: Transaction = {
