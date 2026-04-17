@@ -252,7 +252,9 @@ export const storageService = {
         }
         
         po.producedQuantity += quantity;
-        po.status = po.producedQuantity >= po.targetQuantity ? 'COMPLETED' : 'IN_PROGRESS';
+        const isProduced = po.producedQuantity >= po.targetQuantity;
+        const isExported = (po.exportedQuantity || 0) >= po.targetQuantity;
+        po.status = (isProduced && isExported) ? 'COMPLETED' : 'IN_PROGRESS';
         linkedPoId = po.id;
 
         // Check if all sub-POs for this master are completed
@@ -283,6 +285,22 @@ export const storageService = {
           throw new Error(`Lỗi: Số lượng xuất (${(po.exportedQuantity || 0) + quantity}) vượt quá số lượng đã sản xuất (${po.producedQuantity}) cho PO ${po.id}`);
         }
         po.exportedQuantity = (po.exportedQuantity || 0) + quantity;
+        
+        // PO is completed only if both production and export are done
+        const isProduced = po.producedQuantity >= po.targetQuantity;
+        const isExported = po.exportedQuantity >= po.targetQuantity;
+        po.status = (isProduced && isExported) ? 'COMPLETED' : 'IN_PROGRESS';
+        
+        // Update master PO status if needed
+        if (po.masterPoId) {
+          const masterPo = pos.find(p => p.id === po.masterPoId);
+          if (masterPo) {
+            const allSubPos = pos.filter(p => p.masterPoId === po.masterPoId);
+            const allCompleted = allSubPos.every(p => p.status === 'COMPLETED');
+            masterPo.status = allCompleted ? 'COMPLETED' : 'IN_PROGRESS';
+          }
+        }
+
         this.saveProductionOrders(pos);
       }
     }
@@ -430,7 +448,9 @@ export const storageService = {
           throw new Error(`Lỗi: Số lượng sản xuất (${po.producedQuantity + quantity}) vượt quá mục tiêu PO (${po.targetQuantity}) cho ${partId} tại ${stageId}`);
         }
         po.producedQuantity += quantity;
-        po.status = po.producedQuantity >= po.targetQuantity ? 'COMPLETED' : 'IN_PROGRESS';
+        const isProduced = po.producedQuantity >= po.targetQuantity;
+        const isExported = (po.exportedQuantity || 0) >= po.targetQuantity;
+        po.status = (isProduced && isExported) ? 'COMPLETED' : 'IN_PROGRESS';
         linkedPoId = po.id;
 
         // Check if all sub-POs for this master are completed

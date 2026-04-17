@@ -1632,9 +1632,15 @@ function ProduceView({
     return true;
   });
 
-  const availablePos = storageService.getProductionOrders().filter(
-    p => p.partId === selectedPart && p.stageId === selectedStage && p.status !== 'COMPLETED'
-  );
+  const availablePos = storageService.getProductionOrders().filter(p => {
+    if (p.partId !== selectedPart || p.stageId !== selectedStage || p.status === 'COMPLETED') return false;
+    
+    if (sourceLocation === 'IN') {
+      return p.producedQuantity < p.targetQuantity;
+    } else {
+      return (p.exportedQuantity || 0) < p.producedQuantity;
+    }
+  });
 
   // Auto-select first filtered part if current selection is not in list
   useEffect(() => {
