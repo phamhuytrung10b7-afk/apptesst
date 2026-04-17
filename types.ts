@@ -68,7 +68,6 @@ export const STAGES: { id: StageId; name: string; nextStageId?: StageId }[] = [
   { id: 'BENDING', name: 'Chấn/Dập', nextStageId: 'WELDING' },
   { id: 'WELDING', name: 'Hàn', nextStageId: 'PAINTING' },
   { id: 'PAINTING', name: 'Sơn', nextStageId: 'DCLR' },
-  { id: 'DCLR', name: 'Lắp ráp (DCLR)' },
 ];
 
 export const INITIAL_PARTS: Part[] = [];
