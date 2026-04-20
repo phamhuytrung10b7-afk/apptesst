@@ -197,28 +197,52 @@ export const storageService = {
     }
 
     // Welding stage specific logic (BOM V2):
-    // Deduct ingredients from Welding IN when result is produced
     if (stageId === 'WELDING') {
       const bomV2 = this.getBOMV2();
-      const ingredients = bomV2.filter(b => b.resultPartId === partId);
+      // Only deduct ingredients that DON'T skip welding
+      const allIngredients = bomV2.filter(b => b.resultPartId === partId);
+      const ingredients = allIngredients.filter(ing => {
+        const p = parts.find(part => part.id === ing.ingredientPartId);
+        return !p?.skipWelding;
+      });
       
       if (ingredients.length > 0) {
         const inventory = this.getInventory();
-        
-        // Check if enough stock exists for ALL ingredients in Welding IN
         for (const ing of ingredients) {
           const needed = quantity * ing.quantity;
           const stock = inventory.find(i => i.partId === ing.ingredientPartId && i.stageId === 'WELDING' && i.location === 'IN');
-          
           if (!stock || stock.quantity < needed) {
             const ingPart = parts.find(p => p.id === ing.ingredientPartId);
             throw new Error(`Lỗi: Không đủ tồn kho ${ingPart?.name || ing.ingredientPartId} tại WELDING_IN. Cần ${needed} ${ingPart?.unit || ''}, hiện có ${stock?.quantity || 0}`);
           }
         }
-        
-        // Deduct ingredients
         for (const ing of ingredients) {
           this.updateInventory(ing.ingredientPartId, 'WELDING', 'IN', -(quantity * ing.quantity));
+        }
+      }
+    }
+
+    // Painting stage deduction for ingredients that skipped welding
+    if (stageId === 'PAINTING') {
+      const bomV2 = this.getBOMV2();
+      const allIngredients = bomV2.filter(b => b.resultPartId === partId);
+      const skipWeldedIngredients = allIngredients.filter(ing => {
+        const p = parts.find(part => part.id === ing.ingredientPartId);
+        return p?.skipWelding;
+      });
+
+      if (skipWeldedIngredients.length > 0) {
+        const inventory = this.getInventory();
+        for (const ing of skipWeldedIngredients) {
+          const needed = quantity * ing.quantity;
+          const stock = inventory.find(i => i.partId === ing.ingredientPartId && i.stageId === 'PAINTING' && i.location === 'IN');
+          if (!stock || stock.quantity < needed) {
+            const ingPart = parts.find(p => p.id === ing.ingredientPartId);
+            throw new Error(`Lỗi: Không đủ tồn kho ${ingPart?.name || ing.ingredientPartId} tại PAINTING_IN. Cần ${needed} ${ingPart?.unit || ''}, hiện có ${stock?.quantity || 0}`);
+          }
+        }
+        for (const ing of skipWeldedIngredients) {
+          this.updateInventory(ing.ingredientPartId, 'PAINTING', 'IN', -(quantity * ing.quantity));
         }
       }
     }
@@ -543,22 +567,26 @@ export const storageService = {
     // 2. Explode to Level 1
     const modelBom = this.getModelBOM();
     const level1Ingredients = modelBom.filter(b => b.modelId === modelId);
+    const partsList = this.getParts();
     
     for (const l1Ing of level1Ingredients) {
       const l1Qty = quantity * l1Ing.quantity;
+      const l1Part = partsList.find(p => p.id === l1Ing.partId);
       
-      // PO for Welding
-      pos.unshift({
-        id: generateUniqueId(`PO-${modelPrefix}-${dateStr}-WELD`),
-        masterPoId: masterPoId,
-        partId: l1Ing.partId,
-        stageId: 'WELDING',
-        targetQuantity: l1Qty,
-        producedQuantity: 0,
-        exportedQuantity: 0,
-        status: 'PENDING',
-        createdAt: timestamp
-      });
+      // PO for Welding - Only if not skipped
+      if (!l1Part?.skipWelding) {
+        pos.unshift({
+          id: generateUniqueId(`PO-${modelPrefix}-${dateStr}-WELD`),
+          masterPoId: masterPoId,
+          partId: l1Ing.partId,
+          stageId: 'WELDING',
+          targetQuantity: l1Qty,
+          producedQuantity: 0,
+          exportedQuantity: 0,
+          status: 'PENDING',
+          createdAt: timestamp
+        });
+      }
 
       // PO for Painting
       pos.unshift({
@@ -576,9 +604,11 @@ export const storageService = {
       // 3. Explode to Level 2
       const bomV2 = this.getBOMV2();
       const level2Ingredients = bomV2.filter(b => b.resultPartId === l1Ing.partId);
+      const parts = this.getParts();
       
       for (const l2Ing of level2Ingredients) {
         const l2Qty = l1Qty * l2Ing.quantity;
+        const ingPart = parts.find(p => p.id === l2Ing.ingredientPartId);
         
         // PO for Laser
         pos.unshift({
@@ -593,18 +623,20 @@ export const storageService = {
           createdAt: timestamp
         });
 
-        // PO for Bending
-        pos.unshift({
-          id: generateUniqueId(`PO-${modelPrefix}-${dateStr}-BEND`),
-          masterPoId: masterPoId,
-          partId: l2Ing.ingredientPartId,
-          stageId: 'BENDING',
-          targetQuantity: l2Qty,
-          producedQuantity: 0,
-          exportedQuantity: 0,
-          status: 'PENDING',
-          createdAt: timestamp
-        });
+        // PO for Bending - Only if not skipped at part level
+        if (!ingPart?.skipBending) {
+          pos.unshift({
+            id: generateUniqueId(`PO-${modelPrefix}-${dateStr}-BEND`),
+            masterPoId: masterPoId,
+            partId: l2Ing.ingredientPartId,
+            stageId: 'BENDING',
+            targetQuantity: l2Qty,
+            producedQuantity: 0,
+            exportedQuantity: 0,
+            status: 'PENDING',
+            createdAt: timestamp
+          });
+        }
       }
     }
 

@@ -10,6 +10,8 @@ export interface Part {
   name: string;
   unit: string;
   level?: number;
+  skipBending?: boolean;
+  skipWelding?: boolean;
 }
 
 export interface InventoryItem {

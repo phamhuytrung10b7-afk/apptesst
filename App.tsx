@@ -56,6 +56,31 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+function getProcessValue(value: string | undefined, part: Part | undefined, stageId: StageId, location: 'IN' | 'OUT') {
+  if (!value || !part) return value || '';
+  
+  // Logic for suffixes
+  let suffix = '';
+  
+  if (stageId === 'BENDING' && location === 'OUT') suffix = 'CD';
+  
+  if (stageId === 'WELDING') {
+    if (location === 'IN' && !part.skipBending) suffix = 'CD';
+    if (location === 'OUT') suffix = 'H';
+  }
+  
+  if (stageId === 'PAINTING' && location === 'IN') {
+    if (!part.skipWelding) suffix = 'H';
+    else if (!part.skipBending) suffix = 'CD';
+  }
+
+  // Return original if no suffix logic applies (e.g. Painting OUT, DCLR, Laser)
+  if (!suffix) return value;
+  
+  // Consistently use " - [SUFFIX]"
+  return `${value} - ${suffix}`;
+}
+
 type View = 'dashboard' | 'produce' | 'inbound' | 'laser_inbound' | 'welding_inbound' | 'manual_inbound' | 'history' | 'settings' | 'labels' | 'po';
 
 function SearchableSelect({ 
@@ -203,7 +228,8 @@ export default function App() {
     try {
       const tx = storageService.recordStageOut(selectedPart, selectedStage, quantity, sourceLocation, targetStageId, poId);
       setLastTransaction(tx);
-      const partName = parts.find(p => p.id === selectedPart)?.name || selectedPart;
+      const part = parts.find(p => p.id === selectedPart);
+      const partName = getProcessValue(part?.name, part, selectedStage, 'OUT');
       const locationName = sourceLocation === 'IN' ? 'KHO_IN' : 'KHO_OUT';
       setSuccess(`Đã xuất từ ${locationName} ${quantity} ${partName} tại ${STAGES.find(s => s.id === selectedStage)?.name}`);
       setQuantity(0);
@@ -301,10 +327,10 @@ export default function App() {
             {/* Part Name & ID */}
             <div className="text-center w-full mb-3">
               <h1 className="font-black uppercase leading-tight" style={{ fontSize: `${labelSettings.qrSize / 6}px` }}>
-                {parts.find(p => p.id === lastTransaction.partId)?.name || 'N/A'}
+                {getProcessValue(parts.find(p => p.id === lastTransaction.partId)?.name, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
               </h1>
               <p className="font-mono font-bold mt-1" style={{ fontSize: `${labelSettings.fontSize}px` }}>
-                Mã LK: {lastTransaction.partId}
+                Mã LK: {getProcessValue(lastTransaction.partId, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
               </p>
             </div>
 
@@ -854,7 +880,11 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
                         </button>
                       </td>
                     </tr>
-                    {isExpanded && subOrders.sort((a, b) => (a.stageId || '').localeCompare(b.stageId || '')).map((sub, subIdx) => {
+                    {isExpanded && subOrders.sort((a, b) => {
+                      const orderA = STAGES.findIndex(s => s.id === a.stageId);
+                      const orderB = STAGES.findIndex(s => s.id === b.stageId);
+                      return orderA - orderB;
+                    }).map((sub, subIdx) => {
                       const progress = (sub.producedQuantity / sub.targetQuantity) * 100;
                       return (
                         <tr key={`${sub.id}-${subIdx}`} className="text-sm text-gray-600 bg-gray-50/50">
@@ -1395,8 +1425,8 @@ function DashboardView({ inventory, parts, refreshData }: DashboardProps) {
                             return (
                               <tr key={part.id} className="hover:bg-white transition-colors">
                                 <td className="p-4">
-                                  <div className="font-bold text-base">{part.id}</div>
-                                  <div className="text-xs opacity-50">{part.name}</div>
+                                  <div className="font-bold text-base">{getProcessValue(part.id, part, selectedStageDetail, 'IN')}</div>
+                                  <div className="text-xs opacity-50">{getProcessValue(part.name, part, selectedStageDetail, 'IN')}</div>
                                 </td>
                                 <td className="p-4 text-right">
                                   <div className="flex items-center justify-end gap-3">
@@ -1474,8 +1504,8 @@ function DashboardView({ inventory, parts, refreshData }: DashboardProps) {
                             return (
                               <tr key={part.id} className="hover:bg-white transition-colors">
                                 <td className="p-4">
-                                  <div className="font-bold text-base">{part.id}</div>
-                                  <div className="text-xs opacity-50">{part.name}</div>
+                                  <div className="font-bold text-base">{getProcessValue(part.id, part, selectedStageDetail, 'OUT')}</div>
+                                  <div className="text-xs opacity-50">{getProcessValue(part.name, part, selectedStageDetail, 'OUT')}</div>
                                 </td>
                                 <td className="p-4 text-right">
                                   <div className="flex items-center justify-end gap-3">
@@ -1671,6 +1701,24 @@ function ProduceView({
   useEffect(() => {
     const next = STAGES.find(s => s.id === selectedStage)?.nextStageId;
     if (next) {
+      // Smart detection for skip flags
+      const part = parts.find((p: any) => p.id === selectedPart);
+      if (selectedStage === 'LASER') {
+        if (part?.skipBending && part?.skipWelding) {
+          setTargetStageId('PAINTING');
+          return;
+        }
+        if (part?.skipBending) {
+          setTargetStageId('WELDING');
+          return;
+        }
+      }
+      if (selectedStage === 'BENDING') {
+        if (part?.skipWelding) {
+          setTargetStageId('PAINTING');
+          return;
+        }
+      }
       setTargetStageId(next);
     } else if (selectedStage === 'PAINTING') {
       setTargetStageId('DCLR');
@@ -1899,10 +1947,10 @@ function ProduceView({
                 {/* Part Info */}
                 <div className="w-full text-center mb-6">
                   <h2 className="text-3xl font-black uppercase tracking-tight leading-none mb-2">
-                    {parts.find(p => p.id === lastTransaction.partId)?.name}
+                    {getProcessValue(parts.find(p => p.id === lastTransaction.partId)?.name, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
                   </h2>
                   <p className="font-mono text-lg font-bold opacity-80">
-                    Mã LK: {lastTransaction.partId}
+                    Mã LK: {getProcessValue(lastTransaction.partId, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
                   </p>
                 </div>
 
@@ -2065,21 +2113,23 @@ function WeldingInboundView({ parts, onManualInbound }: any) {
     e.preventDefault();
     if (manualPart && manualQty > 0) {
       try {
+        const part = parts.find((p: any) => p.id === manualPart);
         onManualInbound(manualPart, selectedStage, targetLocation, manualQty, selectedPoId);
         setLastScanned({
-          partId: manualPart,
+          partId: getProcessValue(manualPart, part, selectedStage, targetLocation),
           quantity: manualQty,
-          partName: parts.find((p: any) => p.id === manualPart)?.name || manualPart,
+          partName: getProcessValue(part?.name, part, selectedStage, targetLocation),
           status: 'success',
           isManual: true,
           poId: selectedPoId
         });
         setManualQty(0);
       } catch (err) {
+        const part = parts.find((p: any) => p.id === manualPart);
         setLastScanned({
-          partId: manualPart,
+          partId: getProcessValue(manualPart, part, selectedStage, targetLocation),
           quantity: manualQty,
-          partName: parts.find((p: any) => p.id === manualPart)?.name || manualPart,
+          partName: getProcessValue(part?.name, part, selectedStage, targetLocation),
           status: 'error',
           isManual: true,
           errorMsg: err instanceof Error ? err.message : 'Lỗi không xác định'
@@ -2212,6 +2262,10 @@ function WeldingInboundView({ parts, onManualInbound }: any) {
               {lastScanned.partId && (
                 <div className="w-full bg-gray-50 p-8 rounded-2xl space-y-6">
                   <div className="flex justify-between items-center border-b border-gray-200 pb-4">
+                    <span className="text-sm font-mono uppercase opacity-50">Mã LK</span>
+                    <span className="font-bold text-xl">{lastScanned.partId}</span>
+                  </div>
+                  <div className="flex justify-between items-center border-b border-gray-200 pb-4">
                     <span className="text-sm font-mono uppercase opacity-50">Linh kiện</span>
                     <span className="font-bold text-xl">{lastScanned.partName}</span>
                   </div>
@@ -2300,21 +2354,23 @@ function LaserInboundView({ parts, onManualInbound }: any) {
     e.preventDefault();
     if (manualPart && manualQty > 0) {
       try {
+        const part = parts.find((p: any) => p.id === manualPart);
         onManualInbound(manualPart, selectedStage, targetLocation, manualQty, selectedPoId);
         setLastScanned({
-          partId: manualPart,
+          partId: getProcessValue(manualPart, part, selectedStage, targetLocation),
           quantity: manualQty,
-          partName: parts.find((p: any) => p.id === manualPart)?.name || manualPart,
+          partName: getProcessValue(part?.name, part, selectedStage, targetLocation),
           status: 'success',
           isManual: true,
           poId: selectedPoId
         });
         setManualQty(0);
       } catch (err) {
+        const part = parts.find((p: any) => p.id === manualPart);
         setLastScanned({
-          partId: manualPart,
+          partId: getProcessValue(manualPart, part, selectedStage, targetLocation),
           quantity: manualQty,
-          partName: parts.find((p: any) => p.id === manualPart)?.name || manualPart,
+          partName: getProcessValue(part?.name, part, selectedStage, targetLocation),
           status: 'error',
           isManual: true,
           errorMsg: err instanceof Error ? err.message : 'Lỗi không xác định'
@@ -2464,6 +2520,10 @@ function LaserInboundView({ parts, onManualInbound }: any) {
               {lastScanned.partId && (
                 <div className="w-full bg-gray-50 p-8 rounded-2xl space-y-6">
                   <div className="flex justify-between items-center border-b border-gray-200 pb-4">
+                    <span className="text-sm font-mono uppercase opacity-50">Mã LK</span>
+                    <span className="font-bold text-xl">{lastScanned.partId}</span>
+                  </div>
+                  <div className="flex justify-between items-center border-b border-gray-200 pb-4">
                     <span className="text-sm font-mono uppercase opacity-50">Linh kiện</span>
                     <span className="font-bold text-xl">{lastScanned.partName}</span>
                   </div>
@@ -2573,21 +2633,23 @@ function ManualInboundView({ parts, onManualInbound }: any) {
     e.preventDefault();
     if (manualPart && manualQty > 0) {
       try {
+        const part = parts.find((p: any) => p.id === manualPart);
         onManualInbound(manualPart, selectedStage, targetLocation, manualQty, selectedPoId);
         setLastScanned({
-          partId: manualPart,
+          partId: getProcessValue(manualPart, part, selectedStage, targetLocation),
           quantity: manualQty,
-          partName: parts.find((p: any) => p.id === manualPart)?.name || manualPart,
+          partName: getProcessValue(part?.name, part, selectedStage, targetLocation),
           status: 'success',
           isManual: true,
           poId: selectedPoId
         });
         setManualQty(0);
       } catch (err) {
+        const part = parts.find((p: any) => p.id === manualPart);
         setLastScanned({
-          partId: manualPart,
+          partId: getProcessValue(manualPart, part, selectedStage, targetLocation),
           quantity: manualQty,
-          partName: parts.find((p: any) => p.id === manualPart)?.name || manualPart,
+          partName: getProcessValue(part?.name, part, selectedStage, targetLocation),
           status: 'error',
           isManual: true,
           errorMsg: err instanceof Error ? err.message : 'Lỗi không xác định'
@@ -2776,6 +2838,10 @@ function ManualInboundView({ parts, onManualInbound }: any) {
               
               {lastScanned.partId && (
                 <div className="w-full bg-gray-50 p-8 rounded-2xl space-y-6">
+                  <div className="flex justify-between items-center border-b border-gray-200 pb-4">
+                    <span className="text-sm font-mono uppercase opacity-50">Mã LK</span>
+                    <span className="font-bold text-xl">{lastScanned.partId}</span>
+                  </div>
                   <div className="flex justify-between items-center border-b border-gray-200 pb-4">
                     <span className="text-sm font-mono uppercase opacity-50">Linh kiện</span>
                     <span className="font-bold text-xl">{lastScanned.partName}</span>
@@ -2985,6 +3051,10 @@ function InboundView({ selectedStage, setSelectedStage, onScanSuccess, parts }: 
               {lastScanned.partId && (
                 <div className="w-full bg-gray-50 p-8 rounded-2xl space-y-6">
                   <div className="flex justify-between items-center border-b border-gray-200 pb-4">
+                    <span className="text-sm font-mono uppercase opacity-50">Mã LK</span>
+                    <span className="font-bold text-xl">{lastScanned.partId}</span>
+                  </div>
+                  <div className="flex justify-between items-center border-b border-gray-200 pb-4">
                     <span className="text-sm font-mono uppercase opacity-50">Linh kiện</span>
                     <span className="font-bold text-xl">{lastScanned.partName}</span>
                   </div>
@@ -3040,7 +3110,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
   onLabelSettingsChange: (s: any) => void,
   key?: string 
 }) {
-  const [newPart, setNewPart] = useState<Part>({ id: '', name: '', unit: 'Cái', level: 1 });
+  const [newPart, setNewPart] = useState<Part>({ id: '', name: '', unit: 'Cái', level: 1, skipBending: false, skipWelding: false });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [isImportingBOM, setIsImportingBOM] = useState(false);
@@ -3134,6 +3204,8 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
         const itemIdx = headers.findIndex(h => h === 'item' || h === 'mã linh kiện' || h === 'id');
         const descIdx = headers.findIndex(h => h === 'description' || h === 'tên linh kiện' || h === 'name');
         const unitIdx = headers.findIndex(h => h === 'unit' || h === 'đvt');
+        const skipBendIdx = headers.findIndex(h => h === 'skipbending' || h === 'bỏ qua chấn' || h === 'miễn chấn' || h === 'skip bend');
+        const skipWeldIdx = headers.findIndex(h => h === 'skipwelding' || h === 'bỏ qua hàn' || h === 'miễn hàn' || h === 'skip weld');
 
         if (itemIdx === -1 || descIdx === -1) {
           alert('Không tìm thấy cột Item hoặc Description trong file Excel.');
@@ -3152,11 +3224,18 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
           else if (col1 !== '') level = 2;
           else if (col2 !== '') level = 3;
 
+          const isTruthful = (val: any) => {
+            const s = String(val || '').trim().toLowerCase();
+            return s === 'x' || s === 'y' || s === 'yes' || s === 'v' || s === '1' || s === 'true' || s === 'đúng' || s === 'có';
+          };
+
           return {
             id: String(row[itemIdx] || '').trim(),
             name: String(row[descIdx] || '').trim(),
             unit: String(unitIdx !== -1 ? row[unitIdx] : 'Cái').trim(),
-            level: level
+            level: level,
+            skipBending: skipBendIdx !== -1 ? isTruthful(row[skipBendIdx]) : false,
+            skipWelding: skipWeldIdx !== -1 ? isTruthful(row[skipWeldIdx]) : false
           };
         }).filter(p => p.id && p.name);
 
@@ -3213,7 +3292,9 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
   const handleEdit = (part: Part) => {
     setNewPart({
       ...part,
-      level: part.level || 1
+      level: part.level || 1,
+      skipBending: !!part.skipBending,
+      skipWelding: !!part.skipWelding
     });
     setEditingId(part.id);
   };
@@ -3281,6 +3362,29 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                 <option value={2}>Cấp 2 (Laser/Chấn)</option>
                 <option value={3}>Cấp 3 (Tôn tấm)</option>
               </select>
+            </div>
+          </div>
+          <div className="space-y-4">
+            <label className="text-xs font-bold uppercase opacity-50">Cấu hình Quy trình</label>
+            <div className="grid grid-cols-2 gap-4">
+              <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
+                <input 
+                  type="checkbox" 
+                  checked={!!newPart.skipBending} 
+                  onChange={e => setNewPart({...newPart, skipBending: e.target.checked})}
+                  className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm font-medium">Bỏ qua Chấn</span>
+              </label>
+              <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
+                <input 
+                  type="checkbox" 
+                  checked={!!newPart.skipWelding} 
+                  onChange={e => setNewPart({...newPart, skipWelding: e.target.checked})}
+                  className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm font-medium">Bỏ qua Hàn</span>
+              </label>
             </div>
           </div>
           <div className="pt-6 flex gap-3">
@@ -3435,11 +3539,12 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                         const ws = wb.Sheets[wsname];
                         const data = XLSX.utils.sheet_to_json(ws) as any[];
                         
-                        // Expected columns: ResultID, IngredientID, Quantity
+                        // Expected columns: ResultID, IngredientID, Quantity, SkipBending
                         const imported: BOMDefinitionV2[] = data.map(row => ({
                           resultPartId: String(row['ResultID'] || row['Mã thành phẩm'] || row['Mã cha'] || '').trim(),
                           ingredientPartId: String(row['IngredientID'] || row['Mã linh kiện'] || row['Mã con'] || '').trim(),
-                          quantity: parseFloat(row['Quantity'] || row['Số lượng'] || '1')
+                          quantity: parseFloat(row['Quantity'] || row['Số lượng'] || '1'),
+                          skipBending: row['SkipBending'] === 'Y' || row['SkipBending'] === true || row['Bỏ qua chấn'] === 'X'
                         })).filter(b => b.resultPartId && b.ingredientPartId && b.quantity > 0);
 
                         if (imported.length === 0) {
@@ -3701,7 +3806,8 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                   <tr className="bg-gray-50/50 border-b border-gray-100">
                     <th className="p-6 pl-10 text-xs font-mono uppercase opacity-50">Cấp</th>
                     <th className="p-6 text-xs font-mono uppercase opacity-50">Mã LK</th>
-                    <th className="p-6 text-xs font-mono uppercase opacity-50">Tên Linh kiện</th>
+                    <th className="p-6 text-xs font-mono uppercase opacity-50">Linh kiện</th>
+                    <th className="p-6 text-xs font-mono uppercase opacity-50">Quy trình</th>
                     <th className="p-6 text-xs font-mono uppercase opacity-50">ĐVT</th>
                     <th className="p-6 pr-10 text-xs font-mono uppercase opacity-50 text-right">Thao tác</th>
                   </tr>
@@ -3720,7 +3826,19 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                         </span>
                       </td>
                       <td className="p-6 font-mono text-base font-bold">{part.id}</td>
-                      <td className="p-6 text-base font-medium">{part.name}</td>
+                      <td className="p-6">
+                        <div className="text-base font-medium">{part.name}</div>
+                        <div className="flex gap-2 mt-1">
+                          {part.skipBending && <span className="px-1.5 py-0.5 bg-red-50 text-red-600 text-[9px] font-bold rounded border border-red-100">MIỄN CHẤN</span>}
+                          {part.skipWelding && <span className="px-1.5 py-0.5 bg-orange-50 text-orange-600 text-[9px] font-bold rounded border border-orange-100">MIỄN HÀN</span>}
+                        </div>
+                      </td>
+                      <td className="p-6">
+                        <div className="flex flex-col gap-1 text-[10px] uppercase font-bold text-gray-400">
+                          <span className={cn(part.skipBending ? "line-through opacity-30" : "text-blue-600")}>Chấn</span>
+                          <span className={cn(part.skipWelding ? "line-through opacity-30" : "text-blue-600")}>Hàn</span>
+                        </div>
+                      </td>
                       <td className="p-6 text-base text-gray-500">{part.unit}</td>
                       <td className="p-6 pr-10 text-right">
                         <div className="flex justify-end gap-3">
@@ -3879,8 +3997,10 @@ function HistoryView({ transactions, parts }: HistoryProps) {
                     </span>
                   </td>
                   <td className="p-6 font-bold text-base">
-                    {tx.partId}
-                    <span className="block text-xs font-normal opacity-50">{parts.find(p => p.id === tx.partId)?.name}</span>
+                    {getProcessValue(tx.partId, parts.find(p => p.id === tx.partId), tx.stageId, tx.type === 'STAGE_OUT' ? 'OUT' : 'IN')}
+                    <span className="block text-xs font-normal opacity-50">
+                      {getProcessValue(parts.find(p => p.id === tx.partId)?.name, parts.find(p => p.id === tx.partId), tx.stageId, tx.type === 'STAGE_OUT' ? 'OUT' : 'IN')}
+                    </span>
                   </td>
                   <td className="p-6 font-mono font-bold text-xl">
                     {tx.type === 'STAGE_OUT' ? '+' : ''}{tx.quantity}
