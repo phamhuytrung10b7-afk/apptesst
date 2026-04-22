@@ -93,39 +93,57 @@ export const storageService = {
         stageId: 'LASER',
         workerCount: 1,
         shifts: [
-          { start: '06:00', end: '14:00' },
-          { start: '14:00', end: '22:00' }
+          { start: '06:00', end: '18:00' },
+          { start: '18:00', end: '06:00' }
         ],
         breaks: [
-          { start: '09:00', end: '09:15' },
-          { start: '12:00', end: '13:00' },
-          { start: '15:00', end: '15:15' },
+          { start: '10:00', end: '10:10' },
+          { start: '11:50', end: '13:00' },
+          { start: '15:00', end: '15:10' },
           { start: '18:00', end: '18:30' }
         ]
       },
       {
         stageId: 'BENDING',
-        workerCount: 1,
-        shifts: [{ start: '08:00', end: '17:00' }],
-        breaks: [{ start: '12:00', end: '13:00' }]
+        workerCount: 2,
+        shifts: [{ start: '08:00', end: '20:00' }],
+        breaks: [
+          { start: '10:00', end: '10:10' },
+          { start: '11:50', end: '13:00' },
+          { start: '15:00', end: '15:10' }
+        ]
       },
       {
         stageId: 'WELDING',
-        workerCount: 1,
-        shifts: [{ start: '08:00', end: '17:00' }],
-        breaks: [{ start: '12:00', end: '13:00' }]
+        workerCount: 5,
+        shifts: [{ start: '08:00', end: '20:00' }],
+        breaks: [
+          { start: '10:00', end: '10:10' },
+          { start: '11:50', end: '13:00' },
+          { start: '15:00', end: '15:10' },
+          { start: '17:00', end: '17:10' }
+        ]
       },
       {
         stageId: 'PAINTING',
         workerCount: 1,
-        shifts: [{ start: '08:00', end: '17:00' }],
-        breaks: [{ start: '12:00', end: '13:00' }]
+        shifts: [{ start: '08:00', end: '20:00' }],
+        breaks: [
+          { start: '10:00', end: '10:10' },
+          { start: '11:50', end: '13:00' },
+          { start: '15:00', end: '15:10' },
+          { start: '17:00', end: '17:10' }
+        ]
       }
     ];
   },
 
   saveShiftConfigs(configs: ShiftConfig[]) {
     localStorage.setItem(STORAGE_KEYS.SHIFT_CONFIGS, JSON.stringify(configs));
+  },
+
+  resetShiftConfigs() {
+    localStorage.removeItem(STORAGE_KEYS.SHIFT_CONFIGS);
   },
 
   getNextWorkingTime(timestamp: number, stageId: StageId, shiftConfigs: ShiftConfig[]): number {

@@ -4372,6 +4372,13 @@ function WorkingHoursView() {
     alert('Đã lưu cài đặt ca làm việc & nghỉ ngơi!');
   };
 
+  const handleReset = () => {
+    if (confirm('Bạn có chắc muốn khôi phục về cài đặt mặc định từ hệ thống?')) {
+      storageService.resetShiftConfigs();
+      setConfigs(storageService.getShiftConfigs());
+    }
+  };
+
   const updateShift = (stageId: StageId, shiftIdx: number, field: 'start' | 'end', val: string) => {
     setConfigs(prev => prev.map(c => {
       if (c.stageId === stageId) {
@@ -4451,13 +4458,22 @@ function WorkingHoursView() {
           <h2 className="text-2xl font-bold tracking-tight">Cấu hình thời gian làm việc</h2>
           <p className="text-sm text-gray-500 mt-1">Cài đặt số ca và các khoảng nghỉ ngơi để hệ thống tính toán kế hoạch sản xuất PO chính xác nhất.</p>
         </div>
-        <button 
-          onClick={handleSave}
-          className="flex items-center gap-2 px-8 py-4 bg-blue-600 text-white rounded-xl font-bold uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg"
-        >
-          <Save size={20} />
-          Lưu cài đặt
-        </button>
+        <div className="flex gap-4">
+          <button 
+            onClick={handleReset}
+            className="flex items-center gap-2 px-6 py-4 bg-gray-100 text-gray-600 rounded-xl font-bold uppercase tracking-widest hover:bg-gray-200 transition-all"
+          >
+            <RotateCcw size={20} />
+            Mặc định
+          </button>
+          <button 
+            onClick={handleSave}
+            className="flex items-center gap-2 px-8 py-4 bg-blue-600 text-white rounded-xl font-bold uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg"
+          >
+            <Save size={20} />
+            Lưu cài đặt
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
