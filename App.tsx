@@ -125,12 +125,12 @@ function SearchableSelect({
     <div className={cn("relative", className)} ref={containerRef}>
       <div 
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full p-6 rounded-2xl border-2 border-gray-100 font-black text-xl focus:border-blue-600 outline-none bg-white cursor-pointer flex justify-between items-center transition-all hover:border-gray-300 shadow-sm"
+        className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none bg-white cursor-pointer flex justify-between items-center"
       >
-        <span className={cn("tracking-tight truncate pr-4", selectedOption ? "text-gray-900" : "text-gray-400 font-bold")}>
+        <span className={selectedOption ? "text-gray-900" : "text-gray-400"}>
           {selectedOption ? selectedOption.label : placeholder}
         </span>
-        <ChevronDown size={28} className={cn("transition-transform duration-300 text-[#F27D26]", isOpen && "rotate-180")} />
+        <ChevronDown size={20} className={cn("transition-transform", isOpen && "rotate-180")} />
       </div>
 
       <AnimatePresence>
@@ -170,11 +170,11 @@ function SearchableSelect({
                     )}
                   >
                     <div className="text-base">{opt.label}</div>
-                    <div className="text-xs font-mono opacity-50">{opt.id}</div>
+                    <div className="text-xs font-mono opacity-70">{opt.id}</div>
                   </div>
                 ))
               ) : (
-                <div className="p-8 text-center text-gray-400 italic">Không tìm thấy kết quả</div>
+                <div className="p-8 text-center text-gray-700 italic">Không tìm thấy kết quả</div>
               )}
             </div>
           </motion.div>
@@ -433,14 +433,14 @@ export default function App() {
         "bg-white border-r border-gray-200 transition-all duration-300 flex flex-col z-50",
         isSidebarOpen ? "w-64" : "w-20"
       )}>
-        <div className="p-6 flex items-center gap-4 border-b border-gray-100 bg-gray-50/30">
-          <div className="bg-[#F27D26] p-4 rounded-2xl shadow-lg shadow-[#F27D26]/20">
-            <Package size={32} className="text-white" />
+        <div className="p-6 flex items-center gap-3 border-b border-gray-100">
+          <div className="bg-[#F27D26] p-3 rounded-lg">
+            <Package size={28} className="text-white" />
           </div>
           {isSidebarOpen && (
             <div className="flex flex-col">
-              <span className="font-mono text-xl font-black tracking-tighter italic leading-none text-gray-900">WIP.SYSTEM</span>
-              <span className="text-[10px] font-mono font-bold opacity-50 uppercase tracking-[0.2em] mt-1 text-gray-500">Industry v2.0</span>
+              <span className="font-mono text-lg font-bold tracking-tighter italic leading-none text-gray-900">WIP.SYSTEM</span>
+              <span className="text-xs font-mono opacity-80 uppercase tracking-widest mt-1 text-gray-700">Desktop v2.0</span>
             </div>
           )}
         </div>
@@ -545,9 +545,9 @@ export default function App() {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Header */}
-        <header className="bg-white border-b border-gray-200 p-8 flex justify-between items-center shadow-md z-40">
+        <header className="bg-white border-b border-gray-200 p-6 flex justify-between items-center shadow-sm z-40">
           <div className="flex items-center gap-4">
-            <h2 className="font-black text-3xl uppercase tracking-tighter text-gray-900">
+            <h2 className="font-bold text-2xl uppercase tracking-tight">
               {currentView === 'dashboard' && 'Báo cáo tồn kho WIP'}
               {currentView === 'produce' && 'Xuất kho & In nhãn QR'}
               {currentView === 'inbound' && 'Nhập kho (Quét mã QR)'}
@@ -562,22 +562,22 @@ export default function App() {
               {currentView === 'settings' && 'Cài đặt danh mục linh kiện'}
             </h2>
           </div>
-          <div className="flex items-center gap-10">
+          <div className="flex items-center gap-8">
             <div className="flex flex-col items-end">
-              <span className="text-[10px] font-mono font-bold opacity-30 uppercase tracking-widest">System Node</span>
-              <span className="text-base font-mono font-black text-blue-600">PRODUCTION-NODE-01</span>
+              <span className="text-sm font-mono opacity-50 uppercase">Terminal ID</span>
+              <span className="text-base font-mono font-bold">DESKTOP-WS-01</span>
             </div>
-            <div className="h-12 w-px bg-gray-200" />
-            <div className="flex items-center gap-4 bg-green-50 px-5 py-3 rounded-2xl border border-green-100">
-              <div className="w-4 h-4 rounded-full bg-green-500 animate-pulse shadow-[0_0_12px_rgba(34,197,94,0.5)]" />
-              <span className="text-sm font-mono font-black text-green-700 uppercase tracking-widest">Online</span>
+            <div className="h-10 w-px bg-gray-200" />
+            <div className="flex items-center gap-3">
+              <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse" />
+              <span className="text-sm font-mono opacity-70 uppercase tracking-widest">Hệ thống sẵn sàng</span>
             </div>
           </div>
         </header>
 
         {/* Scrollable Content */}
-        <main className="flex-1 overflow-y-auto p-10 bg-[#F8F9FA]">
-          <div className="max-w-7xl mx-auto">
+        <main className="flex-1 overflow-y-auto p-8 bg-[#F8F9FA]">
+          <div className="w-full max-w-[1600px] mx-auto">
             <AnimatePresence mode="wait">
               {currentView === 'dashboard' && (
                 <DashboardView key="dashboard" inventory={inventory} parts={parts} refreshData={refreshData} />
@@ -716,16 +716,16 @@ function SidebarLink({ active, onClick, icon, label, collapsed }: { active: bool
     <button 
       onClick={onClick}
       className={cn(
-        "w-full flex items-center gap-4 p-4 rounded-xl transition-all duration-300 group",
+        "w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-200 group",
         active 
-          ? "bg-[#F27D26] text-white shadow-xl shadow-[#F27D26]/30 translate-x-1" 
+          ? "bg-[#F27D26] text-white shadow-lg shadow-[#F27D26]/20" 
           : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
       )}
     >
-      <div className={cn("transition-transform duration-300", active ? "scale-110" : "group-hover:rotate-6")}>
-        {React.cloneElement(icon as React.ReactElement, { size: 28 })}
+      <div className={cn("transition-transform duration-200", active ? "scale-110" : "group-hover:scale-110")}>
+        {icon}
       </div>
-      {!collapsed && <span className="text-lg font-black tracking-tight whitespace-nowrap">{label}</span>}
+      {!collapsed && <span className="text-lg font-bold tracking-tight whitespace-nowrap">{label}</span>}
     </button>
   );
 }
@@ -835,23 +835,23 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
 
       {/* PO List */}
       <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="p-10 border-b border-gray-100 flex justify-between items-center bg-gray-50/30">
-          <h2 className="text-3xl font-black tracking-tight text-gray-900">Danh sách Lệnh Sản Xuất</h2>
+        <div className="p-8 border-b border-gray-100 flex justify-between items-center">
+          <h2 className="text-2xl font-bold">Danh sách Lệnh Sản Xuất</h2>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left whitespace-nowrap">
-            <thead className="bg-[#1A1A1A] text-sm font-black uppercase tracking-[0.1em] text-white">
+          <table className="w-full text-left">
+            <thead className="bg-gray-50 text-sm font-bold uppercase tracking-wider text-gray-500">
               <tr>
-                <th className="px-10 py-6">Mã PO</th>
-                <th className="px-10 py-6">Linh kiện / Thành phẩm</th>
-                <th className="px-10 py-6">Công đoạn</th>
-                <th className="px-10 py-6 text-right">Mục tiêu</th>
-                <th className="px-10 py-6 text-right">Thực tế</th>
-                <th className="px-10 py-6 text-right">Đã xuất</th>
-                <th className="px-10 py-6">Tiến độ</th>
-                <th className="px-10 py-6">Dự kiến</th>
-                <th className="px-10 py-6">Trạng thái</th>
-                <th className="px-10 py-6 text-center">Thao tác</th>
+                <th className="px-8 py-5">Mã PO</th>
+                <th className="px-8 py-5">Linh kiện / Thành phẩm</th>
+                <th className="px-8 py-5">Công đoạn</th>
+                <th className="px-8 py-5 text-right">Mục tiêu</th>
+                <th className="px-8 py-5 text-right">Thực tế</th>
+                <th className="px-8 py-5 text-right">Đã xuất</th>
+                <th className="px-8 py-5">Tiến độ</th>
+                <th className="px-8 py-5">Dự kiến</th>
+                <th className="px-8 py-5">Trạng thái</th>
+                <th className="px-8 py-5 text-center">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -866,53 +866,48 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
                   <React.Fragment key={`${master.id}-${idx}`}>
                     <tr 
                       className={cn(
-                        "bg-white cursor-pointer hover:bg-blue-50/50 transition-all group",
-                        isExpanded && "bg-blue-50/30"
+                        "bg-blue-50/30 font-bold cursor-pointer hover:bg-blue-50 transition-colors group",
+                        isExpanded && "bg-blue-100/50"
                       )}
                       onClick={() => toggleExpand(master.id)}
                     >
-                      <td className="px-10 py-8 font-mono text-blue-700 flex items-center gap-4 text-lg">
-                        <div className={cn("transition-transform duration-300", isExpanded ? "rotate-90" : "rotate-0")}>
-                          <ChevronRight size={24} className="text-blue-600" />
+                      <td className="px-8 py-5 font-mono text-blue-700 flex items-center gap-3 text-lg">
+                        <div className={cn("transition-transform duration-200", isExpanded ? "rotate-90" : "rotate-0")}>
+                          <ChevronRight size={18} />
                         </div>
-                        <span className="font-extrabold">{master.id}</span>
+                        {master.id}
                       </td>
-                      <td className="px-10 py-8">
-                        <div className="text-xl font-black text-gray-900">{parts.find(p => p.id === master.partId)?.name || master.partId}</div>
-                        <div className="text-xs font-mono font-bold opacity-30 mt-1 uppercase tracking-widest">{master.partId}</div>
-                      </td>
-                      <td className="px-10 py-8"><span className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-black shadow-lg shadow-blue-200">MODEL</span></td>
-                      <td className="px-10 py-8 text-right text-3xl font-black tracking-tighter text-gray-900">{master.targetQuantity}</td>
-                      <td className="px-10 py-8 text-right text-3xl font-black tracking-tighter text-blue-700">{master.producedQuantity}</td>
-                      <td className="px-10 py-8 text-right text-3xl font-black tracking-tighter text-orange-600">{master.exportedQuantity || 0}</td>
-                      <td className="px-10 py-8">
-                        <div className="w-full bg-gray-100 rounded-full h-4 overflow-hidden border border-gray-200">
-                          <div className="bg-blue-600 h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${overallProgress}%` }}></div>
+                      <td className="px-8 py-5 text-lg">{parts.find(p => p.id === master.partId)?.name || master.partId}</td>
+                      <td className="px-8 py-5"><span className="px-2 py-1 bg-blue-600 text-white rounded text-xs font-bold">MODEL</span></td>
+                      <td className="px-8 py-5 text-right text-xl">{master.targetQuantity}</td>
+                      <td className="px-8 py-5 text-right text-xl text-blue-600">{master.producedQuantity}</td>
+                      <td className="px-8 py-5 text-right text-xl text-orange-600">{master.exportedQuantity || 0}</td>
+                      <td className="px-8 py-5">
+                        <div className="w-full bg-gray-200 rounded-full h-2.5">
+                          <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: `${overallProgress}%` }}></div>
                         </div>
-                        <div className="mt-2 flex justify-end">
-                          <span className="text-sm font-mono font-black text-blue-600">{overallProgress.toFixed(1)}%</span>
-                        </div>
+                        <span className="text-xs opacity-50 font-bold">{overallProgress.toFixed(1)}%</span>
                       </td>
-                      <td className="px-10 py-8 text-center text-gray-300">—</td>
-                      <td className="px-10 py-8">
+                      <td className="px-8 py-5">
+                        <span className="text-xs font-mono opacity-50 uppercase tracking-tighter">-</span>
+                      </td>
+                      <td className="px-8 py-5">
                         <span className={cn(
-                          "px-5 py-2 rounded-xl text-xs font-black tracking-widest border-2",
-                          master.status === 'COMPLETED' 
-                            ? "bg-green-50 text-green-700 border-green-200 shadow-sm" 
-                            : "bg-yellow-50 text-yellow-700 border-yellow-200 shadow-sm animate-pulse"
+                          "px-3 py-1 rounded-full text-xs font-bold",
+                          master.status === 'COMPLETED' ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
                         )}>
                           {master.status === 'COMPLETED' ? 'HOÀN THÀNH' : 'ĐANG CHẠY'}
                         </span>
                       </td>
-                      <td className="px-10 py-8 text-center">
+                      <td className="px-8 py-5 text-center">
                         <button 
                           onClick={(e) => {
                             e.stopPropagation();
                             setShowDeleteModal(master.id);
                           }}
-                          className="p-4 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-2xl transition-all"
+                          className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
                         >
-                          <Trash2 size={24} />
+                          <Trash2 size={18} />
                         </button>
                       </td>
                     </tr>
@@ -923,58 +918,50 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
                     }).map((sub, subIdx) => {
                       const progress = (sub.producedQuantity / sub.targetQuantity) * 100;
                       return (
-                        <tr key={`${sub.id}-${subIdx}`} className="text-base text-gray-700 bg-gray-50/80 border-l-8 border-blue-600/20">
-                          <td className="px-10 py-6 pl-24 font-mono opacity-40 font-bold">{sub.id}</td>
-                          <td className="px-10 py-6">
-                            <div className="font-black text-gray-900">
-                              {getProcessValue(parts.find(p => p.id === sub.partId)?.name, parts.find(p => p.id === sub.partId), sub.stageId as StageId, 'OUT')}
-                            </div>
-                            <div className="text-[10px] font-mono opacity-30 font-bold uppercase tracking-widest">{sub.partId}</div>
+                        <tr key={`${sub.id}-${subIdx}`} className="text-base text-gray-600 bg-gray-50/50">
+                          <td className="px-8 py-4 pl-16 font-mono opacity-50 text-sm">{sub.id}</td>
+                          <td className="px-8 py-4 text-xl">
+                            {getProcessValue(parts.find(p => p.id === sub.partId)?.name, parts.find(p => p.id === sub.partId), sub.stageId as StageId, 'OUT')}
                           </td>
-                          <td className="px-10 py-6">
-                            <span className="px-3 py-1 bg-white border border-gray-200 text-gray-900 rounded-lg text-xs font-black shadow-sm">
+                          <td className="px-8 py-4">
+                            <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs font-bold">
                               {STAGES.find(s => s.id === sub.stageId)?.name}
                             </span>
                           </td>
-                          <td className="px-10 py-6 text-right font-black text-2xl tracking-tighter text-gray-600">{sub.targetQuantity}</td>
-                          <td className="px-10 py-6 text-right font-black text-2xl tracking-tighter text-blue-600">{sub.producedQuantity}</td>
-                          <td className="px-10 py-6 text-right font-black text-2xl tracking-tighter text-orange-600">{sub.exportedQuantity || 0}</td>
-                          <td className="px-10 py-6">
-                            <div className="w-full bg-white rounded-full h-3 border border-gray-200 overflow-hidden">
+                          <td className="px-8 py-4 text-right font-bold">{sub.targetQuantity}</td>
+                          <td className="px-8 py-4 text-right font-bold text-blue-600">{sub.producedQuantity}</td>
+                          <td className="px-8 py-4 text-right font-bold text-orange-600">{sub.exportedQuantity || 0}</td>
+                          <td className="px-8 py-4">
+                            <div className="w-full bg-gray-100 rounded-full h-1.5">
                               <div className={cn(
-                                "h-full rounded-full transition-all duration-1000",
-                                progress >= 100 ? "bg-green-500" : "bg-blue-500"
+                                "h-1.5 rounded-full",
+                                progress >= 100 ? "bg-green-500" : "bg-blue-400"
                               )} style={{ width: `${Math.min(progress, 100)}%` }}></div>
                             </div>
-                            <div className="mt-1 flex justify-end">
-                              <span className="text-[10px] font-mono font-black opacity-40">{Math.min(progress, 100).toFixed(0)}%</span>
-                            </div>
                           </td>
-                          <td className="px-10 py-6">
+                          <td className="px-8 py-4">
                             {sub.expectedCompletionTime ? (
-                              <div className="flex flex-col items-center">
-                                <span className="font-mono text-lg font-black text-blue-600 leading-none">
+                              <div className="flex flex-col">
+                                <span className="font-mono text-sm font-bold text-blue-600">
                                   {format(new Date(sub.expectedCompletionTime), 'HH:mm')}
                                 </span>
-                                <span className="text-[10px] font-bold opacity-30 mt-1">
+                                <span className="text-xs opacity-50">
                                   {format(new Date(sub.expectedCompletionTime), 'dd/MM')}
                                 </span>
                               </div>
                             ) : (
-                              <span className="text-xs font-bold opacity-20 italic">Chờ định mức...</span>
+                              <span className="text-[10px] opacity-30 italic">Chưa có ĐM</span>
                             )}
                           </td>
-                          <td className="px-10 py-6">
+                          <td className="px-8 py-4">
                             <span className={cn(
-                              "px-3 py-1 rounded-lg text-[10px] font-black tracking-widest border",
-                              sub.status === 'COMPLETED' 
-                                ? "bg-green-500 text-white border-green-600" 
-                                : "bg-gray-200 text-gray-500 border-gray-300"
+                              "px-2 py-0.5 rounded-full text-xs font-bold",
+                              sub.status === 'COMPLETED' ? "bg-green-50 text-green-600" : "bg-gray-100 text-gray-500"
                             )}>
-                              {sub.status === 'COMPLETED' ? 'XONG' : 'SẢN XUẤT'}
+                              {sub.status === 'COMPLETED' ? 'XONG' : 'ĐANG SX'}
                             </span>
                           </td>
-                          <td className="px-10 py-6"></td>
+                          <td className="px-8 py-4"></td>
                         </tr>
                       );
                     })}
@@ -1375,41 +1362,41 @@ function DashboardView({ inventory, parts, refreshData }: DashboardProps) {
               key={stage.id} 
               onClick={() => setSelectedStageDetail(isActive ? null : stage.id)}
               className={cn(
-                "bg-white p-8 rounded-3xl border transition-all text-left group",
+                "bg-white p-6 rounded-xl border transition-all text-left group",
                 isActive 
-                  ? "border-[#F27D26] ring-8 ring-[#F27D26]/10 shadow-2xl scale-[1.02]" 
-                  : "border-gray-200 shadow-sm hover:shadow-xl hover:border-gray-300"
+                  ? "border-[#F27D26] ring-4 ring-[#F27D26]/10 shadow-lg" 
+                  : "border-gray-200 shadow-sm hover:shadow-md hover:border-gray-300"
               )}
             >
-              <div className="flex justify-between items-start mb-6">
+              <div className="flex justify-between items-start mb-4">
                 <div className={cn(
-                  "p-4 rounded-2xl transition-colors shadow-inner",
+                  "p-2 rounded-lg transition-colors",
                   isActive ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600"
                 )}>
-                  <Package size={28} />
+                  <Package size={20} />
                 </div>
                 <div className="flex flex-col items-end">
-                  <span className="text-xs font-mono font-black text-gray-400 uppercase tracking-widest">Stage {STAGES.indexOf(stage) + 1}</span>
-                  {isActive && <div className="w-3 h-3 rounded-full bg-[#F27D26] mt-2 animate-pulse shadow-[0_0_10px_rgba(242,125,38,0.5)]" />}
+                  <span className="text-sm font-mono font-bold text-gray-600 uppercase tracking-widest">Stage {STAGES.indexOf(stage) + 1}</span>
+                  {isActive && <div className="w-2 h-2 rounded-full bg-[#F27D26] mt-1 animate-pulse" />}
                 </div>
               </div>
-              <h3 className="font-black text-2xl text-gray-900 mb-2 tracking-tighter uppercase">{stage.name}</h3>
-              <p className="text-6xl font-mono font-black tracking-tighter text-gray-900 leading-none">{total}</p>
-              <div className="mt-8 flex gap-8 text-xs font-mono uppercase font-black">
+              <h3 className="font-bold text-2xl text-gray-900 mb-1">{stage.name}</h3>
+              <p className="text-4xl font-mono font-bold tracking-tighter">{total}</p>
+              <div className="mt-4 flex gap-6 text-sm font-mono uppercase font-bold">
                 <div className="flex flex-col">
-                  <span className="opacity-40 mb-1">Tồn IN</span>
-                  <span className="text-2xl font-black text-gray-700">{inventory.filter(i => i.stageId === stage.id && i.location === 'IN').reduce((s, i) => s + i.quantity, 0)}</span>
+                  <span className="opacity-70">Tồn IN</span>
+                  <span className="text-xl">{inventory.filter(i => i.stageId === stage.id && i.location === 'IN').reduce((s, i) => s + i.quantity, 0)}</span>
                 </div>
                 <div className="flex flex-col">
-                  <span className="opacity-40 mb-1">Tồn OUT</span>
-                  <span className={cn("text-2xl font-black", isActive ? "text-[#F27D26]" : "text-[#F27D26]/80")}>
+                  <span className="opacity-70">Tồn OUT</span>
+                  <span className={cn("text-xl", isActive ? "text-[#F27D26]" : "text-[#F27D26]/80")}>
                     {inventory.filter(i => i.stageId === stage.id && i.location === 'OUT').reduce((s, i) => s + i.quantity, 0)}
                   </span>
                 </div>
               </div>
-              <div className="mt-6 pt-6 border-t border-gray-100 flex items-center justify-between text-xs font-black uppercase tracking-widest text-gray-400 group-hover:text-[#F27D26] transition-colors">
-                <span>{isActive ? 'ĐANG THEO DÕI' : 'CHI TIẾT KHO'}</span>
-                <ChevronRight size={20} className={cn("transition-transform duration-300", isActive && "rotate-90 translate-x-1")} />
+              <div className="mt-4 pt-4 border-t border-gray-50 flex items-center justify-between text-sm font-bold uppercase tracking-widest text-gray-600 group-hover:text-[#F27D26] transition-colors">
+                <span>{isActive ? 'Đang xem chi tiết' : 'Bấm để xem chi tiết'}</span>
+                <ChevronRight size={16} className={cn("transition-transform", isActive && "rotate-90")} />
               </div>
             </button>
           );
@@ -1432,8 +1419,8 @@ function DashboardView({ inventory, parts, refreshData }: DashboardProps) {
                     <Package size={24} className="text-white" />
                   </div>
                   <div>
-                    <h2 className="text-3xl font-bold tracking-tight">Chi tiết tồn kho: {STAGES.find(s => s.id === selectedStageDetail)?.name}</h2>
-                    <p className="text-sm font-mono opacity-50 uppercase tracking-widest">Phân rã theo từng mã linh kiện</p>
+                    <h2 className="text-4xl font-bold tracking-tight">Chi tiết tồn kho: {STAGES.find(s => s.id === selectedStageDetail)?.name}</h2>
+                    <p className="text-base font-mono opacity-80 uppercase tracking-widest text-gray-700">Phân rã theo từng mã linh kiện</p>
                   </div>
                 </div>
                 
@@ -1462,16 +1449,16 @@ function DashboardView({ inventory, parts, refreshData }: DashboardProps) {
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 px-2">
                     <div className="w-3 h-3 rounded-full bg-blue-500" />
-                    <h3 className="font-mono text-sm font-bold uppercase tracking-widest opacity-60">KHO_IN (Chờ sản xuất)</h3>
-                  </div>
-                  <div className="bg-gray-50 rounded-2xl border border-gray-100 overflow-hidden">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="border-b border-gray-200 bg-[#1A1A1A] text-white">
-                          <th className="px-6 py-4 text-xs font-black uppercase tracking-[0.15em] opacity-80">Linh kiện</th>
-                          <th className="px-6 py-4 text-xs font-black uppercase tracking-[0.15em] opacity-80 text-right">Số lượng</th>
-                        </tr>
-                      </thead>
+                    <h3 className="font-mono text-base font-bold uppercase tracking-widest opacity-80">KHO_IN (Chờ sản xuất)</h3>
+</div>
+<div className="bg-gray-50 rounded-2xl border border-gray-100 overflow-hidden">
+  <table className="w-full text-left border-collapse">
+    <thead>
+      <tr className="border-b border-gray-200 bg-gray-100/50">
+        <th className="p-4 text-sm font-mono uppercase opacity-60">Linh kiện</th>
+        <th className="p-4 text-sm font-mono uppercase opacity-60 text-right">Số lượng</th>
+      </tr>
+    </thead>
                       <tbody className="divide-y divide-gray-100">
                         {parts
                           .filter(part => {
@@ -1483,15 +1470,15 @@ function DashboardView({ inventory, parts, refreshData }: DashboardProps) {
                             const qty = inventory.find(i => i.partId === part.id && i.stageId === selectedStageDetail && i.location === 'IN')?.quantity || 0;
                             const displayQty = part.level === 3 ? qty.toFixed(4) : qty;
                             return (
-                              <tr key={part.id} className="hover:bg-white transition-colors bg-white">
-                                <td className="px-6 py-6">
-                                  <div className="font-black text-lg text-gray-900">{getProcessValue(part.id, part, selectedStageDetail, 'IN')}</div>
-                                  <div className="text-sm font-bold opacity-40">{getProcessValue(part.name, part, selectedStageDetail, 'IN')}</div>
+                              <tr key={part.id} className="hover:bg-white transition-colors">
+                                <td className="p-4">
+                                  <div className="font-bold text-base">{getProcessValue(part.id, part, selectedStageDetail, 'IN')}</div>
+                                  <div className="text-xs opacity-50">{getProcessValue(part.name, part, selectedStageDetail, 'IN')}</div>
                                 </td>
-                                <td className="px-6 py-6 text-right">
-                                  <div className="flex items-center justify-end gap-5">
-                                    <span className="font-mono font-black text-3xl tracking-tighter text-gray-900">{displayQty}</span>
-                                    <span className="text-[10px] font-mono font-black opacity-30 uppercase">{part.unit}</span>
+                                <td className="p-4 text-right">
+                                  <div className="flex items-center justify-end gap-3">
+                                    <span className="font-mono font-bold text-xl">{displayQty}</span>
+                                    <span className="text-xs font-mono opacity-40 uppercase mr-4">{part.unit}</span>
                                     <button 
                                       onClick={() => {
                                         const pwd = prompt('Nhập mật khẩu để sửa tồn kho:');
@@ -1541,16 +1528,16 @@ function DashboardView({ inventory, parts, refreshData }: DashboardProps) {
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 px-2">
                     <div className="w-3 h-3 rounded-full bg-[#F27D26]" />
-                    <h3 className="font-mono text-sm font-bold uppercase tracking-widest opacity-60">KHO_OUT (Đã hoàn thành)</h3>
-                  </div>
-                  <div className="bg-gray-50 rounded-2xl border border-gray-100 overflow-hidden">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="border-b border-gray-200 bg-[#1A1A1A] text-white">
-                          <th className="px-6 py-4 text-xs font-black uppercase tracking-[0.15em] opacity-80">Linh kiện</th>
-                          <th className="px-6 py-4 text-xs font-black uppercase tracking-[0.15em] opacity-80 text-right">Số lượng</th>
-                        </tr>
-                      </thead>
+                    <h3 className="font-mono text-base font-bold uppercase tracking-widest opacity-80">KHO_OUT (Đã hoàn thành)</h3>
+</div>
+<div className="bg-gray-50 rounded-2xl border border-gray-100 overflow-hidden">
+  <table className="w-full text-left border-collapse">
+    <thead>
+      <tr className="border-b border-gray-200 bg-gray-100/50">
+        <th className="p-4 text-sm font-mono uppercase opacity-60">Linh kiện</th>
+        <th className="p-4 text-sm font-mono uppercase opacity-60 text-right">Số lượng</th>
+      </tr>
+    </thead>
                       <tbody className="divide-y divide-gray-100">
                         {parts
                           .filter(part => {
@@ -1562,15 +1549,15 @@ function DashboardView({ inventory, parts, refreshData }: DashboardProps) {
                             const qty = inventory.find(i => i.partId === part.id && i.stageId === selectedStageDetail && i.location === 'OUT')?.quantity || 0;
                             const displayQty = part.level === 3 ? qty.toFixed(4) : qty;
                             return (
-                              <tr key={part.id} className="hover:bg-white transition-colors bg-white">
-                                <td className="px-6 py-6">
-                                  <div className="font-black text-lg text-gray-900">{getProcessValue(part.id, part, selectedStageDetail, 'OUT')}</div>
-                                  <div className="text-sm font-bold opacity-40">{getProcessValue(part.name, part, selectedStageDetail, 'OUT')}</div>
+                              <tr key={part.id} className="hover:bg-white transition-colors">
+                                <td className="p-4">
+                                  <div className="font-bold text-base">{getProcessValue(part.id, part, selectedStageDetail, 'OUT')}</div>
+                                  <div className="text-xs opacity-50">{getProcessValue(part.name, part, selectedStageDetail, 'OUT')}</div>
                                 </td>
-                                <td className="px-6 py-6 text-right">
-                                  <div className="flex items-center justify-end gap-5">
-                                    <span className="font-mono font-black text-3xl tracking-tighter text-[#F27D26]">{displayQty}</span>
-                                    <span className="text-[10px] font-mono font-black opacity-30 uppercase">{part.unit}</span>
+                                <td className="p-4 text-right">
+                                  <div className="flex items-center justify-end gap-3">
+                                    <span className="font-mono font-bold text-xl text-[#F27D26]">{displayQty}</span>
+                                    <span className="text-xs font-mono opacity-40 uppercase mr-4">{part.unit}</span>
                                     <button 
                                       onClick={() => {
                                         const pwd = prompt('Nhập mật khẩu để sửa tồn kho:');
@@ -1798,33 +1785,35 @@ function ProduceView({
       className="grid grid-cols-1 lg:grid-cols-2 gap-8"
     >
       <div className="bg-white p-10 rounded-2xl border border-gray-200 shadow-sm space-y-8">
-        <div className="p-4 bg-blue-100/50 border-2 border-blue-200 rounded-2xl flex justify-between items-center shadow-sm">
-          <div>
-            <div className="text-[10px] font-black uppercase text-blue-600 tracking-widest mb-1">Lệnh PO đang chạy</div>
-            <div className="font-mono font-black text-xl text-blue-900 tracking-tight">{activePo.id}</div>
-          </div>
-          <div className="text-right">
-            <div className="text-[10px] font-black uppercase text-blue-600 tracking-widest mb-1">
-              {sourceLocation === 'IN' ? 'Tiến độ SX' : 'Tiến độ Xuất'}
+        {activePo && (
+          <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl flex justify-between items-center">
+            <div>
+              <div className="text-sm font-bold uppercase text-blue-600 opacity-70">Lệnh PO đang chạy</div>
+              <div className="font-mono font-bold text-blue-800 text-lg">{activePo.id}</div>
             </div>
-            <div className="font-mono font-black text-2xl text-blue-900 tracking-tighter">
-              {sourceLocation === 'IN' ? activePo.producedQuantity : activePo.exportedQuantity || 0} <span className="opacity-30">/</span> {activePo.targetQuantity}
+            <div className="text-right">
+              <div className="text-sm font-bold uppercase text-blue-600 opacity-70">
+                {sourceLocation === 'IN' ? 'Tiến độ SX' : 'Tiến độ Xuất'}
+              </div>
+              <div className="font-mono font-bold text-blue-800 text-lg">
+                {sourceLocation === 'IN' ? activePo.producedQuantity : activePo.exportedQuantity || 0} / {activePo.targetQuantity}
+              </div>
             </div>
           </div>
-        </div>
+        )}
         <div>
-          <h2 className="text-4xl font-black tracking-tighter mb-4 text-gray-900 uppercase">Xuất kho & In nhãn</h2>
-          <p className="text-lg text-gray-500 font-bold leading-relaxed">Ghi nhận nhanh công đoạn sản xuất hoặc xuất linh kiện kho thành phẩm.</p>
+          <h2 className="text-4xl font-bold tracking-tight mb-3">Xuất kho (Finish & Label)</h2>
+          <p className="text-lg text-gray-500">Ghi nhận hoàn thành công đoạn hoặc xuất linh kiện từ kho thành phẩm để in nhãn QR.</p>
         </div>
         
         <form onSubmit={(e) => handleProduce(e, sourceLocation, sourceLocation === 'OUT' ? targetStageId : undefined, selectedPoId)} className="space-y-8">
           <div className="grid grid-cols-2 gap-8">
             <div className="space-y-4">
-              <label className="text-xs font-black uppercase tracking-[0.2em] opacity-40">1. Công đoạn hiện tại</label>
+              <label className="text-base font-bold uppercase tracking-widest opacity-70">1. Công đoạn hiện tại</label>
               <select 
                 value={selectedStage}
                 onChange={(e) => setSelectedStage(e.target.value)}
-                className="w-full p-6 rounded-2xl border-2 border-gray-100 font-black text-xl focus:border-blue-600 outline-none bg-white cursor-pointer shadow-sm appearance-none transition-all hover:border-gray-300"
+                className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none bg-white cursor-pointer"
               >
                 {STAGES.map(stage => (
                   <option key={stage.id} value={stage.id}>{stage.name}</option>
@@ -1832,15 +1821,15 @@ function ProduceView({
               </select>
             </div>
             <div className="space-y-4">
-              <label className="text-xs font-black uppercase tracking-[0.2em] opacity-40">2. Vị trí xuất:</label>
-              <div className="flex bg-gray-100 p-2 rounded-2xl h-[84px] shadow-inner">
+              <label className="text-base font-bold uppercase tracking-widest opacity-80">2. Vị trí xuất:</label>
+              <div className="flex bg-gray-100 p-1 rounded-xl h-[68px]">
                 {(selectedStage !== 'LASER' && selectedStage !== 'WELDING') && (
                   <button 
                     type="button"
                     onClick={() => setSourceLocation('IN')}
                     className={cn(
-                      "flex-1 rounded-xl font-black text-sm uppercase tracking-widest transition-all",
-                      sourceLocation === 'IN' ? "bg-white text-gray-900 shadow-xl" : "text-gray-400 hover:text-gray-600"
+                      "flex-1 rounded-lg font-bold text-sm uppercase transition-all",
+                      sourceLocation === 'IN' ? "bg-gray-900 text-white shadow-sm" : "text-gray-400"
                     )}
                   >
                     Kho IN
@@ -1850,8 +1839,8 @@ function ProduceView({
                   type="button"
                   onClick={() => setSourceLocation('OUT')}
                   className={cn(
-                    "flex-1 rounded-xl font-black text-sm uppercase tracking-widest transition-all",
-                    sourceLocation === 'OUT' ? (selectedStage === 'LASER' || selectedStage === 'WELDING' ? "bg-blue-600 text-white shadow-xl" : "bg-[#F27D26] text-white shadow-xl") : "text-gray-400 hover:text-gray-600"
+                    "flex-1 rounded-lg font-bold text-sm uppercase transition-all",
+                    sourceLocation === 'OUT' ? (selectedStage === 'LASER' || selectedStage === 'WELDING' ? "bg-blue-600 text-white shadow-sm" : "bg-[#F27D26] text-white shadow-sm") : "text-gray-400"
                   )}
                 >
                   Kho OUT
@@ -1861,7 +1850,7 @@ function ProduceView({
           </div>
 
           <div className="space-y-4">
-            <label className="text-sm font-bold uppercase tracking-widest opacity-50">3. Chọn mã linh kiện</label>
+            <label className="text-base font-bold uppercase tracking-widest opacity-80">3. Chọn mã linh kiện</label>
             <SearchableSelect 
               options={filteredParts.map((p: any) => ({ 
                 id: p.id, 
@@ -1926,33 +1915,48 @@ function ProduceView({
             </div>
           )}
 
-      <div className="space-y-4">
-        <label className="text-[10px] font-black uppercase tracking-[0.3em] opacity-40">Mục tiêu:</label>
-        <div className="flex items-center gap-4">
-          <button 
-            type="button"
-            onClick={() => setQuantity(Math.max(0, quantity - 1))}
-            className="w-24 h-24 rounded-2xl border-4 border-gray-100 flex items-center justify-center font-black text-4xl hover:bg-gray-900 hover:text-white hover:border-gray-900 active:scale-90 transition-all shadow-sm"
-          >
-            -
-          </button>
-          <input 
-            type="number" 
-            step="any"
-            value={quantity || ''} 
-            onChange={(e) => setQuantity(parseFloat(e.target.value) || 0)}
-            className="flex-1 h-24 text-center border-[6px] border-[#1A1A1A] rounded-2xl font-mono font-black text-6xl outline-none focus:ring-[20px] ring-blue-500/5 transition-all shadow-inner"
-            placeholder="0"
-          />
-          <button 
-            type="button"
-            onClick={() => setQuantity(quantity + 1)}
-            className="w-24 h-24 rounded-2xl border-4 border-gray-100 flex items-center justify-center font-black text-4xl hover:bg-gray-900 hover:text-white hover:border-gray-900 active:scale-90 transition-all shadow-sm"
-          >
-            +
-          </button>
-        </div>
-      </div>
+          <div className="space-y-4">
+            <div className="flex justify-between items-end">
+              <label className="text-sm font-bold uppercase tracking-widest opacity-50">{sourceLocation === 'OUT' ? '5' : '4'}. Nhập số lượng xuất</label>
+              <div className={cn(
+                "flex items-center gap-3 px-4 py-2 rounded-lg border",
+                sourceLocation === 'IN' ? "bg-blue-50 border-blue-100" : "bg-orange-50 border-orange-100"
+              )}>
+                <span className={cn(
+                  "text-xs font-mono font-bold uppercase",
+                  sourceLocation === 'IN' ? "text-blue-600" : "text-orange-600"
+                )}>Tồn {sourceLocation} hiện tại:</span>
+                <span className={cn(
+                  "text-base font-mono font-bold",
+                  sourceLocation === 'IN' ? "text-blue-700" : "text-orange-700"
+                )}>{currentStock}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-6">
+              <button 
+                type="button"
+                onClick={() => setQuantity(Math.max(0, quantity - 1))}
+                className="w-20 h-20 rounded-xl border-2 border-gray-100 flex items-center justify-center font-bold text-3xl hover:bg-gray-50 active:scale-95 transition-all"
+              >
+                -
+              </button>
+              <input 
+                type="number" 
+                step="any"
+                value={quantity || ''} 
+                onChange={(e) => setQuantity(parseFloat(e.target.value) || 0)}
+                className="flex-1 h-20 text-center border-2 border-gray-900 rounded-xl font-mono font-bold text-4xl outline-none focus:ring-4 ring-black/5"
+                placeholder="0"
+              />
+              <button 
+                type="button"
+                onClick={() => setQuantity(quantity + 1)}
+                className="w-20 h-20 rounded-xl border-2 border-gray-100 flex items-center justify-center font-bold text-3xl hover:bg-gray-50 active:scale-95 transition-all"
+              >
+                +
+              </button>
+            </div>
+          </div>
 
           <button 
             type="submit"
@@ -2077,9 +2081,9 @@ function ProduceView({
                 </div>
 
                 <div className="w-full border-t-[3px] border-black pt-4 flex justify-between items-end">
-                  <div className="flex flex-col text-[14px] font-mono leading-tight">
+                  <div className="flex flex-col text-[11px] font-mono leading-none">
                     <span className="font-black mb-1">ID: {lastTransaction.id}</span>
-                    <span className="opacity-60 font-bold">Thời gian: {format(lastTransaction.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
+                    <span className="opacity-60">Thời gian: {format(lastTransaction.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
                   </div>
                   <span className="text-[11px] font-black tracking-tighter italic opacity-40">WIP TRACKING</span>
                 </div>
@@ -2190,7 +2194,7 @@ function WeldingInboundView({ parts, onManualInbound }: any) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8"
+      className="grid grid-cols-1 lg:grid-cols-2 gap-8"
     >
       <div className="bg-white p-10 rounded-3xl border border-gray-200 shadow-xl space-y-8">
         <div className="flex items-center gap-4 mb-2">
@@ -2434,7 +2438,7 @@ function LaserInboundView({ parts, onManualInbound }: any) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8"
+      className="grid grid-cols-1 lg:grid-cols-2 gap-8"
     >
       <div className="bg-white p-10 rounded-3xl border border-gray-200 shadow-xl space-y-8">
         <div className="flex items-center gap-4 mb-2">
@@ -2750,7 +2754,7 @@ function ManualInboundView({ parts, onManualInbound }: any) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8"
+      className="grid grid-cols-1 lg:grid-cols-2 gap-8"
     >
       <div className="bg-white p-10 rounded-3xl border border-gray-200 shadow-xl space-y-8">
         <div className="flex items-center gap-4 mb-2">
@@ -3007,27 +3011,27 @@ function InboundView({ selectedStage, setSelectedStage, onScanSuccess, parts }: 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8"
+      className="grid grid-cols-1 lg:grid-cols-2 gap-8"
     >
       <div className="bg-white p-10 rounded-3xl border border-gray-200 shadow-xl space-y-8">
-        <div className="flex items-center gap-5 mb-2">
-          <div className="bg-blue-600 p-4 rounded-2xl text-white shadow-xl shadow-blue-200">
-            <QrCode size={32} />
+        <div className="flex items-center gap-4 mb-2">
+          <div className="bg-blue-600 p-3 rounded-xl text-white">
+            <QrCode size={24} />
           </div>
           <div>
-            <h3 className="text-2xl font-black uppercase tracking-tighter text-gray-900">Tiếp nhận QR</h3>
-            <p className="text-base text-gray-400 font-bold">Sử dụng súng quét mã để nhập kho tự động</p>
+            <h3 className="text-xl font-bold uppercase tracking-tight">Nhập kho bằng mã QR</h3>
+            <p className="text-sm text-gray-500">Sử dụng súng quét để nhập linh kiện vào kho</p>
           </div>
         </div>
 
         <div className="space-y-8">
           <div className="grid grid-cols-2 gap-8">
             <div className="space-y-4 text-left">
-              <label className="text-xs font-black uppercase tracking-[0.2em] opacity-40">Công đoạn tiếp nhận:</label>
+              <label className="text-sm font-bold uppercase tracking-widest opacity-50">Công đoạn tiếp nhận:</label>
               <select 
                 value={selectedStage}
                 onChange={(e) => setSelectedStage(e.target.value as StageId)}
-                className="w-full p-6 rounded-2xl border-2 border-gray-100 font-black text-xl focus:border-blue-600 outline-none bg-white cursor-pointer shadow-sm transition-all hover:border-gray-300 appearance-none"
+                className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none bg-white cursor-pointer"
               >
                 {STAGES.filter(s => s.id !== 'LASER').map(stage => (
                   <option key={stage.id} value={stage.id}>{stage.name}</option>
@@ -3035,9 +3039,9 @@ function InboundView({ selectedStage, setSelectedStage, onScanSuccess, parts }: 
               </select>
             </div>
             <div className="space-y-4 text-left">
-              <label className="text-xs font-black uppercase tracking-[0.2em] opacity-40">Vị trí nhập:</label>
-              <div className="flex bg-gray-100 p-2 rounded-2xl h-[84px] shadow-inner">
-                <div className="flex-1 rounded-xl font-black text-sm uppercase bg-[#1A1A1A] text-white shadow-xl flex items-center justify-center tracking-widest">
+              <label className="text-sm font-bold uppercase tracking-widest opacity-50">Vị trí nhập:</label>
+              <div className="flex bg-gray-100 p-1 rounded-xl h-[68px]">
+                <div className="flex-1 rounded-lg font-bold text-sm uppercase bg-gray-900 text-white shadow-sm flex items-center justify-center">
                   Kho IN
                 </div>
               </div>
@@ -3048,15 +3052,15 @@ function InboundView({ selectedStage, setSelectedStage, onScanSuccess, parts }: 
             <div className="relative">
               <input 
                 ref={inputRef}
-                type="text" 
+                type="text"
                 value={scanInput}
                 onChange={(e) => setScanInput(e.target.value)}
-                placeholder="NHẬP MÃ TẠI ĐÂY..."
-                className="w-full p-12 rounded-[40px] border-8 border-[#1A1A1A] bg-white text-center font-mono text-5xl font-black focus:ring-[24px] ring-blue-500/10 outline-none placeholder:text-gray-200 transition-all shadow-2xl"
+                placeholder="Nhập mã hoặc dùng súng quét..."
+                className="w-full p-10 rounded-3xl border-4 border-gray-900 bg-gray-50 text-center font-mono text-3xl font-bold focus:ring-8 ring-black/5 outline-none placeholder:text-gray-300"
                 autoComplete="off"
               />
-              <div className="absolute right-12 top-1/2 -translate-y-1/2 flex items-center gap-4 text-sm font-mono font-black text-blue-600 bg-blue-50 px-6 py-4 rounded-full border-2 border-blue-100 shadow-sm animate-bounce">
-                <div className="w-3 h-3 rounded-full bg-blue-500 shadow-[0_0_12px_rgba(59,130,246,0.8)]" />
+              <div className="absolute right-8 top-1/2 -translate-y-1/2 flex items-center gap-3 text-xs font-mono font-bold text-blue-600 bg-blue-50 px-4 py-2 rounded-full border border-blue-100">
+                <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
                 READY
               </div>
             </div>
@@ -4135,10 +4139,10 @@ function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () 
       <div className="bg-white rounded-3xl border border-gray-200 shadow-xl overflow-hidden">
         <div className="p-10 border-b border-gray-100 flex justify-between items-center bg-gray-50/30">
           <div>
-            <h2 className="text-3xl font-black tracking-tighter uppercase text-gray-900 border-l-8 border-orange-600 pl-6">
-              {activeTab === 'NESTING' ? 'Định mức Tổ hợp Laser' : `Định mức công đoạn: ${STAGES.find(s => s.id === activeTab)?.name}`}
+            <h2 className="text-2xl font-bold tracking-tight">
+              {activeTab === 'NESTING' ? 'Định mức Tổ hợp (Nesting) Laser' : `Định mức công đoạn: ${STAGES.find(s => s.id === activeTab)?.name}`}
             </h2>
-            <p className="text-lg text-gray-400 font-bold mt-2 italic ml-14">
+            <p className="text-sm text-gray-500 mt-1">
               {activeTab === 'NESTING' 
                 ? 'Khai báo các linh kiện được cắt chung trên một bàn máy (tấm tôn) để tối ưu thời gian' 
                 : 'Quản lý thời gian sản xuất dự kiến trên mỗi đơn vị linh kiện'}
@@ -4173,52 +4177,52 @@ function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () 
           {activeTab === 'NESTING' ? (
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-[#1A1A1A] text-white">
-                  <th className="px-10 py-6 text-sm font-black uppercase tracking-[0.15em] opacity-80">Mã bàn (Nesting ID)</th>
-                  <th className="px-10 py-6 text-sm font-black uppercase tracking-[0.15em] opacity-80">Linh kiện kết hợp</th>
-                  <th className="px-10 py-6 text-sm font-black uppercase tracking-[0.15em] opacity-80 text-center">Số lượng / Tấm</th>
-                  <th className="px-10 py-6 text-sm font-black uppercase tracking-[0.15em] opacity-80 text-center">Thời gian / LK (Giây)</th>
-                  <th className="px-10 py-6 text-sm font-black uppercase tracking-[0.15em] opacity-80 text-center bg-orange-600">Tổng s/Tấm</th>
+                <tr className="bg-gray-50/50 border-b border-gray-100">
+                  <th className="p-8 pl-12 text-sm font-mono uppercase opacity-80">Mã bàn (Nesting ID)</th>
+                  <th className="p-8 text-sm font-mono uppercase opacity-80">Linh kiện kết hợp</th>
+                  <th className="p-8 text-sm font-mono uppercase opacity-80 text-center">Số lượng / Tấm</th>
+                  <th className="p-8 text-sm font-mono uppercase opacity-80 text-center">Thời gian / LK (Giây)</th>
+                  <th className="p-8 text-sm font-mono uppercase opacity-80 text-center bg-orange-50/50">Tổng s/Tấm</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-gray-50">
                 {Array.from(new Set(nesting.map(n => n.nestingId))).map((nestId, idx) => {
                   const items = nesting.filter(n => n.nestingId === nestId);
                   const totalSeconds = items[0]?.secondsPerSheet || 0;
 
                   return (
-                    <tr key={idx} className="hover:bg-gray-50 transition-colors bg-white">
-                      <td className="px-10 py-8 font-mono text-2xl font-black text-orange-600 tracking-tighter">{nestId}</td>
-                      <td className="px-10 py-8">
-                        <div className="flex flex-wrap gap-3">
+                    <tr key={idx} className="hover:bg-gray-50/30 transition-colors">
+                      <td className="p-8 pl-12 font-mono text-lg font-bold text-orange-600">{nestId}</td>
+                      <td className="p-8">
+                        <div className="flex flex-wrap gap-2">
                           {items.map((it, i) => (
-                            <span key={i} className="px-4 py-2 bg-gray-100 rounded-xl text-sm font-black border-2 border-gray-200">
+                            <span key={i} className="px-3 py-1 bg-gray-100 rounded-full text-xs font-bold border border-gray-200">
                               {parts.find(p => p.id === it.partId)?.name || it.partId}
                             </span>
                           ))}
                         </div>
                       </td>
-                      <td className="px-10 py-8 text-center bg-gray-50/30">
-                        <div className="flex flex-col gap-2 items-center">
+                      <td className="p-8 text-center text-gray-500 font-mono">
+                        <div className="flex flex-col gap-1 items-center">
                           {items.map((it, i) => (
-                            <span key={i} className="text-xl font-black text-gray-900 border-b-2 border-dashed border-gray-300 pb-1">
+                            <span key={i} className="text-sm font-bold">
                               x{it.qtyPerSheet}
                             </span>
                           ))}
                         </div>
                       </td>
-                      <td className="px-10 py-8 text-center">
-                        <div className="flex flex-col gap-2 items-center">
+                      <td className="p-8 text-center text-gray-500 font-mono">
+                        <div className="flex flex-col gap-1 items-center">
                           {items.map((it, i) => (
-                            <span key={i} className="text-xl font-black text-gray-400">
+                            <span key={i} className="text-sm">
                               {it.secondsPerUnit}s
                             </span>
                           ))}
                         </div>
                       </td>
-                      <td className="px-10 py-8 text-center bg-orange-50 border-l-4 border-orange-600 shadow-inner">
-                        <span className="font-mono text-4xl font-black text-orange-600 tracking-tighter">{totalSeconds}</span>
-                        <div className="text-[10px] font-black uppercase opacity-40 text-orange-900 tracking-widest mt-1">GIÂY / TẤM</div>
+                      <td className="p-8 text-center bg-orange-50/20">
+                        <span className="font-mono text-2xl font-black text-orange-600">{totalSeconds}</span>
+                        <span className="ml-2 text-xs font-bold uppercase opacity-40 text-orange-900">giây</span>
                       </td>
                     </tr>
                   );
@@ -4237,39 +4241,36 @@ function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () 
               </tbody>
             </table>
           ) : (
-            <table className="w-full text-left border-collapse whitespace-nowrap">
+            <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-[#1A1A1A] text-white">
-                  <th className="px-10 py-6 text-sm font-black uppercase tracking-[0.15em] opacity-80">Mã linh kiện</th>
-                  <th className="px-10 py-6 text-sm font-black uppercase tracking-[0.15em] opacity-80">Tên linh kiện</th>
-                  <th className="px-10 py-6 text-sm font-black uppercase tracking-[0.15em] opacity-80 text-center">Định mức (Giây/ĐV)</th>
-                  <th className="px-10 py-6 text-sm font-black uppercase tracking-[0.15em] opacity-80 text-right"></th>
+                <tr className="bg-gray-50/50 border-b border-gray-100">
+                  <th className="p-8 pl-12 text-sm font-mono uppercase opacity-75">Mã linh kiện</th>
+                  <th className="p-8 text-sm font-mono uppercase opacity-75">Tên linh kiện</th>
+                  <th className="p-8 text-sm font-mono uppercase opacity-75 text-center">Thời gian (Giây/Đơn vị)</th>
+                  <th className="p-8 pr-12 text-sm font-mono uppercase opacity-75 text-right">Thao tác</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 italic">
+              <tbody className="divide-y divide-gray-50">
                 {norms.filter(n => n.stageId === activeTab).map((norm, idx) => {
                   const part = parts.find(p => p.id === norm.partId);
                   return (
-                    <tr key={idx} className="hover:bg-gray-50 transition-colors bg-white">
-                      <td className="px-10 py-8 font-mono text-xl font-black text-blue-700 tracking-tighter leading-none">
-                        {norm.partId}
-                        <div className="text-[10px] font-mono font-black opacity-30 mt-1 uppercase tracking-widest">{part?.code}</div>
+                    <tr key={idx} className="hover:bg-gray-50/30 transition-colors">
+                      <td className="p-8 pl-12 font-mono text-lg font-bold">{norm.partId}</td>
+                      <td className="p-8 text-lg font-medium text-gray-600">{part?.name || 'N/A'}</td>
+                      <td className="p-8 text-center">
+                        <span className="font-mono text-2xl font-black text-blue-600">{norm.secondsPerUnit}</span>
+                        <span className="ml-2 text-xs font-bold uppercase opacity-40">giây</span>
                       </td>
-                      <td className="px-10 py-8 text-xl font-black text-gray-900 leading-tight">{part?.name || 'N/A'}</td>
-                      <td className="px-10 py-8 text-center">
-                        <span className="font-mono text-4xl font-black text-blue-600 tracking-tighter">{norm.secondsPerUnit}</span>
-                        <span className="ml-3 text-xs font-black uppercase opacity-40 tracking-[0.2em]">GIÂY</span>
-                      </td>
-                      <td className="px-10 py-8 text-right">
+                      <td className="p-8 pr-12 text-right">
                         <button 
                           onClick={() => {
                             const updated = norms.filter(n => !(n.partId === norm.partId && n.stageId === norm.stageId));
                             storageService.saveNorms(updated);
                             onNormsChange();
                           }}
-                          className="p-4 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-2xl transition-all"
+                          className="p-3 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
                         >
-                          <Trash2 size={28} />
+                          <Trash2 size={24} />
                         </button>
                       </td>
                     </tr>
@@ -4321,13 +4322,13 @@ function HistoryView({ transactions, parts }: HistoryProps) {
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-100">
-              <th className="p-6 pl-10 text-xs font-mono uppercase opacity-50">Thời gian</th>
-              <th className="p-6 text-xs font-mono uppercase opacity-50">Loại GD</th>
-              <th className="p-6 text-xs font-mono uppercase opacity-50">Mã Linh kiện</th>
-              <th className="p-6 text-xs font-mono uppercase opacity-50">Số lượng</th>
-              <th className="p-6 text-xs font-mono uppercase opacity-50">Công đoạn</th>
-              <th className="p-6 text-xs font-mono uppercase opacity-50">Nguồn</th>
-              <th className="p-6 pr-10 text-xs font-mono uppercase opacity-50">ID Giao dịch</th>
+              <th className="p-6 pl-10 text-sm font-mono uppercase opacity-80">Thời gian</th>
+              <th className="p-6 text-sm font-mono uppercase opacity-80">Loại GD</th>
+              <th className="p-6 text-sm font-mono uppercase opacity-80">Mã Linh kiện</th>
+              <th className="p-6 text-sm font-mono uppercase opacity-80">Số lượng</th>
+              <th className="p-6 text-sm font-mono uppercase opacity-80">Công đoạn</th>
+              <th className="p-6 text-sm font-mono uppercase opacity-80">Nguồn</th>
+              <th className="p-6 pr-10 text-sm font-mono uppercase opacity-80">ID Giao dịch</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
@@ -4343,27 +4344,27 @@ function HistoryView({ transactions, parts }: HistoryProps) {
             ) : (
               transactions.map((tx) => (
                 <tr key={tx.id} className="hover:bg-gray-50/50 transition-colors">
-                  <td className="p-6 pl-10 font-mono text-sm">{format(tx.timestamp, 'dd/MM/yyyy HH:mm:ss')}</td>
+                  <td className="p-6 pl-10 font-mono text-base">{format(tx.timestamp, 'dd/MM/yyyy HH:mm:ss')}</td>
                   <td className="p-6">
                     <span className={cn(
-                      "text-xs font-bold uppercase px-3 py-1.5 rounded-full",
+                      "text-sm font-bold uppercase px-3 py-1.5 rounded-full",
                       tx.type === 'STAGE_OUT' ? "bg-orange-100 text-orange-700" : "bg-green-100 text-green-700"
                     )}>
                       {tx.type === 'STAGE_OUT' ? 'Hoàn thành' : 'Nhập kho'}
                     </span>
                   </td>
-                  <td className="p-6 font-bold text-base">
+                  <td className="p-6 font-bold text-lg">
                     {getProcessValue(tx.partId, parts.find(p => p.id === tx.partId), tx.stageId, tx.type === 'STAGE_OUT' ? 'OUT' : 'IN')}
-                    <span className="block text-xs font-normal opacity-50">
+                    <span className="block text-sm font-normal opacity-80">
                       {getProcessValue(parts.find(p => p.id === tx.partId)?.name, parts.find(p => p.id === tx.partId), tx.stageId, tx.type === 'STAGE_OUT' ? 'OUT' : 'IN')}
                     </span>
                   </td>
-                  <td className="p-6 font-mono font-bold text-xl">
+                  <td className="p-6 font-mono font-bold text-2xl">
                     {tx.type === 'STAGE_OUT' ? '+' : ''}{tx.quantity}
                   </td>
-                  <td className="p-6 font-bold text-base">{STAGES.find(s => s.id === tx.stageId)?.name}</td>
-                  <td className="p-6 text-sm opacity-60">{tx.sourceStageId ? STAGES.find(s => s.id === tx.sourceStageId)?.name : '-'}</td>
-                  <td className="p-6 pr-10 font-mono text-xs opacity-40">{tx.id.split('-')[0].toUpperCase()}</td>
+                  <td className="p-6 font-bold text-lg">{STAGES.find(s => s.id === tx.stageId)?.name}</td>
+                  <td className="p-6 text-base opacity-80">{tx.sourceStageId ? STAGES.find(s => s.id === tx.sourceStageId)?.name : '-'}</td>
+                  <td className="p-6 pr-10 font-mono text-sm opacity-70">{tx.id.split('-')[0].toUpperCase()}</td>
                 </tr>
               ))
             )}
