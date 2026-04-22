@@ -244,9 +244,9 @@ export default function App() {
     }
   };
 
-  const onScanSuccess = (decodedText: string, targetLocation: 'IN' | 'OUT' = 'IN') => {
+  const onScanSuccess = (decodedText: string, targetLocation: 'IN' | 'OUT' = 'IN', overrideStageId?: StageId) => {
     try {
-      storageService.recordStageIn(decodedText, scanStage, targetLocation);
+      storageService.recordStageIn(decodedText, overrideStageId || scanStage, targetLocation);
       setSuccess('Nhập kho thành công!');
       refreshData();
       // Don't switch view automatically, let user see the success detail
@@ -386,7 +386,7 @@ export default function App() {
                 <span className="font-mono">{lastTransaction.poId || 'N/A'}</span>
               </div>
               <div className="flex justify-between items-center text-[9px] text-gray-500 italic">
-                <span>Mục tiêu PO Con:</span>
+                <span>Kế hoạch PO Con:</span>
                 <span>{lastTransaction.qrData?.split('|')?.[8] || storageService.getProductionOrders().find(p => p.id === lastTransaction.poId)?.targetQuantity || 0} linh kiện</span>
               </div>
               {(() => {
@@ -399,7 +399,7 @@ export default function App() {
                       <span className="font-mono">{masterId}</span>
                     </div>
                     <div className="flex justify-between items-center text-[9px] text-gray-500 italic">
-                      <span>Mục tiêu PO Tổng:</span>
+                      <span>Kế hoạch PO Tổng:</span>
                       <span>{lastTransaction.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0} máy</span>
                     </div>
                   </>
@@ -637,6 +637,7 @@ export default function App() {
                   onPrint={handlePrint}
                   onCopy={copyToClipboard}
                   onRollback={refreshData}
+                  onManualInboundQR={(qr, stage) => onScanSuccess(qr, 'IN', stage)}
                 />
               )}
               {currentView === 'po' && (
@@ -845,7 +846,7 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
                 <th className="px-8 py-5">Mã PO</th>
                 <th className="px-8 py-5">Linh kiện / Thành phẩm</th>
                 <th className="px-8 py-5">Công đoạn</th>
-                <th className="px-8 py-5 text-right">Mục tiêu</th>
+                <th className="px-8 py-5 text-right">Kế hoạch</th>
                 <th className="px-8 py-5 text-right">Thực tế</th>
                 <th className="px-8 py-5 text-right">Đã xuất</th>
                 <th className="px-8 py-5">Tiến độ</th>
@@ -1027,10 +1028,11 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
   );
 }
 
-function LabelHistoryView({ parts, onPrint, onCopy, onRollback }: { parts: Part[], onPrint: (l: Transaction) => void, onCopy: (t: string) => void, onRollback: () => void, key?: string }) {
+function LabelHistoryView({ parts, onPrint, onCopy, onRollback, onManualInboundQR }: { parts: Part[], onPrint: (l: Transaction) => void, onCopy: (t: string) => void, onRollback: () => void, onManualInboundQR: (qrData: string, targetStageId: StageId) => void, key?: string }) {
   const [labels, setLabels] = useState<Transaction[]>([]);
   const [scannedIds, setScannedIds] = useState<Set<string>>(new Set());
   const [showDeleteModal, setShowDeleteModal] = useState<string | null>(null);
+  const [showInboundModal, setShowInboundModal] = useState<string | null>(null);
   const [password, setPassword] = useState("");
   const [selectedLabel, setSelectedLabel] = useState<Transaction | null>(null);
   const [dateFilter, setDateFilter] = useState("");
@@ -1067,6 +1069,39 @@ function LabelHistoryView({ parts, onPrint, onCopy, onRollback }: { parts: Part[
         setPassword("");
         if (selectedLabel?.id === showDeleteModal) setSelectedLabel(null);
         alert('Đã thu hồi lệnh xuất kho và hoàn trả số lượng vào kho thành công!');
+      }
+    } else {
+      alert('Mật khẩu không chính xác!');
+    }
+  };
+
+  const handleManualInbound = () => {
+    if (password === 'admin123') {
+      if (showInboundModal) {
+        const label = labels.find(l => l.id === showInboundModal);
+        if (label && label.qrData) {
+          const qrParts = label.qrData.split('|');
+          const targetStageId = qrParts[5] as StageId;
+          if (!targetStageId) {
+            alert('Nhãn này không có công đoạn đích được chỉ định. Không thể nhập kho tức thì.');
+            return;
+          }
+          
+          try {
+            onManualInboundQR(label.qrData, targetStageId);
+            // Update labels status locally
+            setScannedIds(prev => {
+              const next = new Set(prev);
+              next.add(showInboundModal);
+              return next;
+            });
+            setShowInboundModal(null);
+            setPassword("");
+            alert('Đã nhập kho tức thì thành công!');
+          } catch (err: any) {
+            alert(err.message || 'Đã xảy ra lỗi khi nhập kho');
+          }
+        }
       }
     } else {
       alert('Mật khẩu không chính xác!');
@@ -1212,40 +1247,103 @@ function LabelHistoryView({ parts, onPrint, onCopy, onRollback }: { parts: Part[
                 </button>
               </div>
               
-              <div className="bg-white p-10 border-4 border-black shadow-xl">
-                <QRCodeSVG value={selectedLabel.qrData || ''} size={300} level="H" />
-              </div>
+              <div id="qr-label-display" className="w-[420px] bg-white border-2 border-black p-6 flex flex-col items-center">
+                {/* QR Section */}
+                <div className="mb-6 border-[3px] border-black p-1">
+                  <QRCodeSVG value={selectedLabel.qrData || ''} size={240} level="H" />
+                </div>
 
-              <div className="w-full space-y-4 text-center">
-                <p className="font-bold text-4xl leading-tight tracking-tight">{parts.find(p => p.id === selectedLabel.partId)?.name}</p>
-                {selectedLabel.poId && (
-                  <p className="font-mono text-xl font-bold text-blue-600 uppercase">{selectedLabel.poId}</p>
-                )}
-                <div className="flex justify-center gap-12 py-4">
-                  <div className="flex flex-col">
-                    <span className="text-xs font-mono uppercase opacity-40">Số lượng</span>
-                    <span className="text-3xl font-mono font-bold">{selectedLabel.quantity} {parts.find(p => p.id === selectedLabel.partId)?.unit}</span>
+                {/* Part Info */}
+                <div className="w-full text-center mb-6">
+                  <h2 className="text-3xl font-black uppercase tracking-tight leading-none mb-2">
+                    {getProcessValue(parts.find(p => p.id === selectedLabel.partId)?.name, parts.find(p => p.id === selectedLabel.partId), selectedLabel.stageId, 'OUT')}
+                  </h2>
+                  <p className="font-mono text-lg font-bold opacity-80">
+                    Mã LK: {getProcessValue(selectedLabel.partId, parts.find(p => p.id === selectedLabel.partId), selectedLabel.stageId, 'OUT')}
+                  </p>
+                </div>
+
+                {/* Main Stats */}
+                <div className="w-full grid grid-cols-2 border-t-[3px] border-black py-4">
+                  <div className="text-center border-r-[3px] border-black px-2 flex flex-col justify-center">
+                    <span className="text-[10px] font-bold uppercase opacity-60 mb-1">Số lượng:</span>
+                    <span className="text-3xl font-black">{selectedLabel.quantity} {parts.find(p => p.id === selectedLabel.partId)?.unit}</span>
                   </div>
-                  <div className="flex flex-col">
-                    <span className="text-xs font-mono uppercase opacity-40">Từ công đoạn</span>
-                    <span className="text-3xl font-mono font-bold uppercase">{STAGES.find(s => s.id === selectedLabel.stageId)?.name}</span>
+                  <div className="text-center px-2 flex flex-col justify-center">
+                    <span className="text-[10px] font-bold uppercase opacity-60 mb-1">Từ công đoạn:</span>
+                    <span className="text-2xl font-black uppercase leading-tight">
+                      {STAGES.find(s => s.id === selectedLabel.stageId)?.name}
+                    </span>
                   </div>
                 </div>
-                
-                {selectedLabel.qrData?.split('|')[5] && (
-                  <div className="bg-[#F27D26]/5 p-4 rounded-xl border border-[#F27D26]/20">
-                    <span className="text-xs font-mono uppercase opacity-60 block mb-2">Đích tiếp theo</span>
-                    <div className="flex items-center justify-center gap-3 text-[#F27D26] font-bold text-xl">
-                      <span>{STAGES.find(s => s.id === selectedLabel.stageId)?.name}</span>
-                      <ArrowRight size={20} />
-                      <span>{STAGES.find(s => s.id === selectedLabel.qrData!.split('|')[5])?.name || selectedLabel.qrData!.split('|')[5]}</span>
-                    </div>
-                  </div>
-                )}
 
-                <div className="pt-6 border-t border-gray-100">
-                  <p className="font-mono text-sm opacity-50">ID: {selectedLabel.id.split('-')[0].toUpperCase()}</p>
-                  <p className="font-mono text-sm opacity-50">{format(selectedLabel.timestamp, 'dd/MM/yyyy HH:mm:ss')}</p>
+                {/* Destination Box */}
+                <div className="w-full border-[3px] border-black rounded-lg p-4 my-4 text-center">
+                  <span className="text-[10px] font-bold uppercase opacity-60 block mb-2">Đích tiếp theo:</span>
+                  <div className="flex items-center justify-center gap-4 font-black text-xl italic group">
+                    <span>{STAGES.find(s => s.id === selectedLabel.stageId)?.name}</span>
+                    <ArrowRight size={24} strokeWidth={3} className="text-[#F27D26]" />
+                    <span>{STAGES.find(s => s.id === (selectedLabel.targetStageId || selectedLabel.qrData?.split('|')?.[5]))?.name || 
+                           ((selectedLabel.targetStageId || selectedLabel.qrData?.split('|')?.[5]) === 'DCLR' ? 'Lắp ráp (DCLR)' : 'HOÀN THÀNH')}</span>
+                  </div>
+                </div>
+
+                {/* PO Details Section */}
+                <div className="w-full space-y-1 mb-6 text-[11px] font-bold bg-gray-50 p-3 border border-black/10 rounded">
+                  <div className="flex justify-between items-center">
+                    <span className="opacity-50">LOẠI PO:</span>
+                    {(() => {
+                      const po = storageService.getProductionOrders().find(p => p.id === selectedLabel.poId);
+                      return (
+                        <span className={cn(
+                          "px-2 py-0.5 rounded text-[9px] uppercase",
+                          po?.masterPoId ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"
+                        )}>
+                          {po?.masterPoId ? 'PO Con (Sub)' : 'PO Tổng (Master)'}
+                        </span>
+                      );
+                    })()}
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="opacity-50 uppercase">Mã PO:</span>
+                    <span className="font-mono text-[12px]">{selectedLabel.poId || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-[10px] text-gray-500 italic">
+                    <span>Kế hoạch PO Con:</span>
+                    <span>{selectedLabel.qrData?.split('|')?.[8] || storageService.getProductionOrders().find(p => p.id === selectedLabel.poId)?.targetQuantity || 0} linh kiện</span>
+                  </div>
+                  {(() => {
+                    const po = storageService.getProductionOrders().find(p => p.id === selectedLabel.poId);
+                    const masterId = po?.masterPoId || selectedLabel.qrData?.split('|')?.[7];
+                    return masterId && (
+                      <>
+                        <div className="flex justify-between items-center">
+                          <span className="opacity-50 uppercase">Thuộc PO Tổng:</span>
+                          <span className="font-mono text-[12px] text-red-600">{masterId}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[10px] text-gray-500 italic">
+                          <span>Kế hoạch PO Tổng:</span>
+                          <span>{selectedLabel.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0} máy</span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                  <div className="flex justify-between items-center pt-1 border-t border-black/5 mt-1">
+                    <span className="opacity-50 uppercase">Bắt đầu đi:</span>
+                    <span className="font-mono">{format(selectedLabel.timestamp, 'HH:mm:ss')}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="opacity-50 uppercase">Đến dự kiến:</span>
+                    <span className="font-mono">--:--:--</span>
+                  </div>
+                </div>
+
+                <div className="w-full border-t-[3px] border-black pt-4 flex justify-between items-end text-left">
+                  <div className="flex flex-col text-[11px] font-mono leading-none">
+                    <span className="font-black mb-1">ID: {selectedLabel.id}</span>
+                    <span className="opacity-60">Thời gian: {format(selectedLabel.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
+                  </div>
+                  <span className="text-[11px] font-black tracking-tighter italic opacity-40 text-right">WIP TRACKING</span>
                 </div>
               </div>
 
@@ -1256,6 +1354,25 @@ function LabelHistoryView({ parts, onPrint, onCopy, onRollback }: { parts: Part[
                 >
                   <Printer size={24} />
                   In nhãn (PDF)
+                </button>
+                <button 
+                  onClick={() => {
+                    const isScanned = scannedIds.has(selectedLabel.id);
+                    if (isScanned) {
+                      alert('Nhãn này đã được nhập kho rồi!');
+                      return;
+                    }
+                    setShowInboundModal(selectedLabel.id);
+                  }}
+                  className={cn(
+                    "flex-1 py-5 rounded-xl flex items-center justify-center gap-3 font-bold text-lg uppercase transition-all shadow-lg",
+                    scannedIds.has(selectedLabel.id) 
+                      ? "bg-gray-100 text-gray-400 cursor-not-allowed shadow-none" 
+                      : "bg-green-600 text-white hover:bg-green-700 shadow-green-200"
+                  )}
+                >
+                  <PackagePlus size={24} />
+                  Nhập kho ngay
                 </button>
                 <button 
                   onClick={() => onCopy(selectedLabel.qrData || '')}
@@ -1313,6 +1430,49 @@ function LabelHistoryView({ parts, onPrint, onCopy, onRollback }: { parts: Part[
                   className="flex-1 py-4 bg-orange-600 text-white rounded-lg font-bold text-sm uppercase hover:bg-orange-700 transition-all"
                 >
                   Xác nhận thu hồi
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {showInboundModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl space-y-6 border-t-4 border-green-600"
+            >
+              <div className="flex items-center gap-4 text-green-600">
+                <PackagePlus size={32} />
+                <h3 className="text-xl font-bold">Xác nhận nhập kho ngay</h3>
+              </div>
+              <p className="text-sm text-gray-500">Bạn đang thực hiện nhập kho tức thì dựa trên thông tin nhãn QR mà không cần quét mã. Vui lòng nhập mật khẩu Admin để xác nhận.</p>
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase opacity-50">Nhập mật khẩu Admin</label>
+                <input 
+                  type="password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  className="w-full p-4 rounded-lg border border-gray-200 focus:border-green-500 outline-none text-lg"
+                  placeholder="Nhập admin123..."
+                  onKeyDown={(e) => e.key === 'Enter' && handleManualInbound()}
+                  autoFocus
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button 
+                  onClick={() => { setShowInboundModal(null); setPassword(''); }}
+                  className="flex-1 py-4 bg-gray-100 rounded-lg font-bold text-sm uppercase hover:bg-gray-200 transition-all"
+                >
+                  Hủy bỏ
+                </button>
+                <button 
+                  onClick={handleManualInbound}
+                  className="flex-1 py-4 bg-green-600 text-white rounded-lg font-bold text-sm uppercase hover:bg-green-700 transition-all"
+                >
+                  Xác nhận nhập kho
                 </button>
               </div>
             </motion.div>
@@ -2051,7 +2211,7 @@ function ProduceView({
                     <span className="font-mono text-[12px]">{lastTransaction.poId || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between items-center text-[10px] text-gray-500 italic">
-                    <span>Mục tiêu PO Con:</span>
+                    <span>Kế hoạch PO Con:</span>
                     <span>{lastTransaction.qrData?.split('|')?.[8] || storageService.getProductionOrders().find(p => p.id === lastTransaction.poId)?.targetQuantity || 0} linh kiện</span>
                   </div>
                   {(() => {
@@ -2064,7 +2224,7 @@ function ProduceView({
                           <span className="font-mono text-[12px] text-red-600">{masterId}</span>
                         </div>
                         <div className="flex justify-between items-center text-[10px] text-gray-500 italic">
-                          <span>Mục tiêu PO Tổng:</span>
+                          <span>Kế hoạch PO Tổng:</span>
                           <span>{lastTransaction.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0} máy</span>
                         </div>
                       </>
