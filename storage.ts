@@ -317,8 +317,10 @@ export const storageService = {
 
   updateInventory(partId: string, stageId: StageId, location: 'IN' | 'OUT', delta: number) {
     const inventory = this.getInventory();
+    // Clean partId to ensure suffixes like " - H" or " - CD" don't create duplicate entries and lookups always work
+    const cleanId = partId.split(' - ')[0];
     const index = inventory.findIndex(
-      (item) => item.partId === partId && item.stageId === stageId && item.location === location
+      (item) => item.partId === cleanId && item.stageId === stageId && item.location === location
     );
 
     if (index >= 0) {
@@ -327,7 +329,7 @@ export const storageService = {
       inventory[index].quantity = Math.round(inventory[index].quantity * 10000) / 10000;
       if (inventory[index].quantity < 0) inventory[index].quantity = 0;
     } else {
-      inventory.push({ partId, stageId, location, quantity: Math.max(0, delta) });
+      inventory.push({ partId: cleanId, stageId, location, quantity: Math.max(0, delta) });
     }
 
     this.saveInventory(inventory);
@@ -335,14 +337,15 @@ export const storageService = {
 
   setInventoryQuantity(partId: string, stageId: StageId, location: 'IN' | 'OUT', quantity: number) {
     const inventory = this.getInventory();
+    const cleanId = partId.split(' - ')[0];
     const index = inventory.findIndex(
-      (item) => item.partId === partId && item.stageId === stageId && item.location === location
+      (item) => item.partId === cleanId && item.stageId === stageId && item.location === location
     );
 
     if (index >= 0) {
       inventory[index].quantity = Math.max(0, quantity);
     } else {
-      inventory.push({ partId, stageId, location, quantity: Math.max(0, quantity) });
+      inventory.push({ partId: cleanId, stageId, location, quantity: Math.max(0, quantity) });
     }
 
     this.saveInventory(inventory);
@@ -350,20 +353,23 @@ export const storageService = {
 
   deleteInventoryItem(partId: string, stageId: StageId, location: 'IN' | 'OUT') {
     const inventory = this.getInventory();
+    const cleanId = partId.split(' - ')[0];
     const filtered = inventory.filter(
-      (item) => !(item.partId === partId && item.stageId === stageId && item.location === location)
+      (item) => !(item.partId === cleanId && item.stageId === stageId && item.location === location)
     );
     this.saveInventory(filtered);
   },
 
   applyBOMDeduction(partId: string, stageId: StageId, quantity: number) {
     const parts = this.getParts();
+    // Strip suffixes added by display logic (e.g., " - CD", " - H") to ensure BOM lookups match the original part ID
+    const cleanId = partId.split(' - ')[0];
     
     // Laser stage specific logic (BOM V1):
     // Deduct Level 3 parts from Laser IN based on BOM when Level 2 is produced
     if (stageId === 'LASER') {
       const bom = this.getBOM();
-      const bomDef = bom.find(b => b.childPartId === partId);
+      const bomDef = bom.find(b => b.childPartId === cleanId);
       
       if (bomDef) {
         const totalConsumption = quantity * (bomDef.componentWeight + bomDef.scrapWeight);
@@ -389,7 +395,7 @@ export const storageService = {
     if (stageId === 'WELDING') {
       const bomV2 = this.getBOMV2();
       // Only deduct ingredients that DON'T skip welding
-      const allIngredients = bomV2.filter(b => b.resultPartId === partId);
+      const allIngredients = bomV2.filter(b => b.resultPartId === cleanId);
       const ingredients = allIngredients.filter(ing => {
         const p = parts.find(part => part.id === ing.ingredientPartId);
         return !p?.skipWelding;
@@ -414,7 +420,7 @@ export const storageService = {
     // Painting stage deduction for ingredients that skipped welding
     if (stageId === 'PAINTING') {
       const bomV2 = this.getBOMV2();
-      const allIngredients = bomV2.filter(b => b.resultPartId === partId);
+      const allIngredients = bomV2.filter(b => b.resultPartId === cleanId);
       const skipWeldedIngredients = allIngredients.filter(ing => {
         const p = parts.find(part => part.id === ing.ingredientPartId);
         return p?.skipWelding;
@@ -455,10 +461,11 @@ export const storageService = {
   },
 
   recordStageOut(partId: string, stageId: StageId, quantity: number, sourceLocation: 'IN' | 'OUT' = 'IN', targetStageId?: StageId, poId?: string) {
+    const cleanId = partId.split(' - ')[0];
     // Validation: Check if source location has enough quantity
     const inventory = this.getInventory();
     const stock = inventory.find(
-      (item) => item.partId === partId && item.stageId === stageId && item.location === sourceLocation
+      (item) => item.partId === cleanId && item.stageId === stageId && item.location === sourceLocation
     );
 
     if (!stock || stock.quantity < quantity) {
@@ -473,12 +480,12 @@ export const storageService = {
       // Find the specific PO or the first pending/in-progress one
       const poIndex = poId 
         ? pos.findIndex(p => p.id === poId)
-        : pos.findIndex(p => p.partId === partId && p.stageId === stageId && p.status !== 'COMPLETED');
+        : pos.findIndex(p => p.partId === cleanId && p.stageId === stageId && p.status !== 'COMPLETED');
       
       if (poIndex !== -1) {
         const po = pos[poIndex];
         if (po.producedQuantity + quantity > po.targetQuantity) {
-          throw new Error(`Lỗi: Số lượng sản xuất (${po.producedQuantity + quantity}) vượt quá mục tiêu PO (${po.targetQuantity}) cho ${partId} tại ${stageId}`);
+          throw new Error(`Lỗi: Số lượng sản xuất (${po.producedQuantity + quantity}) vượt quá mục tiêu PO (${po.targetQuantity}) cho ${cleanId} tại ${stageId}`);
         }
         
         po.producedQuantity += quantity;
@@ -539,20 +546,20 @@ export const storageService = {
     if (sourceLocation === 'IN') {
       // Move IN -> OUT (Finish production)
       // Apply BOM deduction before updating inventory
-      this.applyBOMDeduction(partId, stageId, quantity);
+      this.applyBOMDeduction(cleanId, stageId, quantity);
       
-      this.updateInventory(partId, stageId, 'IN', -quantity);
-      this.updateInventory(partId, stageId, 'OUT', quantity);
+      this.updateInventory(cleanId, stageId, 'IN', -quantity);
+      this.updateInventory(cleanId, stageId, 'OUT', quantity);
     } else {
       // Deduct from OUT (Export already finished items)
-      this.updateInventory(partId, stageId, 'OUT', -quantity);
+      this.updateInventory(cleanId, stageId, 'OUT', -quantity);
     }
 
     // 2. Record transaction
     const transactions = this.getTransactions();
     const parts = this.getParts();
     const stage = STAGES.find(s => s.id === stageId);
-    const part = parts.find(p => p.id === partId);
+    const part = parts.find(p => p.id === cleanId);
     
     // Get master PO ID and target quantities if exists
     const pos = this.getProductionOrders();
@@ -569,13 +576,13 @@ export const storageService = {
     // Format: poIdOrPartId|quantity|sourceStageId|timestamp|txId|targetStageId|REMOVED_PART_NAME|masterPoId|subPoTargetQty|masterPoTargetQty
     // Note: partName is removed to avoid UTF-8 encoding issues with hardware scanners.
     const qrData = sourceLocation === 'OUT' 
-      ? `${linkedPoId || partId}|${quantity}|${stageId}|${timestamp}|${txId}|${targetStageId || ''}||${masterPoId}|${subPoTargetQty}|${masterPoTargetQty}`
+      ? `${linkedPoId || cleanId}|${quantity}|${stageId}|${timestamp}|${txId}|${targetStageId || ''}||${masterPoId}|${subPoTargetQty}|${masterPoTargetQty}`
       : undefined;
 
     const newTransaction: Transaction = {
       id: txId,
       type: 'STAGE_OUT',
-      partId,
+      partId: cleanId,
       quantity,
       stageId,
       targetStageId,
@@ -607,7 +614,7 @@ export const storageService = {
     const [idOrPo, quantityStr, sourceStageId, , sourceTxId, targetStageId] = parts;
     const quantity = parseFloat(quantityStr);
 
-    let partId = idOrPo;
+    let partId = idOrPo.split(' - ')[0];
     let linkedPoId: string | undefined;
 
     if (idOrPo.startsWith('PO-')) {
@@ -665,22 +672,23 @@ export const storageService = {
   },
 
   recordManualInbound(partId: string, stageId: StageId, location: 'IN' | 'OUT', quantity: number, poId?: string) {
+    const cleanId = partId.split(' - ')[0];
     let linkedPoId = poId;
 
     // Apply BOM logic if entering into OUT (Production result)
     if (location === 'OUT') {
-      this.applyBOMDeduction(partId, stageId, quantity);
+      this.applyBOMDeduction(cleanId, stageId, quantity);
 
       // Update PO progress
       const pos = this.getProductionOrders();
       const poIndex = poId 
         ? pos.findIndex(p => p.id === poId)
-        : pos.findIndex(p => p.partId === partId && p.stageId === stageId && p.status !== 'COMPLETED');
+        : pos.findIndex(p => p.partId === cleanId && p.stageId === stageId && p.status !== 'COMPLETED');
       
       if (poIndex !== -1) {
         const po = pos[poIndex];
         if (po.producedQuantity + quantity > po.targetQuantity) {
-          throw new Error(`Lỗi: Số lượng sản xuất (${po.producedQuantity + quantity}) vượt quá mục tiêu PO (${po.targetQuantity}) cho ${partId} tại ${stageId}`);
+          throw new Error(`Lỗi: Số lượng sản xuất (${po.producedQuantity + quantity}) vượt quá mục tiêu PO (${po.targetQuantity}) cho ${cleanId} tại ${stageId}`);
         }
         po.producedQuantity += quantity;
         const isProduced = po.producedQuantity >= po.targetQuantity;
@@ -707,13 +715,13 @@ export const storageService = {
       }
     }
 
-    this.updateInventory(partId, stageId, location, quantity);
+    this.updateInventory(cleanId, stageId, location, quantity);
     
     const transactions = this.getTransactions();
     const newTransaction: Transaction = {
       id: crypto.randomUUID(),
       type: 'STAGE_IN',
-      partId,
+      partId: cleanId,
       quantity,
       stageId,
       timestamp: Date.now(),
