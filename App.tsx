@@ -1744,27 +1744,19 @@ function ProduceView({
   }, [selectedPart, selectedStage, availablePos.length]);
 
   useEffect(() => {
-    const next = STAGES.find(s => s.id === selectedStage)?.nextStageId;
-    if (next) {
-      // Smart detection for skip flags
-      const part = parts.find((p: any) => p.id === selectedPart);
-      if (selectedStage === 'LASER') {
-        if (part?.skipBending && part?.skipWelding) {
-          setTargetStageId('PAINTING');
-          return;
-        }
-        if (part?.skipBending) {
-          setTargetStageId('WELDING');
-          return;
-        }
-      }
-      if (selectedStage === 'BENDING') {
-        if (part?.skipWelding) {
-          setTargetStageId('PAINTING');
-          return;
-        }
-      }
-      setTargetStageId(next);
+    const currentIdx = STAGES.findIndex(s => s.id === selectedStage);
+    const part = parts.find((p: any) => p.id === selectedPart);
+    
+    // Find the next non-skipped stage
+    const nextAvailableStage = STAGES.find((s, idx) => {
+      if (idx <= currentIdx) return false;
+      if (s.id === 'BENDING' && part?.skipBending) return false;
+      if (s.id === 'WELDING' && part?.skipWelding) return false;
+      return true;
+    });
+
+    if (nextAvailableStage) {
+      setTargetStageId(nextAvailableStage.id);
     } else if (selectedStage === 'PAINTING') {
       setTargetStageId('DCLR');
     } else {
@@ -1775,7 +1767,7 @@ function ProduceView({
     if (selectedStage === 'LASER' || selectedStage === 'WELDING') {
       setSourceLocation('OUT');
     }
-  }, [selectedStage, sourceLocation]);
+  }, [selectedStage, selectedPart, sourceLocation, parts]);
 
   const currentStock = inventory.find(
     (i: any) => i.partId === selectedPart && i.stageId === selectedStage && i.location === sourceLocation
@@ -1892,7 +1884,16 @@ function ProduceView({
               >
                 {STAGES.filter((s, idx) => {
                   const currentIdx = STAGES.findIndex(st => st.id === selectedStage);
-                  return idx > currentIdx;
+                  const part = parts.find((p: any) => p.id === selectedPart);
+                  
+                  // Only show stages after the current one
+                  if (idx <= currentIdx) return false;
+
+                  // Filter out skipped stages based on part configuration
+                  if (s.id === 'BENDING' && part?.skipBending) return false;
+                  if (s.id === 'WELDING' && part?.skipWelding) return false;
+
+                  return true;
                 }).map(stage => (
                   <option key={stage.id} value={stage.id}>{stage.name}</option>
                 ))}

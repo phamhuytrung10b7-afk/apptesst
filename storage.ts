@@ -748,10 +748,10 @@ export const storageService = {
     const timestamp = Date.now();
     const dateStr = format(timestamp, 'ddMM');
     const modelPrefix = modelId.length > 8 ? modelId.substring(0, 8).toUpperCase() : modelId.toUpperCase();
-    const generateUniqueId = (prefix: string) => {
+    const generateUniqueId = (prefix: string, suffix: string = "") => {
       let newId = "";
       do {
-        newId = `${prefix}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+        newId = `${prefix}-${Math.random().toString(36).substring(2, 7).toUpperCase()}${suffix}`;
       } while (pos.some(p => p.id === newId));
       return newId;
     };
@@ -762,74 +762,68 @@ export const storageService = {
     const modelBom = this.getModelBOM();
     const bomV2 = this.getBOMV2();
 
+    // 1. Build part dependency map and collect required parts
+    const requiredParts = new Map<string, { qty: number, minLevel: number }>();
+    const level1Children = new Map<string, string[]>(); // Map: Level 1 Part -> List of its Level 2+ Children
+
+    const traverseBOM = (currentId: string, currentQty: number, level: number, parentId: string | null) => {
+      if (level > 0) {
+        const existing = requiredParts.get(currentId);
+        if (!existing || level < existing.minLevel) {
+          requiredParts.set(currentId, { qty: (existing?.qty || 0) + currentQty, minLevel: level });
+        } else {
+          requiredParts.set(currentId, { ...existing, qty: existing.qty + currentQty });
+        }
+        
+        // Track Level 2+ children belonging to a Level 1 parent
+        if (level >= 2 && parentId) {
+          const children = level1Children.get(parentId) || [];
+          if (!children.includes(currentId)) children.push(currentId);
+          level1Children.set(parentId, children);
+        }
+      }
+      
+      const modelIdx = modelBom.filter(b => b.modelId === currentId);
+      for (const ing of modelIdx) {
+        traverseBOM(ing.partId, currentQty * ing.quantity, level + 1, level === 0 ? null : (level === 1 ? currentId : parentId));
+      }
+
+      const v2Idx = bomV2.filter(b => b.resultPartId === currentId);
+      for (const ing of v2Idx) {
+        traverseBOM(ing.ingredientPartId, currentQty * ing.quantity, level + 1, level === 1 ? currentId : parentId);
+      }
+    };
+    traverseBOM(modelId, quantity, 0, null);
+
+    // 2. Initialize PO lists
     const laserPOs: ProductionOrder[] = [];
     const bendingPOs: ProductionOrder[] = [];
     const weldingPOs: ProductionOrder[] = [];
     const paintingPOs: ProductionOrder[] = [];
 
-    // Collect all parts and their total quantities and LEVELS required in the hierarchy
-    const requiredParts = new Map<string, { qty: number, minLevel: number }>();
-
-    // Recursive helper to traverse BOM
-    const traverseBOM = (currentId: string, currentQty: number, level: number) => {
-      if (level > 0) {
-        const existing = requiredParts.get(currentId);
-        if (!existing || level < existing.minLevel) {
-          requiredParts.set(currentId, { 
-            qty: (existing?.qty || 0) + currentQty, 
-            minLevel: level 
-          });
-        } else {
-          requiredParts.set(currentId, { 
-            ...existing, 
-            qty: existing.qty + currentQty 
-          });
-        }
-      }
-      
-      // 1. Check if this ID is a Model that has ModelBOM ingredients (creates Level 1)
-      const modelIngredients = modelBom.filter(b => b.modelId === currentId);
-      for (const ing of modelIngredients) {
-        traverseBOM(ing.partId, currentQty * ing.quantity, level + 1);
-      }
-
-      // 2. Check if this ID is a Part that has BOM V2 ingredients (creates Level 2+)
-      const ingredientsV2 = bomV2.filter(b => b.resultPartId === currentId);
-      for (const ing of ingredientsV2) {
-        traverseBOM(ing.ingredientPartId, currentQty * ing.quantity, level + 1);
-      }
-    };
-
-    // Start traversal from the Model (Level 0)
-    traverseBOM(modelId, quantity, 0);
-
-    // For all parts found, check which stages they need based on their LEVEL
     requiredParts.forEach((info, partId) => {
-      const { qty: totalQty, minLevel: level } = info;
+      const { qty, minLevel: level } = info;
       const part = partsList.find(p => p.id === partId);
-      
-      // Helper to add PO
       const addPo = (stageId: StageId, list: ProductionOrder[]) => {
-        // Respect explicit skip flags from part configuration
         if (stageId === 'BENDING' && part?.skipBending) return;
         if (stageId === 'WELDING' && part?.skipWelding) return;
 
+        let idSuffix = "";
+        if (stageId === 'WELDING') idSuffix = "- H";
+        else if (stageId === 'BENDING') idSuffix = "- CD";
+
         list.push({
-          id: generateUniqueId(`PO-${modelPrefix}-${dateStr}-${stageId}`),
+          id: generateUniqueId(`PO-${modelPrefix}-${dateStr}-${stageId}`, idSuffix),
           masterPoId: masterPoId,
           partId: partId,
           stageId: stageId,
-          targetQuantity: totalQty,
+          targetQuantity: qty,
           producedQuantity: 0,
           exportedQuantity: 0,
           status: 'PENDING',
           createdAt: timestamp
         });
       };
-
-      // Apply User Rules:
-      // Level 1 -> WELDING, PAINTING
-      // Level 2+ -> LASER, BENDING
       if (level === 1) {
         addPo('WELDING', weldingPOs);
         addPo('PAINTING', paintingPOs);
@@ -839,128 +833,152 @@ export const storageService = {
       }
     });
 
-    // Sequential Scheduling
-    let machineFreeTime = timestamp;
-    const partAvailableTime = new Map<string, number>(); 
+    // 3. Scheduling logic with dependencies
+    const partStageFinishTime = new Map<string, Map<StageId, number>>(); 
     const allChildPOs: ProductionOrder[] = [];
     const laserNesting = this.getLaserNesting();
     const shiftConfigs = this.getShiftConfigs();
 
-    const scheduleSequence = (stageList: ProductionOrder[]) => {
-      if (stageList.length === 0) return;
-      const stageId = stageList[0].stageId as StageId;
-      const config = shiftConfigs.find(c => c.stageId === stageId);
-      const workerCount = config?.workerCount || 1;
-
-      // Sort by previous stage completion time to maintain flow
-      if (stageId !== 'LASER') {
-        stageList.sort((a, b) => {
-          const timeA = partAvailableTime.get(a.partId) || 0;
-          const timeB = partAvailableTime.get(b.partId) || 0;
-          return timeA - timeB;
-        });
+    const recordFinish = (po: ProductionOrder, time: number) => {
+      let stages = partStageFinishTime.get(po.partId);
+      if (!stages) {
+        stages = new Map<StageId, number>();
+        partStageFinishTime.set(po.partId, stages);
       }
-
-      // Special logic for Laser with Nesting
-      if (stageId === 'LASER' && laserNesting.length > 0) {
-        const nestedPartIds = new Set(laserNesting.map(ln => ln.partId));
-        const nestedPOs = stageList.filter(po => nestedPartIds.has(po.partId));
-        const individualPOs = stageList.filter(po => !nestedPartIds.has(po.partId));
-
-        // Individual Laser POs
-        individualPOs.forEach(po => {
-          po.createdAt = this.getNextWorkingTime(machineFreeTime, stageId, shiftConfigs);
-          const norm = norms.find(n => n.partId === po.partId && n.stageId === po.stageId);
-          if (norm) {
-            const duration = (po.targetQuantity * norm.secondsPerUnit * 1000) / workerCount;
-            po.expectedCompletionTime = this.calculateEndTime(po.createdAt, duration, stageId, shiftConfigs);
-            machineFreeTime = po.expectedCompletionTime;
-            partAvailableTime.set(po.partId, po.expectedCompletionTime);
-          } else {
-            po.expectedCompletionTime = undefined;
-          }
-          allChildPOs.push(po);
-        });
-
-        // Nested Laser POs
-        const nestedGroups = new Map<string, ProductionOrder[]>();
-        nestedPOs.forEach(po => {
-          const nest = laserNesting.find(ln => ln.partId === po.partId);
-          if (nest) {
-            const group = nestedGroups.get(nest.nestingId) || [];
-            group.push(po);
-            nestedGroups.set(nest.nestingId, group);
-          }
-        });
-
-        nestedGroups.forEach((groupPOs, nestingId) => {
-          // Group logic: In a nesting program, the total machine time is the sum of time spent on each part unit required for this PO.
-          // All parts in the same group start together and finish when the last required unit is cut.
-          let totalGroupDurationMs = 0;
-          groupPOs.forEach(po => {
-            const nest = laserNesting.find(ln => ln.partId === po.partId && ln.nestingId === nestingId);
-            if (nest) {
-              totalGroupDurationMs += po.targetQuantity * nest.secondsPerUnit * 1000;
-            }
-          });
-
-          // Adjusted by workerCount (Resources)
-          const adjustedDuration = totalGroupDurationMs / workerCount;
-
-          const groupStartTime = this.getNextWorkingTime(machineFreeTime, stageId, shiftConfigs);
-          const groupEndTime = this.calculateEndTime(groupStartTime, adjustedDuration, stageId, shiftConfigs);
-
-          groupPOs.forEach(po => {
-            po.createdAt = groupStartTime;
-            po.expectedCompletionTime = groupEndTime;
-            // Mark part as available for the next stage
-            partAvailableTime.set(po.partId, groupEndTime);
-            allChildPOs.push(po);
-          });
-          
-          // Machine is busy until the end of this group's total duration
-          machineFreeTime = groupEndTime;
-        });
-      } else {
-        // Standard sequential logic for other stages
-        stageList.forEach(po => {
-          const previousStageEnd = partAvailableTime.get(po.partId) || timestamp;
-          const startTime = this.getNextWorkingTime(Math.max(machineFreeTime, previousStageEnd), stageId, shiftConfigs);
-          
-          po.createdAt = startTime;
-          const norm = norms.find(n => n.partId === po.partId && n.stageId === po.stageId);
-          if (norm) {
-            const duration = (po.targetQuantity * norm.secondsPerUnit * 1000) / workerCount;
-            po.expectedCompletionTime = this.calculateEndTime(startTime, duration, stageId, shiftConfigs);
-            machineFreeTime = po.expectedCompletionTime;
-            partAvailableTime.set(po.partId, po.expectedCompletionTime);
-          } else {
-            po.expectedCompletionTime = undefined;
-            machineFreeTime = startTime;
-          }
-          allChildPOs.push(po);
-        });
-      }
+      stages.set(po.stageId as StageId, time);
     };
 
-    // Correct sequential order: LASER -> BENDING -> WELDING -> PAINTING
-    scheduleSequence(laserPOs);
-    // Reset machine time for next stages if they use different machines (optional, but keep it sequential for now)
-    // Actually, usually each stage has its own resource. 
-    // To make it truly sequential across the whole shop, we don't reset machineFreeTime.
-    // To allow parallel stages (e.g. Bending and Laser running at the same time on different parts), we would reset machineFreeTime for each stage list.
-    // Based on user: "tiếp nối nhau" usually implies the whole process is a single chain.
-    // However, LASER -> BENDING -> ... implies STAGE order.
-    // Let's assume each stage has ONE machine. So machineFreeTime resets per stage, but partAvailability carries over.
+    const getFinishTime = (partId: string, stageId: StageId) => {
+      return partStageFinishTime.get(partId)?.get(stageId) || timestamp;
+    };
+
+    // Stage 1: LASER (Level 2+)
+    let mFreeLaser = timestamp;
+    const laserConfig = shiftConfigs.find(c => c.stageId === 'LASER');
+    const laserWorkers = laserConfig?.workerCount || 1;
     
-    machineFreeTime = timestamp; 
-    scheduleSequence(bendingPOs);
-    
-    machineFreeTime = timestamp;
-    scheduleSequence(weldingPOs);
-    
-    machineFreeTime = timestamp;
-    scheduleSequence(paintingPOs);
+    if (laserNesting.length > 0) {
+      const nestedGroupMap = new Map<string, ProductionOrder[]>();
+      const individualLaserPOs: ProductionOrder[] = [];
+      const nestedPartIds = new Set(laserNesting.map(ln => ln.partId));
+
+      laserPOs.forEach(po => {
+        const nest = laserNesting.find(ln => ln.partId === po.partId);
+        if (nest) {
+          const group = nestedGroupMap.get(nest.nestingId) || [];
+          group.push(po);
+          nestedGroupMap.set(nest.nestingId, group);
+        } else {
+          individualLaserPOs.push(po);
+        }
+      });
+
+      individualLaserPOs.forEach(po => {
+        po.createdAt = this.getNextWorkingTime(mFreeLaser, 'LASER', shiftConfigs);
+        const norm = norms.find(n => n.partId === po.partId && n.stageId === 'LASER');
+        const duration = norm ? (po.targetQuantity * norm.secondsPerUnit * 1000) / laserWorkers : 0;
+        po.expectedCompletionTime = this.calculateEndTime(po.createdAt, duration, 'LASER', shiftConfigs);
+        mFreeLaser = po.expectedCompletionTime;
+        recordFinish(po, mFreeLaser);
+        allChildPOs.push(po);
+      });
+
+      nestedGroupMap.forEach((groupPOs, nestingId) => {
+        let totalDur = 0;
+        groupPOs.forEach(po => {
+          const nest = laserNesting.find(ln => ln.partId === po.partId && ln.nestingId === nestingId);
+          if (nest) totalDur += po.targetQuantity * nest.secondsPerUnit * 1000;
+        });
+        const adjustedDur = totalDur / laserWorkers;
+        const start = this.getNextWorkingTime(mFreeLaser, 'LASER', shiftConfigs);
+        const end = this.calculateEndTime(start, adjustedDur, 'LASER', shiftConfigs);
+        groupPOs.forEach(po => {
+          po.createdAt = start;
+          po.expectedCompletionTime = end;
+          recordFinish(po, end);
+          allChildPOs.push(po);
+        });
+        mFreeLaser = end;
+      });
+    } else {
+      laserPOs.forEach(po => {
+        po.createdAt = this.getNextWorkingTime(mFreeLaser, 'LASER', shiftConfigs);
+        const norm = norms.find(n => n.partId === po.partId && n.stageId === 'LASER');
+        const duration = norm ? (po.targetQuantity * norm.secondsPerUnit * 1000) / laserWorkers : 0;
+        po.expectedCompletionTime = this.calculateEndTime(po.createdAt, duration, 'LASER', shiftConfigs);
+        mFreeLaser = po.expectedCompletionTime;
+        recordFinish(po, mFreeLaser);
+        allChildPOs.push(po);
+      });
+    }
+
+    // Stage 2: BENDING (Level 2+)
+    let mFreeBending = timestamp;
+    const bendConfig = shiftConfigs.find(c => c.stageId === 'BENDING');
+    const bendWorkers = bendConfig?.workerCount || 1;
+    bendingPOs.forEach(po => {
+      const laserEnd = getFinishTime(po.partId, 'LASER');
+      const start = this.getNextWorkingTime(Math.max(mFreeBending, laserEnd), 'BENDING', shiftConfigs);
+      po.createdAt = start;
+      const norm = norms.find(n => n.partId === po.partId && n.stageId === 'BENDING');
+      const duration = norm ? (po.targetQuantity * norm.secondsPerUnit * 1000) / bendWorkers : 0;
+      po.expectedCompletionTime = this.calculateEndTime(start, duration, 'BENDING', shiftConfigs);
+      mFreeBending = po.expectedCompletionTime;
+      recordFinish(po, mFreeBending);
+      allChildPOs.push(po);
+    });
+
+    // Stage 3: WELDING (Level 1)
+    let mFreeWelding = timestamp;
+    const weldConfig = shiftConfigs.find(c => c.stageId === 'WELDING');
+    const weldWorkers = weldConfig?.workerCount || 1;
+    // Sort Welding to start those whose components are ready first
+    weldingPOs.sort((a, b) => {
+      const getReady = (pid: string) => {
+        const children = level1Children.get(pid) || [];
+        if (children.length === 0) return timestamp;
+        return Math.max(...children.map(cid => {
+          const bEnd = partStageFinishTime.get(cid)?.get('BENDING');
+          if (bEnd !== undefined) return bEnd;
+          return getFinishTime(cid, 'LASER');
+        }));
+      };
+      return getReady(a.partId) - getReady(b.partId);
+    });
+
+    weldingPOs.forEach(po => {
+      const children = level1Children.get(po.partId) || [];
+      const componentsReadyTime = children.length === 0 ? timestamp : Math.max(...children.map(cid => {
+        const bEnd = partStageFinishTime.get(cid)?.get('BENDING');
+        if (bEnd !== undefined) return bEnd;
+        return getFinishTime(cid, 'LASER');
+      }));
+
+      const start = this.getNextWorkingTime(Math.max(mFreeWelding, componentsReadyTime), 'WELDING', shiftConfigs);
+      po.createdAt = start;
+      const norm = norms.find(n => n.partId === po.partId && n.stageId === 'WELDING');
+      const duration = norm ? (po.targetQuantity * norm.secondsPerUnit * 1000) / weldWorkers : 0;
+      po.expectedCompletionTime = this.calculateEndTime(start, duration, 'WELDING', shiftConfigs);
+      mFreeWelding = po.expectedCompletionTime;
+      recordFinish(po, mFreeWelding);
+      allChildPOs.push(po);
+    });
+
+    // Stage 4: PAINTING (Level 1)
+    let mFreePainting = timestamp;
+    const paintConfig = shiftConfigs.find(c => c.stageId === 'PAINTING');
+    const paintWorkers = paintConfig?.workerCount || 1;
+    paintingPOs.forEach(po => {
+      const weldEnd = getFinishTime(po.partId, 'WELDING');
+      const start = this.getNextWorkingTime(Math.max(mFreePainting, weldEnd), 'PAINTING', shiftConfigs);
+      po.createdAt = start;
+      const norm = norms.find(n => n.partId === po.partId && n.stageId === 'PAINTING');
+      const duration = norm ? (po.targetQuantity * norm.secondsPerUnit * 1000) / paintWorkers : 0;
+      po.expectedCompletionTime = this.calculateEndTime(start, duration, 'PAINTING', shiftConfigs);
+      mFreePainting = po.expectedCompletionTime;
+      recordFinish(po, mFreePainting);
+      allChildPOs.push(po);
+    });
 
     // Create Master PO
     const masterPo: ProductionOrder = {
