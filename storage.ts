@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { InventoryItem, Transaction, StageId, STAGES, INITIAL_PARTS, Part, BOMDefinition, BOMDefinitionV2, ProductionOrder, ModelBOMDefinition } from './types';
-import { format } from 'date-fns';
+import { InventoryItem, Transaction, StageId, STAGES, INITIAL_PARTS, Part, BOMDefinition, BOMDefinitionV2, ProductionOrder, ModelBOMDefinition, ProductivityNorm, LaserNesting, ShiftConfig } from './types';
+import { format, addMilliseconds, setHours, setMinutes, setSeconds, getHours, getMinutes, isBefore, isAfter, startOfDay, addDays } from 'date-fns';
 
 const STORAGE_KEYS = {
   INVENTORY: 'wip_inventory',
@@ -15,6 +15,9 @@ const STORAGE_KEYS = {
   LABEL_SETTINGS: 'wip_label_settings',
   PRODUCTION_ORDERS: 'wip_production_orders',
   MODEL_BOM: 'wip_model_bom',
+  NORMS: 'wip_productivity_norms',
+  LASER_NESTING: 'wip_laser_nesting',
+  SHIFT_CONFIGS: 'wip_shift_configs',
 };
 
 export const storageService = {
@@ -60,6 +63,174 @@ export const storageService = {
 
   saveModelBOM(bom: ModelBOMDefinition[]) {
     localStorage.setItem(STORAGE_KEYS.MODEL_BOM, JSON.stringify(bom));
+  },
+  
+  getNorms(): ProductivityNorm[] {
+    const data = localStorage.getItem(STORAGE_KEYS.NORMS);
+    return data ? JSON.parse(data) : [];
+  },
+
+  saveNorms(norms: ProductivityNorm[]) {
+    localStorage.setItem(STORAGE_KEYS.NORMS, JSON.stringify(norms));
+  },
+
+  getLaserNesting(): LaserNesting[] {
+    const data = localStorage.getItem(STORAGE_KEYS.LASER_NESTING);
+    return data ? JSON.parse(data) : [];
+  },
+
+  saveLaserNesting(nesting: LaserNesting[]) {
+    localStorage.setItem(STORAGE_KEYS.LASER_NESTING, JSON.stringify(nesting));
+  },
+  
+  getShiftConfigs(): ShiftConfig[] {
+    const data = localStorage.getItem(STORAGE_KEYS.SHIFT_CONFIGS);
+    if (data) return JSON.parse(data);
+    
+    // Default configs
+    return [
+      {
+        stageId: 'LASER',
+        workerCount: 1,
+        shifts: [
+          { start: '06:00', end: '14:00' },
+          { start: '14:00', end: '22:00' }
+        ],
+        breaks: [
+          { start: '09:00', end: '09:15' },
+          { start: '12:00', end: '13:00' },
+          { start: '15:00', end: '15:15' },
+          { start: '18:00', end: '18:30' }
+        ]
+      },
+      {
+        stageId: 'BENDING',
+        workerCount: 1,
+        shifts: [{ start: '08:00', end: '17:00' }],
+        breaks: [{ start: '12:00', end: '13:00' }]
+      },
+      {
+        stageId: 'WELDING',
+        workerCount: 1,
+        shifts: [{ start: '08:00', end: '17:00' }],
+        breaks: [{ start: '12:00', end: '13:00' }]
+      },
+      {
+        stageId: 'PAINTING',
+        workerCount: 1,
+        shifts: [{ start: '08:00', end: '17:00' }],
+        breaks: [{ start: '12:00', end: '13:00' }]
+      }
+    ];
+  },
+
+  saveShiftConfigs(configs: ShiftConfig[]) {
+    localStorage.setItem(STORAGE_KEYS.SHIFT_CONFIGS, JSON.stringify(configs));
+  },
+
+  getNextWorkingTime(timestamp: number, stageId: StageId, shiftConfigs: ShiftConfig[]): number {
+    const config = shiftConfigs.find(c => c.stageId === stageId);
+    if (!config) return timestamp;
+
+    const timeToDate = (timeStr: string, baseDate: Date) => {
+      const [h, m] = timeStr.split(':').map(Number);
+      return setSeconds(setMinutes(setHours(baseDate, h), m), 0);
+    };
+
+    let checkTime = new Date(timestamp);
+    for (let day = 0; day < 10; day++) {
+      const baseDay = startOfDay(checkTime);
+      const workingIntervals: { start: Date, end: Date }[] = [];
+      config.shifts.forEach(shift => {
+        const s = timeToDate(shift.start, baseDay);
+        let e = timeToDate(shift.end, baseDay);
+        if (isBefore(e, s)) e = addDays(e, 1);
+        
+        let intervals = [{ start: s, end: e }];
+        config.breaks.forEach(brk => {
+          const bs = timeToDate(brk.start, baseDay);
+          const be = timeToDate(brk.end, baseDay);
+          const newIntervals: typeof intervals = [];
+          intervals.forEach(inv => {
+            if (isAfter(be, inv.start) && isBefore(bs, inv.end)) {
+              if (isAfter(bs, inv.start)) newIntervals.push({ start: inv.start, end: bs });
+              if (isBefore(be, inv.end)) newIntervals.push({ start: be, end: inv.end });
+            } else {
+              newIntervals.push(inv);
+            }
+          });
+          intervals = newIntervals;
+        });
+        workingIntervals.push(...intervals);
+      });
+      workingIntervals.sort((a, b) => a.start.getTime() - b.start.getTime());
+
+      for (const inv of workingIntervals) {
+        if (isBefore(checkTime, inv.end)) {
+          if (isBefore(checkTime, inv.start)) return inv.start.getTime();
+          else return checkTime.getTime();
+        }
+      }
+      checkTime = startOfDay(addDays(baseDay, 1));
+    }
+    return timestamp;
+  },
+
+  calculateEndTime(startTime: number, durationMs: number, stageId: StageId, shiftConfigs: ShiftConfig[]): number {
+    if (durationMs <= 0) return startTime;
+    let remaining = durationMs;
+    let currentTime = this.getNextWorkingTime(startTime, stageId, shiftConfigs);
+    const config = shiftConfigs.find(c => c.stageId === stageId);
+    if (!config) return startTime + durationMs;
+
+    const timeToDate = (timeStr: string, baseDate: Date) => {
+      const [h, m] = timeStr.split(':').map(Number);
+      return setSeconds(setMinutes(setHours(baseDate, h), m), 0);
+    };
+
+    while (remaining > 0) {
+      const baseDay = startOfDay(new Date(currentTime));
+      const workingIntervals: { start: Date, end: Date }[] = [];
+      config.shifts.forEach(shift => {
+        const s = timeToDate(shift.start, baseDay);
+        let e = timeToDate(shift.end, baseDay);
+        if (isBefore(e, s)) e = addDays(e, 1);
+        let intervals = [{ start: s, end: e }];
+        config.breaks.forEach(brk => {
+          const bs = timeToDate(brk.start, baseDay);
+          const be = timeToDate(brk.end, baseDay);
+          const newIntervals: typeof intervals = [];
+          intervals.forEach(inv => {
+            if (isAfter(be, inv.start) && isBefore(bs, inv.end)) {
+              if (isAfter(bs, inv.start)) newIntervals.push({ start: inv.start, end: bs });
+              if (isBefore(be, inv.end)) newIntervals.push({ start: be, end: inv.end });
+            } else {
+              newIntervals.push(inv);
+            }
+          });
+          intervals = newIntervals;
+        });
+        workingIntervals.push(...intervals);
+      });
+      workingIntervals.sort((a, b) => a.start.getTime() - b.start.getTime());
+
+      let moved = false;
+      for (const inv of workingIntervals) {
+        if (isBefore(currentTime, inv.end)) {
+          const startInInv = isAfter(currentTime, inv.start) ? currentTime : inv.start.getTime();
+          const available = inv.end.getTime() - startInInv;
+          const consume = Math.min(remaining, available);
+          remaining -= consume;
+          currentTime = startInInv + consume;
+          if (remaining <= 0) return currentTime;
+          moved = true;
+        }
+      }
+      if (!moved || remaining > 0) {
+        currentTime = this.getNextWorkingTime(currentTime, stageId, shiftConfigs);
+      }
+    }
+    return currentTime;
   },
 
   getInventory(): InventoryItem[] {
@@ -246,6 +417,23 @@ export const storageService = {
         }
       }
     }
+  },
+
+  getNextValidStageId(partId: string, currentStageId: StageId): StageId | null {
+    const parts = this.getParts();
+    const part = parts.find(p => p.id === partId);
+    if (!part) return null;
+
+    const currentStageIndex = STAGES.findIndex(s => s.id === currentStageId);
+    if (currentStageIndex === -1) return null;
+
+    for (let i = currentStageIndex + 1; i < STAGES.length; i++) {
+      const nextStage = STAGES[i];
+      if (nextStage.id === 'BENDING' && part.skipBending) continue;
+      if (nextStage.id === 'WELDING' && part.skipWelding) continue;
+      return nextStage.id;
+    }
+    return null;
   },
 
   recordStageOut(partId: string, stageId: StageId, quantity: number, sourceLocation: 'IN' | 'OUT' = 'IN', targetStageId?: StageId, poId?: string) {
@@ -541,7 +729,7 @@ export const storageService = {
     const pos = this.getProductionOrders();
     const timestamp = Date.now();
     const dateStr = format(timestamp, 'ddMM');
-    const modelPrefix = modelId.substring(0, 8).toUpperCase();
+    const modelPrefix = modelId.length > 8 ? modelId.substring(0, 8).toUpperCase() : modelId.toUpperCase();
     const generateUniqueId = (prefix: string) => {
       let newId = "";
       do {
@@ -551,8 +739,212 @@ export const storageService = {
     };
 
     const masterPoId = generateUniqueId(`PO-${modelPrefix}-${dateStr}`);
+    const norms = this.getNorms();
+    const partsList = this.getParts();
+    const modelBom = this.getModelBOM();
+    const bomV2 = this.getBOMV2();
 
-    // 1. Create Master PO (Model Level)
+    const laserPOs: ProductionOrder[] = [];
+    const bendingPOs: ProductionOrder[] = [];
+    const weldingPOs: ProductionOrder[] = [];
+    const paintingPOs: ProductionOrder[] = [];
+
+    // Collect all parts and their total quantities and LEVELS required in the hierarchy
+    const requiredParts = new Map<string, { qty: number, minLevel: number }>();
+
+    // Recursive helper to traverse BOM
+    const traverseBOM = (currentId: string, currentQty: number, level: number) => {
+      if (level > 0) {
+        const existing = requiredParts.get(currentId);
+        if (!existing || level < existing.minLevel) {
+          requiredParts.set(currentId, { 
+            qty: (existing?.qty || 0) + currentQty, 
+            minLevel: level 
+          });
+        } else {
+          requiredParts.set(currentId, { 
+            ...existing, 
+            qty: existing.qty + currentQty 
+          });
+        }
+      }
+      
+      // 1. Check if this ID is a Model that has ModelBOM ingredients (creates Level 1)
+      const modelIngredients = modelBom.filter(b => b.modelId === currentId);
+      for (const ing of modelIngredients) {
+        traverseBOM(ing.partId, currentQty * ing.quantity, level + 1);
+      }
+
+      // 2. Check if this ID is a Part that has BOM V2 ingredients (creates Level 2+)
+      const ingredientsV2 = bomV2.filter(b => b.resultPartId === currentId);
+      for (const ing of ingredientsV2) {
+        traverseBOM(ing.ingredientPartId, currentQty * ing.quantity, level + 1);
+      }
+    };
+
+    // Start traversal from the Model (Level 0)
+    traverseBOM(modelId, quantity, 0);
+
+    // For all parts found, check which stages they need based on their LEVEL
+    requiredParts.forEach((info, partId) => {
+      const { qty: totalQty, minLevel: level } = info;
+      const part = partsList.find(p => p.id === partId);
+      
+      // Helper to add PO
+      const addPo = (stageId: StageId, list: ProductionOrder[]) => {
+        // Respect explicit skip flags from part configuration
+        if (stageId === 'BENDING' && part?.skipBending) return;
+        if (stageId === 'WELDING' && part?.skipWelding) return;
+
+        list.push({
+          id: generateUniqueId(`PO-${modelPrefix}-${dateStr}-${stageId}`),
+          masterPoId: masterPoId,
+          partId: partId,
+          stageId: stageId,
+          targetQuantity: totalQty,
+          producedQuantity: 0,
+          exportedQuantity: 0,
+          status: 'PENDING',
+          createdAt: timestamp
+        });
+      };
+
+      // Apply User Rules:
+      // Level 1 -> WELDING, PAINTING
+      // Level 2+ -> LASER, BENDING
+      if (level === 1) {
+        addPo('WELDING', weldingPOs);
+        addPo('PAINTING', paintingPOs);
+      } else if (level >= 2) {
+        addPo('LASER', laserPOs);
+        addPo('BENDING', bendingPOs);
+      }
+    });
+
+    // Sequential Scheduling
+    let machineFreeTime = timestamp;
+    const partAvailableTime = new Map<string, number>(); 
+    const allChildPOs: ProductionOrder[] = [];
+    const laserNesting = this.getLaserNesting();
+    const shiftConfigs = this.getShiftConfigs();
+
+    const scheduleSequence = (stageList: ProductionOrder[]) => {
+      if (stageList.length === 0) return;
+      const stageId = stageList[0].stageId as StageId;
+      const config = shiftConfigs.find(c => c.stageId === stageId);
+      const workerCount = config?.workerCount || 1;
+
+      // Sort by previous stage completion time to maintain flow
+      if (stageId !== 'LASER') {
+        stageList.sort((a, b) => {
+          const timeA = partAvailableTime.get(a.partId) || 0;
+          const timeB = partAvailableTime.get(b.partId) || 0;
+          return timeA - timeB;
+        });
+      }
+
+      // Special logic for Laser with Nesting
+      if (stageId === 'LASER' && laserNesting.length > 0) {
+        const nestedPartIds = new Set(laserNesting.map(ln => ln.partId));
+        const nestedPOs = stageList.filter(po => nestedPartIds.has(po.partId));
+        const individualPOs = stageList.filter(po => !nestedPartIds.has(po.partId));
+
+        // Individual Laser POs
+        individualPOs.forEach(po => {
+          po.createdAt = this.getNextWorkingTime(machineFreeTime, stageId, shiftConfigs);
+          const norm = norms.find(n => n.partId === po.partId && n.stageId === po.stageId);
+          if (norm) {
+            const duration = (po.targetQuantity * norm.secondsPerUnit * 1000) / workerCount;
+            po.expectedCompletionTime = this.calculateEndTime(po.createdAt, duration, stageId, shiftConfigs);
+            machineFreeTime = po.expectedCompletionTime;
+            partAvailableTime.set(po.partId, po.expectedCompletionTime);
+          } else {
+            po.expectedCompletionTime = undefined;
+          }
+          allChildPOs.push(po);
+        });
+
+        // Nested Laser POs
+        const nestedGroups = new Map<string, ProductionOrder[]>();
+        nestedPOs.forEach(po => {
+          const nest = laserNesting.find(ln => ln.partId === po.partId);
+          if (nest) {
+            const group = nestedGroups.get(nest.nestingId) || [];
+            group.push(po);
+            nestedGroups.set(nest.nestingId, group);
+          }
+        });
+
+        nestedGroups.forEach((groupPOs, nestingId) => {
+          // Group logic: In a nesting program, the total machine time is the sum of time spent on each part unit required for this PO.
+          // All parts in the same group start together and finish when the last required unit is cut.
+          let totalGroupDurationMs = 0;
+          groupPOs.forEach(po => {
+            const nest = laserNesting.find(ln => ln.partId === po.partId && ln.nestingId === nestingId);
+            if (nest) {
+              totalGroupDurationMs += po.targetQuantity * nest.secondsPerUnit * 1000;
+            }
+          });
+
+          // Adjusted by workerCount (Resources)
+          const adjustedDuration = totalGroupDurationMs / workerCount;
+
+          const groupStartTime = this.getNextWorkingTime(machineFreeTime, stageId, shiftConfigs);
+          const groupEndTime = this.calculateEndTime(groupStartTime, adjustedDuration, stageId, shiftConfigs);
+
+          groupPOs.forEach(po => {
+            po.createdAt = groupStartTime;
+            po.expectedCompletionTime = groupEndTime;
+            // Mark part as available for the next stage
+            partAvailableTime.set(po.partId, groupEndTime);
+            allChildPOs.push(po);
+          });
+          
+          // Machine is busy until the end of this group's total duration
+          machineFreeTime = groupEndTime;
+        });
+      } else {
+        // Standard sequential logic for other stages
+        stageList.forEach(po => {
+          const previousStageEnd = partAvailableTime.get(po.partId) || timestamp;
+          const startTime = this.getNextWorkingTime(Math.max(machineFreeTime, previousStageEnd), stageId, shiftConfigs);
+          
+          po.createdAt = startTime;
+          const norm = norms.find(n => n.partId === po.partId && n.stageId === po.stageId);
+          if (norm) {
+            const duration = (po.targetQuantity * norm.secondsPerUnit * 1000) / workerCount;
+            po.expectedCompletionTime = this.calculateEndTime(startTime, duration, stageId, shiftConfigs);
+            machineFreeTime = po.expectedCompletionTime;
+            partAvailableTime.set(po.partId, po.expectedCompletionTime);
+          } else {
+            po.expectedCompletionTime = undefined;
+            machineFreeTime = startTime;
+          }
+          allChildPOs.push(po);
+        });
+      }
+    };
+
+    // Correct sequential order: LASER -> BENDING -> WELDING -> PAINTING
+    scheduleSequence(laserPOs);
+    // Reset machine time for next stages if they use different machines (optional, but keep it sequential for now)
+    // Actually, usually each stage has its own resource. 
+    // To make it truly sequential across the whole shop, we don't reset machineFreeTime.
+    // To allow parallel stages (e.g. Bending and Laser running at the same time on different parts), we would reset machineFreeTime for each stage list.
+    // Based on user: "tiếp nối nhau" usually implies the whole process is a single chain.
+    // However, LASER -> BENDING -> ... implies STAGE order.
+    // Let's assume each stage has ONE machine. So machineFreeTime resets per stage, but partAvailability carries over.
+    
+    machineFreeTime = timestamp; 
+    scheduleSequence(bendingPOs);
+    
+    machineFreeTime = timestamp;
+    scheduleSequence(weldingPOs);
+    
+    machineFreeTime = timestamp;
+    scheduleSequence(paintingPOs);
+
+    // Create Master PO
     const masterPo: ProductionOrder = {
       id: masterPoId,
       partId: modelId,
@@ -560,87 +952,17 @@ export const storageService = {
       producedQuantity: 0,
       exportedQuantity: 0,
       status: 'PENDING',
-      createdAt: timestamp
+      createdAt: timestamp,
+      // Master completion is the latest time any child part finishes Painting
+      expectedCompletionTime: allChildPOs.length > 0 
+        ? Math.max(...allChildPOs.filter(p => p.expectedCompletionTime).map(p => p.expectedCompletionTime!))
+        : timestamp
     };
-    pos.unshift(masterPo);
 
-    // 2. Explode to Level 1
-    const modelBom = this.getModelBOM();
-    const level1Ingredients = modelBom.filter(b => b.modelId === modelId);
-    const partsList = this.getParts();
+    // Save with unshift to show newest first
+    const updatedPOs = [masterPo, ...allChildPOs, ...pos];
+    this.saveProductionOrders(updatedPOs);
     
-    for (const l1Ing of level1Ingredients) {
-      const l1Qty = quantity * l1Ing.quantity;
-      const l1Part = partsList.find(p => p.id === l1Ing.partId);
-      
-      // PO for Welding - Only if not skipped
-      if (!l1Part?.skipWelding) {
-        pos.unshift({
-          id: generateUniqueId(`PO-${modelPrefix}-${dateStr}-WELD`),
-          masterPoId: masterPoId,
-          partId: l1Ing.partId,
-          stageId: 'WELDING',
-          targetQuantity: l1Qty,
-          producedQuantity: 0,
-          exportedQuantity: 0,
-          status: 'PENDING',
-          createdAt: timestamp
-        });
-      }
-
-      // PO for Painting
-      pos.unshift({
-        id: generateUniqueId(`PO-${modelPrefix}-${dateStr}-PAINT`),
-        masterPoId: masterPoId,
-        partId: l1Ing.partId,
-        stageId: 'PAINTING',
-        targetQuantity: l1Qty,
-        producedQuantity: 0,
-        exportedQuantity: 0,
-        status: 'PENDING',
-        createdAt: timestamp
-      });
-
-      // 3. Explode to Level 2
-      const bomV2 = this.getBOMV2();
-      const level2Ingredients = bomV2.filter(b => b.resultPartId === l1Ing.partId);
-      const parts = this.getParts();
-      
-      for (const l2Ing of level2Ingredients) {
-        const l2Qty = l1Qty * l2Ing.quantity;
-        const ingPart = parts.find(p => p.id === l2Ing.ingredientPartId);
-        
-        // PO for Laser
-        pos.unshift({
-          id: generateUniqueId(`PO-${modelPrefix}-${dateStr}-LASER`),
-          masterPoId: masterPoId,
-          partId: l2Ing.ingredientPartId,
-          stageId: 'LASER',
-          targetQuantity: l2Qty,
-          producedQuantity: 0,
-          exportedQuantity: 0,
-          status: 'PENDING',
-          createdAt: timestamp
-        });
-
-        // PO for Bending - Only if not skipped at part level
-        if (!ingPart?.skipBending) {
-          pos.unshift({
-            id: generateUniqueId(`PO-${modelPrefix}-${dateStr}-BEND`),
-            masterPoId: masterPoId,
-            partId: l2Ing.ingredientPartId,
-            stageId: 'BENDING',
-            targetQuantity: l2Qty,
-            producedQuantity: 0,
-            exportedQuantity: 0,
-            status: 'PENDING',
-            createdAt: timestamp
-          });
-        }
-      }
-    }
-
-    this.saveProductionOrders(pos);
     return masterPo;
   },
 
@@ -659,6 +981,7 @@ export const storageService = {
     localStorage.removeItem(STORAGE_KEYS.BOM_V2);
     localStorage.removeItem(STORAGE_KEYS.MODEL_BOM);
     localStorage.removeItem(STORAGE_KEYS.PRODUCTION_ORDERS);
+    localStorage.removeItem(STORAGE_KEYS.NORMS);
     localStorage.removeItem('wip_labels');
   },
 };

@@ -63,6 +63,36 @@ export interface ProductionOrder {
   exportedQuantity: number;
   status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
   createdAt: number;
+  expectedCompletionTime?: number;
+}
+
+export interface ProductivityNorm {
+  partId: string;
+  stageId: StageId;
+  secondsPerUnit: number; // Time in seconds to process 1 unit
+}
+
+export interface LaserNesting {
+  nestingId: string;
+  partId: string;
+  qtyPerSheet: number;
+  secondsPerUnit: number; // Time for this individual part
+  secondsPerSheet: number; // Total time for the full sheet
+}
+
+export interface BreakTime {
+  start: string; // HH:mm
+  end: string;   // HH:mm
+}
+
+export interface ShiftConfig {
+  stageId: StageId;
+  workerCount: number; // Number of people or parallel resources
+  shifts: {
+    start: string; // HH:mm
+    end: string;   // HH:mm
+  }[];
+  breaks: BreakTime[];
 }
 
 export const STAGES: { id: StageId; name: string; nextStageId?: StageId }[] = [

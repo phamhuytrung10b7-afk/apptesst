@@ -29,7 +29,11 @@ import {
   Layers,
   Flame,
   FileText,
-  ClipboardList
+  ClipboardList,
+  Clock,
+  Save,
+  Plus,
+  Users
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -48,7 +52,7 @@ import {
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
-import { STAGES, INITIAL_PARTS, StageId, Part, InventoryItem, Transaction, BOMDefinition, BOMDefinitionV2, ProductionOrder, ModelBOMDefinition } from './types';
+import { STAGES, INITIAL_PARTS, StageId, Part, InventoryItem, Transaction, BOMDefinition, BOMDefinitionV2, ProductionOrder, ModelBOMDefinition, ProductivityNorm, LaserNesting, ShiftConfig } from './types';
 import { storageService } from './storage';
 
 // Utility for tailwind classes
@@ -81,7 +85,7 @@ function getProcessValue(value: string | undefined, part: Part | undefined, stag
   return `${value} - ${suffix}`;
 }
 
-type View = 'dashboard' | 'produce' | 'inbound' | 'laser_inbound' | 'welding_inbound' | 'manual_inbound' | 'history' | 'settings' | 'labels' | 'po';
+type View = 'dashboard' | 'produce' | 'inbound' | 'laser_inbound' | 'welding_inbound' | 'manual_inbound' | 'history' | 'settings' | 'labels' | 'po' | 'norms' | 'working_hours';
 
 function SearchableSelect({ 
   options, 
@@ -193,6 +197,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isImportingNorms, setIsImportingNorms] = useState(false);
 
   const [labelSettings, setLabelSettings] = useState(storageService.getLabelSettings());
 
@@ -491,6 +496,20 @@ export default function App() {
             collapsed={!isSidebarOpen}
           />
           <SidebarLink 
+            active={currentView === 'working_hours'} 
+            onClick={() => setCurrentView('working_hours')}
+            icon={<Clock size={24} />}
+            label="Thời gian Ca & Nghỉ"
+            collapsed={!isSidebarOpen}
+          />
+          <SidebarLink 
+            active={currentView === 'norms'} 
+            onClick={() => setCurrentView('norms')}
+            icon={<Monitor size={24} />}
+            label="Định mức Năng suất"
+            collapsed={!isSidebarOpen}
+          />
+          <SidebarLink 
             active={currentView === 'history'} 
             onClick={() => setCurrentView('history')}
             icon={<History size={24} />}
@@ -538,6 +557,8 @@ export default function App() {
               {currentView === 'labels' && 'Danh sách nhãn QR đã xuất'}
               {currentView === 'po' && 'Quản lý Lệnh sản xuất (PO)'}
               {currentView === 'history' && 'Nhật ký biến động kho'}
+              {currentView === 'norms' && 'Định mức năng suất sản xuất'}
+              {currentView === 'working_hours' && 'Cài đặt Ca làm việc & Nghỉ ngơi'}
               {currentView === 'settings' && 'Cài đặt danh mục linh kiện'}
             </h2>
           </div>
@@ -620,6 +641,12 @@ export default function App() {
               )}
               {currentView === 'po' && (
                 <ProductionOrderView parts={parts} />
+              )}
+              {currentView === 'norms' && (
+                <NormsView parts={parts} onNormsChange={refreshData} />
+              )}
+              {currentView === 'working_hours' && (
+                <WorkingHoursView />
               )}
               {currentView === 'history' && (
                 <HistoryView key="history" transactions={transactions} parts={parts} />
@@ -822,6 +849,7 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
                 <th className="px-8 py-5 text-right">Thực tế</th>
                 <th className="px-8 py-5 text-right">Đã xuất</th>
                 <th className="px-8 py-5">Tiến độ</th>
+                <th className="px-8 py-5">Dự kiến</th>
                 <th className="px-8 py-5">Trạng thái</th>
                 <th className="px-8 py-5 text-center">Thao tác</th>
               </tr>
@@ -859,6 +887,9 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
                           <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: `${overallProgress}%` }}></div>
                         </div>
                         <span className="text-[10px] opacity-50">{overallProgress.toFixed(1)}%</span>
+                      </td>
+                      <td className="px-8 py-5">
+                        <span className="text-xs font-mono opacity-50 uppercase tracking-tighter">-</span>
                       </td>
                       <td className="px-8 py-5">
                         <span className={cn(
@@ -905,6 +936,20 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
                                 progress >= 100 ? "bg-green-500" : "bg-blue-400"
                               )} style={{ width: `${Math.min(progress, 100)}%` }}></div>
                             </div>
+                          </td>
+                          <td className="px-8 py-4">
+                            {sub.expectedCompletionTime ? (
+                              <div className="flex flex-col">
+                                <span className="font-mono text-xs font-bold text-blue-600">
+                                  {format(new Date(sub.expectedCompletionTime), 'HH:mm')}
+                                </span>
+                                <span className="text-[10px] opacity-50">
+                                  {format(new Date(sub.expectedCompletionTime), 'dd/MM')}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-[10px] opacity-30 italic">Chưa có ĐM</span>
+                            )}
                           </td>
                           <td className="px-8 py-4">
                             <span className={cn(
@@ -3939,6 +3984,303 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
   );
 }
 
+function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () => void }) {
+  const [activeTab, setActiveTab] = useState<StageId | 'NESTING'>('NESTING');
+  const [isImporting, setIsImporting] = useState(false);
+  const norms = storageService.getNorms();
+  const nesting = storageService.getLaserNesting();
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsImporting(true);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws) as any[];
+        
+        if (activeTab === 'NESTING') {
+          // Mapping with auto-calculation
+          const rawImported = data.map(row => {
+            const partIdRaw = String(row['PartID'] || row['Mã linh kiện'] || row['Mã LK'] || row['Mã SP'] || row['Mã hàng'] || '').trim();
+            const partNameRaw = String(row['PartName'] || row['Tên linh kiện'] || row['Tên LK'] || row['Tên sản phẩm'] || row['Tên SP'] || row['Linh kiện kết hợp'] || '').trim();
+            let finalPartId = partIdRaw;
+            if (!finalPartId && partNameRaw) {
+              const found = parts.find(p => p.name.toLowerCase() === partNameRaw.toLowerCase());
+              if (found) finalPartId = found.id;
+            }
+            return {
+              nestingId: String(row['NestingID'] || row['Mã tổ hợp'] || row['Mã bàn'] || row['ID Tổ hợp'] || row['Mã tấm'] || row['Mã phôi'] || row['Mã bàn (Nesting ID)'] || '').trim(),
+              partId: finalPartId,
+              qtyPerSheet: parseFloat(row['QtyPerSheet'] || row['Số lượng linh kiện/tấm'] || row['Số lượng/tấm'] || row['SL/Tấm'] || row['Số lượng'] || row['SL'] || row['Số lượng / Tấm'] || '0'),
+              secondsPerUnit: parseFloat(row['Seconds'] || row['Giây'] || row['Thời gian'] || row['Định mức'] || row['Thời gian cắt/LK'] || row['Thời gian / LK (Giây)'] || '0')
+            };
+          }).filter(n => n.nestingId && n.partId && n.qtyPerSheet > 0);
+
+          if (rawImported.length === 0) {
+            alert('Không tìm thấy dữ liệu hợp lệ. Cần các cột: Mã bàn (Nesting ID), Linh kiện kết hợp, Số lượng / Tấm, Thời gian / LK (Giây)');
+          } else {
+            // Group by NestingID to calculate total seconds per sheet
+            const nestingTotals = new Map<string, number>();
+            rawImported.forEach(row => {
+              const current = nestingTotals.get(row.nestingId) || 0;
+              nestingTotals.set(row.nestingId, current + (row.secondsPerUnit * row.qtyPerSheet));
+            });
+
+            // Final mapping to LaserNesting type
+            const imported: LaserNesting[] = rawImported.map(row => ({
+              nestingId: row.nestingId,
+              partId: row.partId,
+              qtyPerSheet: row.qtyPerSheet,
+              secondsPerUnit: row.secondsPerUnit,
+              secondsPerSheet: nestingTotals.get(row.nestingId) || 0
+            }));
+
+            storageService.saveLaserNesting(imported);
+            alert(`Đã nhập thành công ${imported.length} linh kiện vào ${nestingTotals.size} tổ hợp Laser! Hệ thống đã tự động cộng tổng thời gian mỗi tấm.`);
+            onNormsChange();
+          }
+        } else {
+          // Standard Stage Norm Import
+          const imported: ProductivityNorm[] = data.map(row => {
+            const partIdRaw = String(row['PartID'] || row['Mã linh kiện'] || row['Mã LK'] || '').trim();
+            const partNameRaw = String(row['PartName'] || row['Tên linh kiện'] || row['Tên LK'] || '').trim();
+            
+            let finalPartId = partIdRaw;
+            if (!finalPartId && partNameRaw) {
+              // Find by name
+              const found = parts.find(p => p.name.toLowerCase() === partNameRaw.toLowerCase());
+              if (found) finalPartId = found.id;
+            }
+
+            return {
+              partId: finalPartId,
+              stageId: activeTab as StageId,
+              secondsPerUnit: parseFloat(row['Seconds'] || row['Giây'] || row['Thời gian'] || row['Định mức'] || '0')
+            };
+          }).filter(n => n.partId && n.secondsPerUnit > 0);
+
+          if (imported.length === 0) {
+            alert('Không tìm thấy dữ liệu hợp lệ. Cần các cột: PartID hoặc Tên linh kiện, Định mức (Giây)');
+          } else {
+            const currentNorms = storageService.getNorms();
+            // Replace or add
+            const updated = [...currentNorms];
+            imported.forEach(newNorm => {
+              const index = updated.findIndex(n => n.partId === newNorm.partId && n.stageId === newNorm.stageId);
+              if (index > -1) updated[index] = newNorm;
+              else updated.push(newNorm);
+            });
+            storageService.saveNorms(updated);
+            alert(`Đã nhập thành công ${imported.length} định mức cho ${STAGES.find(s => s.id === activeTab)?.name}!`);
+            onNormsChange();
+          }
+        }
+      } catch (err) {
+        alert('Lỗi khi đọc file.');
+      } finally {
+        setIsImporting(false);
+        if (e.target) e.target.value = '';
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      className="space-y-8"
+    >
+      <div className="flex bg-white p-2 rounded-2xl border border-gray-200 shadow-sm gap-2 overflow-x-auto">
+        <button
+          onClick={() => setActiveTab('NESTING')}
+          className={cn(
+            "flex-1 py-4 px-6 rounded-xl font-bold uppercase tracking-widest transition-all whitespace-nowrap",
+            activeTab === 'NESTING' ? "bg-orange-600 text-white shadow-lg" : "text-gray-400 hover:bg-gray-50"
+          )}
+        >
+          Tổ hợp Laser
+        </button>
+        {STAGES.filter(s => s.id !== 'LASER').map(stage => (
+          <button
+            key={stage.id}
+            onClick={() => setActiveTab(stage.id)}
+            className={cn(
+              "flex-1 py-4 px-6 rounded-xl font-bold uppercase tracking-widest transition-all whitespace-nowrap",
+              activeTab === stage.id ? "bg-blue-600 text-white shadow-lg" : "text-gray-400 hover:bg-gray-50"
+            )}
+          >
+            {stage.name}
+          </button>
+        ))}
+      </div>
+
+      <div className="bg-white rounded-3xl border border-gray-200 shadow-xl overflow-hidden">
+        <div className="p-10 border-b border-gray-100 flex justify-between items-center bg-gray-50/30">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight">
+              {activeTab === 'NESTING' ? 'Định mức Tổ hợp (Nesting) Laser' : `Định mức công đoạn: ${STAGES.find(s => s.id === activeTab)?.name}`}
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">
+              {activeTab === 'NESTING' 
+                ? 'Khai báo các linh kiện được cắt chung trên một bàn máy (tấm tôn) để tối ưu thời gian' 
+                : 'Quản lý thời gian sản xuất dự kiến trên mỗi đơn vị linh kiện'}
+            </p>
+          </div>
+          <div className="flex gap-4">
+            {activeTab === 'NESTING' && nesting.length > 0 && (
+              <button 
+                onClick={() => {
+                  if (confirm('Xóa toàn bộ định mức tổ hợp Laser?')) {
+                    storageService.saveLaserNesting([]);
+                    onNormsChange();
+                  }
+                }}
+                className="px-6 py-4 border border-red-200 text-red-600 rounded-xl text-sm font-bold uppercase hover:bg-red-50 transition-all font-mono"
+              >
+                Xóa tất cả
+              </button>
+            )}
+            <label className={cn(
+              "flex items-center gap-3 px-8 py-4 bg-[#141414] text-white rounded-xl text-sm font-bold uppercase tracking-widest cursor-pointer hover:bg-black transition-all shadow-xl font-mono",
+              isImporting && "opacity-50 cursor-not-allowed"
+            )}>
+              <FileUp size={20} />
+              {isImporting ? 'Đang nhập...' : `Nhập ${activeTab === 'NESTING' ? 'file Tổ hợp' : `định mức ${activeTab}`}`}
+              <input type="file" accept=".xlsx, .xls" className="hidden" onChange={handleImport} disabled={isImporting} />
+            </label>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          {activeTab === 'NESTING' ? (
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50/50 border-b border-gray-100">
+                  <th className="p-8 pl-12 text-xs font-mono uppercase opacity-50">Mã bàn (Nesting ID)</th>
+                  <th className="p-8 text-xs font-mono uppercase opacity-50">Linh kiện kết hợp</th>
+                  <th className="p-8 text-xs font-mono uppercase opacity-50 text-center">Số lượng / Tấm</th>
+                  <th className="p-8 text-xs font-mono uppercase opacity-50 text-center">Thời gian / LK (Giây)</th>
+                  <th className="p-8 text-xs font-mono uppercase opacity-50 text-center bg-orange-50/50">Tổng s/Tấm</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {Array.from(new Set(nesting.map(n => n.nestingId))).map((nestId, idx) => {
+                  const items = nesting.filter(n => n.nestingId === nestId);
+                  const totalSeconds = items[0]?.secondsPerSheet || 0;
+
+                  return (
+                    <tr key={idx} className="hover:bg-gray-50/30 transition-colors">
+                      <td className="p-8 pl-12 font-mono text-lg font-bold text-orange-600">{nestId}</td>
+                      <td className="p-8">
+                        <div className="flex flex-wrap gap-2">
+                          {items.map((it, i) => (
+                            <span key={i} className="px-3 py-1 bg-gray-100 rounded-full text-xs font-bold border border-gray-200">
+                              {parts.find(p => p.id === it.partId)?.name || it.partId}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="p-8 text-center text-gray-500 font-mono">
+                        <div className="flex flex-col gap-1 items-center">
+                          {items.map((it, i) => (
+                            <span key={i} className="text-sm font-bold">
+                              x{it.qtyPerSheet}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="p-8 text-center text-gray-500 font-mono">
+                        <div className="flex flex-col gap-1 items-center">
+                          {items.map((it, i) => (
+                            <span key={i} className="text-sm">
+                              {it.secondsPerUnit}s
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="p-8 text-center bg-orange-50/20">
+                        <span className="font-mono text-2xl font-black text-orange-600">{totalSeconds}</span>
+                        <span className="ml-2 text-xs font-bold uppercase opacity-40 text-orange-900">giây</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {nesting.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="p-24 text-center text-gray-400 italic">
+                      <div className="flex flex-col items-center">
+                        <Layers size={64} className="opacity-10 mb-6" />
+                        <p className="text-xl">Chưa có định mức tổ hợp linh kiện Laser.</p>
+                        <p className="text-sm mt-2 font-mono uppercase">Vui lòng nhập file Excel đúng cấu trúc các cột: Mã bàn (Nesting ID), Linh kiện kết hợp, Số lượng / Tấm, Thời gian / LK (Giây).</p>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          ) : (
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50/50 border-b border-gray-100">
+                  <th className="p-8 pl-12 text-xs font-mono uppercase opacity-50">Mã linh kiện</th>
+                  <th className="p-8 text-xs font-mono uppercase opacity-50">Tên linh kiện</th>
+                  <th className="p-8 text-xs font-mono uppercase opacity-50 text-center">Thời gian (Giây/Đơn vị)</th>
+                  <th className="p-8 pr-12 text-xs font-mono uppercase opacity-50 text-right">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {norms.filter(n => n.stageId === activeTab).map((norm, idx) => {
+                  const part = parts.find(p => p.id === norm.partId);
+                  return (
+                    <tr key={idx} className="hover:bg-gray-50/30 transition-colors">
+                      <td className="p-8 pl-12 font-mono text-lg font-bold">{norm.partId}</td>
+                      <td className="p-8 text-lg font-medium text-gray-600">{part?.name || 'N/A'}</td>
+                      <td className="p-8 text-center">
+                        <span className="font-mono text-2xl font-black text-blue-600">{norm.secondsPerUnit}</span>
+                        <span className="ml-2 text-xs font-bold uppercase opacity-40">giây</span>
+                      </td>
+                      <td className="p-8 pr-12 text-right">
+                        <button 
+                          onClick={() => {
+                            const updated = norms.filter(n => !(n.partId === norm.partId && n.stageId === norm.stageId));
+                            storageService.saveNorms(updated);
+                            onNormsChange();
+                          }}
+                          className="p-3 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                        >
+                          <Trash2 size={24} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {norms.filter(n => n.stageId === activeTab).length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="p-24 text-center text-gray-400 italic">
+                      <div className="flex flex-col items-center">
+                        <ClipboardList size={64} className="opacity-10 mb-6" />
+                        <p className="text-xl">Chưa có định mức cho công đoạn này.</p>
+                        <p className="text-sm mt-2">Vui lòng nhập file Excel định mức linh kiện.</p>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 interface HistoryProps {
   transactions: Transaction[];
   parts: Part[];
@@ -4018,4 +4360,235 @@ function HistoryView({ transactions, parts }: HistoryProps) {
   );
 }
 
+function WorkingHoursView() {
+  const [configs, setConfigs] = useState<ShiftConfig[]>([]);
+  
+  useEffect(() => {
+    setConfigs(storageService.getShiftConfigs());
+  }, []);
 
+  const handleSave = () => {
+    storageService.saveShiftConfigs(configs);
+    alert('Đã lưu cài đặt ca làm việc & nghỉ ngơi!');
+  };
+
+  const updateShift = (stageId: StageId, shiftIdx: number, field: 'start' | 'end', val: string) => {
+    setConfigs(prev => prev.map(c => {
+      if (c.stageId === stageId) {
+        const newShifts = [...c.shifts];
+        newShifts[shiftIdx] = { ...newShifts[shiftIdx], [field]: val };
+        return { ...c, shifts: newShifts };
+      }
+      return c;
+    }));
+  };
+
+  const updateBreak = (stageId: StageId, breakIdx: number, field: 'start' | 'end', val: string) => {
+    setConfigs(prev => prev.map(c => {
+      if (c.stageId === stageId) {
+        const newBreaks = [...c.breaks];
+        newBreaks[breakIdx] = { ...newBreaks[breakIdx], [field]: val };
+        return { ...c, breaks: newBreaks };
+      }
+      return c;
+    }));
+  };
+
+  const addShift = (stageId: StageId) => {
+    setConfigs(prev => prev.map(c => {
+      if (c.stageId === stageId) {
+        return { ...c, shifts: [...c.shifts, { start: '08:00', end: '17:00' }] };
+      }
+      return c;
+    }));
+  };
+
+  const addBreak = (stageId: StageId) => {
+    setConfigs(prev => prev.map(c => {
+      if (c.stageId === stageId) {
+        return { ...c, breaks: [...c.breaks, { start: '12:00', end: '13:00' }] };
+      }
+      return c;
+    }));
+  };
+
+  const removeShift = (stageId: StageId, idx: number) => {
+    setConfigs(prev => prev.map(c => {
+      if (c.stageId === stageId) {
+        return { ...c, shifts: c.shifts.filter((_, i) => i !== idx) };
+      }
+      return c;
+    }));
+  };
+
+  const removeBreak = (stageId: StageId, idx: number) => {
+    setConfigs(prev => prev.map(c => {
+      if (c.stageId === stageId) {
+        return { ...c, breaks: c.breaks.filter((_, i) => i !== idx) };
+      }
+      return c;
+    }));
+  };
+
+  const updateWorkerCount = (stageId: StageId, val: number) => {
+    setConfigs(prev => prev.map(c => {
+      if (c.stageId === stageId) {
+        return { ...c, workerCount: Math.max(1, val) };
+      }
+      return c;
+    }));
+  };
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      className="space-y-8"
+    >
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">Cấu hình thời gian làm việc</h2>
+          <p className="text-sm text-gray-500 mt-1">Cài đặt số ca và các khoảng nghỉ ngơi để hệ thống tính toán kế hoạch sản xuất PO chính xác nhất.</p>
+        </div>
+        <button 
+          onClick={handleSave}
+          className="flex items-center gap-2 px-8 py-4 bg-blue-600 text-white rounded-xl font-bold uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg"
+        >
+          <Save size={20} />
+          Lưu cài đặt
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {STAGES.map(stage => {
+          const config = configs.find(c => c.stageId === stage.id);
+          if (!config) return null;
+
+          return (
+            <div key={stage.id} className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden border-t-4 border-t-blue-500">
+              <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                <h3 className="text-xl font-bold flex items-center gap-3 italic">
+                  {stage.id === 'LASER' ? <Flame className="text-orange-500" /> : <Monitor className="text-blue-500" />}
+                  {stage.name}
+                </h3>
+                <span className="text-xs font-mono font-bold bg-gray-200 px-2 py-1 rounded">
+                  {config.shifts.length} CA LÀM VIỆC
+                </span>
+              </div>
+              
+              <div className="p-8 space-y-8">
+                {/* Worker Count */}
+                <div className="flex items-center justify-between bg-blue-50 p-4 rounded-xl border border-blue-100">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-white rounded-lg shadow-sm">
+                      <Users size={20} className="text-blue-600" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-gray-700">Số lượng nhân sự / nguồn lực</h4>
+                      <p className="text-xs text-gray-500">Giúp tăng tốc độ hoàn thành công đoạn</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <input 
+                      type="number" 
+                      min="1"
+                      value={config.workerCount || 1}
+                      onChange={(e) => updateWorkerCount(stage.id, parseInt(e.target.value))}
+                      className="w-20 bg-white border border-gray-200 rounded-lg p-2 font-mono text-center font-bold text-blue-600 focus:border-blue-500 outline-none"
+                    />
+                    <span className="text-xs font-bold text-gray-400">NGƯỜI</span>
+                  </div>
+                </div>
+
+                {/* Shifts */}
+                <div>
+                  <div className="flex justify-between items-center mb-4">
+                    <h4 className="text-sm font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
+                       Ca làm việc
+                    </h4>
+                    <button 
+                      onClick={() => addShift(stage.id)}
+                      className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
+                  <div className="space-y-3">
+                    {config.shifts.map((shift, sIdx) => (
+                      <div key={sIdx} className="flex items-center gap-4 bg-gray-50 p-4 rounded-xl border border-gray-100">
+                        <span className="font-mono text-xs opacity-40">CA {sIdx + 1}</span>
+                        <input 
+                          type="time" 
+                          value={shift.start} 
+                          onChange={(e) => updateShift(stage.id, sIdx, 'start', e.target.value)}
+                          className="bg-white border border-gray-200 rounded-lg p-2 font-mono text-sm focus:border-blue-500 outline-none"
+                        />
+                        <ArrowRight size={16} className="text-gray-300" />
+                        <input 
+                          type="time" 
+                          value={shift.end} 
+                          onChange={(e) => updateShift(stage.id, sIdx, 'end', e.target.value)}
+                          className="bg-white border border-gray-200 rounded-lg p-2 font-mono text-sm focus:border-blue-500 outline-none"
+                        />
+                        <button 
+                          onClick={() => removeShift(stage.id, sIdx)}
+                          className="ml-auto text-gray-300 hover:text-red-500 transition-colors"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    ))}
+                    {config.shifts.length === 0 && <p className="text-xs text-red-500 italic">Chưa cài đặt ca làm việc!</p>}
+                  </div>
+                </div>
+
+                {/* Breaks */}
+                <div>
+                  <div className="flex justify-between items-center mb-4">
+                    <h4 className="text-sm font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
+                      Giờ nghỉ ngơi
+                    </h4>
+                    <button 
+                      onClick={() => addBreak(stage.id)}
+                      className="p-2 bg-orange-50 text-orange-600 rounded-lg hover:bg-orange-100 transition-colors"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
+                  <div className="space-y-3">
+                    {config.breaks.map((brk, bIdx) => (
+                      <div key={bIdx} className="flex items-center gap-4 bg-orange-50/30 p-4 rounded-xl border border-orange-100">
+                        <span className="font-mono text-xs opacity-40">Nghỉ {bIdx + 1}</span>
+                        <input 
+                          type="time" 
+                          value={brk.start} 
+                          onChange={(e) => updateBreak(stage.id, bIdx, 'start', e.target.value)}
+                          className="bg-white border border-gray-200 rounded-lg p-2 font-mono text-sm focus:border-blue-500 outline-none"
+                        />
+                        <ArrowRight size={16} className="text-orange-200" />
+                        <input 
+                          type="time" 
+                          value={brk.end} 
+                          onChange={(e) => updateBreak(stage.id, bIdx, 'end', e.target.value)}
+                          className="bg-white border border-gray-200 rounded-lg p-2 font-mono text-sm focus:border-blue-500 outline-none"
+                        />
+                        <button 
+                          onClick={() => removeBreak(stage.id, bIdx)}
+                          className="ml-auto text-gray-300 hover:text-red-500 transition-colors"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    ))}
+                    {config.breaks.length === 0 && <p className="text-xs text-gray-400 italic">Không có giờ nghỉ.</p>}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </motion.div>
+  );
+}
