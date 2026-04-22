@@ -1875,8 +1875,16 @@ function ProduceView({
 
   // Filter parts based on stage and BOM level
   const filteredParts = parts.filter((p: any) => {
-    if (selectedStage === 'LASER' || selectedStage === 'BENDING') return p.level === 2;
-    if (selectedStage === 'WELDING' || selectedStage === 'PAINTING') return p.level === 1;
+    if (selectedStage === 'LASER') {
+      return sourceLocation === 'IN' ? p.level === 3 : p.level === 2;
+    }
+    if (selectedStage === 'BENDING') {
+      return p.level === 2 && !p.skipBending;
+    }
+    if (selectedStage === 'WELDING') {
+      return (sourceLocation === 'IN' ? p.level === 2 : p.level === 1) && !p.skipWelding;
+    }
+    if (selectedStage === 'PAINTING') return p.level === 1;
     return true;
   });
 
@@ -2294,13 +2302,13 @@ function WeldingInboundView({ parts, onManualInbound }: any) {
 
   useEffect(() => {
     if (parts.length > 0 && !manualPart) {
-      // For Welding OUT, Level 1 is result
-      const weldingParts = parts.filter((p: any) => p.level === 1);
+      // For Welding OUT, Level 1 is result, but exclude parts skipping welding
+      const weldingParts = parts.filter((p: any) => p.level === 1 && !p.skipWelding);
       if (weldingParts.length > 0) setManualPart(weldingParts[0].id);
     }
   }, [parts]);
 
-  const filteredParts = parts.filter((p: any) => p.level === 1);
+  const filteredParts = parts.filter((p: any) => p.level === 1 && !p.skipWelding);
 
   useEffect(() => {
     if (filteredParts.length > 0 && !filteredParts.find((p: any) => p.id === manualPart)) {
@@ -2819,8 +2827,11 @@ function ManualInboundView({ parts, onManualInbound }: any) {
       if (targetLocation === 'IN') return p.level === 3;
       if (targetLocation === 'OUT') return p.level === 2;
     }
-    if (selectedStage === 'BENDING') return p.level === 2;
+    if (selectedStage === 'BENDING') {
+      return p.level === 2 && !p.skipBending;
+    }
     if (selectedStage === 'WELDING') {
+      if (p.skipWelding) return false;
       if (targetLocation === 'IN') return p.level === 2;
       if (targetLocation === 'OUT') return p.level === 1;
     }
