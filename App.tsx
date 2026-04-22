@@ -920,7 +920,9 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
                       return (
                         <tr key={`${sub.id}-${subIdx}`} className="text-sm text-gray-600 bg-gray-50/50">
                           <td className="px-8 py-4 pl-16 font-mono opacity-50">{sub.id}</td>
-                          <td className="px-8 py-4">{parts.find(p => p.id === sub.partId)?.name}</td>
+                          <td className="px-8 py-4">
+                            {getProcessValue(parts.find(p => p.id === sub.partId)?.name, parts.find(p => p.id === sub.partId), sub.stageId as StageId, 'OUT')}
+                          </td>
                           <td className="px-8 py-4">
                             <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-[10px] font-bold">
                               {STAGES.find(s => s.id === sub.stageId)?.name}
@@ -1850,7 +1852,10 @@ function ProduceView({
           <div className="space-y-4">
             <label className="text-sm font-bold uppercase tracking-widest opacity-50">3. Chọn mã linh kiện</label>
             <SearchableSelect 
-              options={filteredParts.map((p: any) => ({ id: p.id, label: `${p.id} - ${p.name}` }))}
+              options={filteredParts.map((p: any) => ({ 
+                id: p.id, 
+                label: `${getProcessValue(p.id, p, selectedStage, sourceLocation)} - ${getProcessValue(p.name, p, selectedStage, sourceLocation)}` 
+              }))}
               value={selectedPart}
               onChange={setSelectedPart}
               placeholder="Tìm mã linh kiện..."
@@ -2223,7 +2228,10 @@ function WeldingInboundView({ parts, onManualInbound }: any) {
           <div className="space-y-4">
             <label className="text-sm font-bold uppercase tracking-widest opacity-50">Chọn mã thành phẩm:</label>
             <SearchableSelect 
-              options={filteredParts.map((p: any) => ({ id: p.id, label: `${p.id} - ${p.name}` }))}
+              options={filteredParts.map((p: any) => ({ 
+                id: p.id, 
+                label: `${getProcessValue(p.id, p, selectedStage, targetLocation)} - ${getProcessValue(p.name, p, selectedStage, targetLocation)}` 
+              }))}
               value={manualPart}
               onChange={setManualPart}
               placeholder="Tìm kiếm..."
@@ -2481,7 +2489,10 @@ function LaserInboundView({ parts, onManualInbound }: any) {
           <div className="space-y-4">
             <label className="text-sm font-bold uppercase tracking-widest opacity-50">Chọn {targetLocation === 'IN' ? 'mã tôn' : 'mã linh kiện'}:</label>
             <SearchableSelect 
-              options={filteredParts.map((p: any) => ({ id: p.id, label: `${p.id} - ${p.name}` }))}
+              options={filteredParts.map((p: any) => ({ 
+                id: p.id, 
+                label: `${getProcessValue(p.id, p, selectedStage, targetLocation)} - ${getProcessValue(p.name, p, selectedStage, targetLocation)}` 
+              }))}
               value={manualPart}
               onChange={setManualPart}
               placeholder="Tìm kiếm..."
@@ -2800,7 +2811,10 @@ function ManualInboundView({ parts, onManualInbound }: any) {
           <div className="space-y-4">
             <label className="text-sm font-bold uppercase tracking-widest opacity-50">Chọn linh kiện:</label>
             <SearchableSelect 
-              options={filteredParts.map((p: any) => ({ id: p.id, label: `${p.id} - ${p.name}` }))}
+              options={filteredParts.map((p: any) => ({ 
+                id: p.id, 
+                label: `${getProcessValue(p.id, p, selectedStage, targetLocation)} - ${getProcessValue(p.name, p, selectedStage, targetLocation)}` 
+              }))}
               value={manualPart}
               onChange={setManualPart}
               placeholder="Tìm mã linh kiện..."
@@ -3630,12 +3644,12 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                     storageService.getBOMV2().map((b, i) => (
                       <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                         <td className="p-6">
-                          <div className="font-bold">{parts.find(p => p.id === b.resultPartId)?.name || b.resultPartId}</div>
-                          <div className="text-xs font-mono opacity-50">{b.resultPartId}</div>
+                          <div className="font-bold">{getProcessValue(parts.find(p => p.id === b.resultPartId)?.name, parts.find(p => p.id === b.resultPartId), 'WELDING', 'OUT')}</div>
+                          <div className="text-xs font-mono opacity-50">{getProcessValue(b.resultPartId, parts.find(p => p.id === b.resultPartId), 'WELDING', 'OUT')}</div>
                         </td>
                         <td className="p-6">
-                          <div className="font-bold">{parts.find(p => p.id === b.ingredientPartId)?.name || b.ingredientPartId}</div>
-                          <div className="text-xs font-mono opacity-50">{b.ingredientPartId}</div>
+                          <div className="font-bold">{getProcessValue(parts.find(p => p.id === b.ingredientPartId)?.name, parts.find(p => p.id === b.ingredientPartId), 'BENDING', 'OUT')}</div>
+                          <div className="text-xs font-mono opacity-50">{getProcessValue(b.ingredientPartId, parts.find(p => p.id === b.ingredientPartId), 'BENDING', 'OUT')}</div>
                         </td>
                         <td className="p-6 text-center font-mono font-bold text-orange-600 text-xl">
                           x{b.quantity}
@@ -3724,8 +3738,8 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                           <div className="text-xs font-mono opacity-50">{b.modelId}</div>
                         </td>
                         <td className="p-6">
-                          <div className="font-bold">{parts.find(p => p.id === b.partId)?.name || b.partId}</div>
-                          <div className="text-xs font-mono opacity-50">{b.partId}</div>
+                          <div className="font-bold">{getProcessValue(parts.find(p => p.id === b.partId)?.name, parts.find(p => p.id === b.partId), 'PAINTING', 'IN')}</div>
+                          <div className="text-xs font-mono opacity-50">{getProcessValue(b.partId, parts.find(p => p.id === b.partId), 'PAINTING', 'IN')}</div>
                         </td>
                         <td className="p-6 text-center font-mono font-bold text-purple-600 text-xl">
                           x{b.quantity}
