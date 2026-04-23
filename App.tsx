@@ -411,7 +411,7 @@ export default function App() {
               </div>
               <div className="flex justify-between items-center">
                 <span className="opacity-50 uppercase">Đến dự kiến:</span>
-                <span className="font-mono">--:--:--</span>
+                <span className="font-mono">{format(lastTransaction.timestamp, 'HH:mm:ss')}</span>
               </div>
             </div>
 
@@ -1334,7 +1334,7 @@ function LabelHistoryView({ parts, onPrint, onCopy, onRollback, onManualInboundQ
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="opacity-50 uppercase">Đến dự kiến:</span>
-                    <span className="font-mono">--:--:--</span>
+                    <span className="font-mono">{format(selectedLabel.timestamp, 'HH:mm:ss')}</span>
                   </div>
                 </div>
 
@@ -1456,7 +1456,7 @@ function LabelHistoryView({ parts, onPrint, onCopy, onRollback, onManualInboundQ
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   className="w-full p-4 rounded-lg border border-gray-200 focus:border-green-500 outline-none text-lg"
-                  placeholder="Nhập admin123..."
+                  placeholder="Vui lòng nhập mật khẩu..."
                   onKeyDown={(e) => e.key === 'Enter' && handleManualInbound()}
                   autoFocus
                 />
@@ -2244,7 +2244,7 @@ function ProduceView({
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="opacity-50 uppercase">Đến dự kiến:</span>
-                    <span className="font-mono">--:--:--</span>
+                    <span className="font-mono">{format(lastTransaction.timestamp, 'HH:mm:ss')}</span>
                   </div>
                 </div>
 
