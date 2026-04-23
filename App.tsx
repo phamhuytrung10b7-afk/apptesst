@@ -2735,21 +2735,21 @@ function LaserInboundView({ parts, onManualInbound }: any) {
             />
           </div>
 
-          {availablePos.length === 0 ? (
+          {availablePos.length === 0 && targetLocation === 'OUT' ? (
             <div className="w-full bg-red-50 border-2 border-red-200 p-6 rounded-xl flex flex-col items-center gap-3 text-center">
               <AlertCircle size={32} className="text-red-600" />
               <div>
                 <p className="font-bold text-red-800 uppercase">Yêu cầu Lệnh sản xuất (PO)</p>
-                <p className="text-xs text-red-600">Mọi lệnh nhập/xuất Laser (kể cả nhập tôn) đều phải gắn với một PO đang chạy.</p>
+                <p className="text-xs text-red-600">Linh kiện cắt Laser (OUT) phải gắn với một PO đang chạy.</p>
               </div>
             </div>
           ) : (
             <button 
               type="submit"
-              disabled={!selectedPoId}
+              disabled={targetLocation === 'OUT' && !selectedPoId}
               className={cn(
                 "w-full py-6 rounded-xl font-bold uppercase tracking-widest flex items-center justify-center gap-4 active:scale-[0.98] transition-all shadow-lg text-xl",
-                !selectedPoId
+                (targetLocation === 'OUT' && !selectedPoId)
                   ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                   : "bg-blue-600 text-white hover:bg-blue-700 shadow-blue-200"
               )}
@@ -3076,7 +3076,7 @@ function ManualInboundView({ parts, onManualInbound }: any) {
             />
           </div>
 
-          {availablePos.length === 0 ? (
+          {availablePos.length === 0 && !(selectedStage === 'LASER' && targetLocation === 'IN') ? (
             <div className="w-full bg-red-50 border-2 border-red-200 p-6 rounded-xl flex flex-col items-center gap-3 text-center">
               <AlertCircle size={32} className="text-red-600" />
               <div>
@@ -3087,10 +3087,10 @@ function ManualInboundView({ parts, onManualInbound }: any) {
           ) : (
             <button 
               type="submit"
-              disabled={!selectedPoId}
+              disabled={!(selectedStage === 'LASER' && targetLocation === 'IN') && !selectedPoId}
               className={cn(
                 "w-full py-6 rounded-xl font-bold uppercase tracking-widest flex items-center justify-center gap-4 active:scale-[0.98] transition-all shadow-lg text-xl",
-                !selectedPoId
+                (!(selectedStage === 'LASER' && targetLocation === 'IN') && !selectedPoId)
                   ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                   : "bg-blue-600 text-white hover:bg-blue-700 shadow-blue-200"
               )}

@@ -689,12 +689,13 @@ export const storageService = {
     let linkedPoId = poId;
 
     // Check for required PO
+    const isLaserMaterialInbound = stageId === 'LASER' && location === 'IN';
     const pos = this.getProductionOrders();
     const poIndex = poId 
       ? pos.findIndex(p => p.id === poId)
       : pos.findIndex(p => p.partId === cleanId && p.stageId === stageId && p.status !== 'COMPLETED');
     
-    if (poIndex === -1) {
+    if (poIndex === -1 && !isLaserMaterialInbound) {
       throw new Error(`Lỗi: Không tìm thấy lệnh PO sản xuất hợp lệ cho linh kiện ${cleanId} tại công đoạn ${STAGES.find(s => s.id === stageId)?.name}. Chức năng nhập kho thủ công cũng yêu cầu phải có PO.`);
     }
 
