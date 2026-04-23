@@ -569,7 +569,8 @@ export const storageService = {
     const masterPo = masterPoId ? pos.find(p => p.id === masterPoId) : undefined;
     const masterPoTargetQty = masterPo?.targetQuantity || 0;
     
-    const txId = crypto.randomUUID();
+    // Generate a shorter unique ID: 10 chars should be enough for local context
+    const txId = Math.random().toString(36).substring(2, 12).toUpperCase();
     const timestamp = Date.now();
     
     // ONLY generate QR data if exporting from OUT
@@ -651,7 +652,7 @@ export const storageService = {
 
     // 4. Record transaction
     const newTransaction: Transaction = {
-      id: crypto.randomUUID(),
+      id: Math.random().toString(36).substring(2, 12).toUpperCase(),
       type: 'STAGE_IN',
       partId,
       quantity,
@@ -719,7 +720,7 @@ export const storageService = {
     
     const transactions = this.getTransactions();
     const newTransaction: Transaction = {
-      id: crypto.randomUUID(),
+      id: Math.random().toString(36).substring(2, 12).toUpperCase(),
       type: 'STAGE_IN',
       partId: cleanId,
       quantity,
