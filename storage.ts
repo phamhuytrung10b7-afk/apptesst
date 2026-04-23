@@ -482,6 +482,10 @@ export const storageService = {
         ? pos.findIndex(p => p.id === poId)
         : pos.findIndex(p => p.partId === cleanId && p.stageId === stageId && p.status !== 'COMPLETED');
       
+      if (poIndex === -1) {
+        throw new Error(`Lỗi: Không tìm thấy lệnh PO sản xuất hợp lệ cho linh kiện ${cleanId} tại công đoạn ${STAGES.find(s => s.id === stageId)?.name}. Vui lòng tạo Lệnh sản xuất trước khi thực hiện.`);
+      }
+
       if (poIndex !== -1) {
         const po = pos[poIndex];
         if (po.producedQuantity + quantity > po.targetQuantity) {
@@ -516,6 +520,10 @@ export const storageService = {
       const pos = this.getProductionOrders();
       const poIndex = poId ? pos.findIndex(p => p.id === poId) : -1;
       
+      if (poIndex === -1) {
+        throw new Error(`Lỗi: Không tìm thấy lệnh PO sản xuất hợp lệ để thực hiện xuất kho QR cho linh kiện ${cleanId}.`);
+      }
+
       if (poIndex !== -1) {
         const po = pos[poIndex];
         if ((po.exportedQuantity || 0) + quantity > po.producedQuantity) {
@@ -569,7 +577,8 @@ export const storageService = {
     const masterPo = masterPoId ? pos.find(p => p.id === masterPoId) : undefined;
     const masterPoTargetQty = masterPo?.targetQuantity || 0;
     
-    const txId = crypto.randomUUID();
+    // Generate a shorter unique ID: 10 chars should be enough for local context
+    const txId = Math.random().toString(36).substring(2, 12).toUpperCase();
     const timestamp = Date.now();
     
     // ONLY generate QR data if exporting from OUT
@@ -644,6 +653,10 @@ export const storageService = {
       throw new Error(`Lỗi: Nhãn này được chỉ định cho công đoạn ${targetStageName}. Bạn đang ở công đoạn ${STAGES.find(s => s.id === currentStageId)?.name}.`);
     }
 
+    if (!linkedPoId) {
+      throw new Error('Lỗi: Nhãn QR này không chứa thông tin Lệnh sản xuất (PO). Không thể nhập kho.');
+    }
+
     // 3. Add to currentStage target location
     // FORCE targetLocation to 'IN' when scanning QR code as per user request
     const finalTargetLocation = 'IN';
@@ -651,7 +664,7 @@ export const storageService = {
 
     // 4. Record transaction
     const newTransaction: Transaction = {
-      id: crypto.randomUUID(),
+      id: Math.random().toString(36).substring(2, 12).toUpperCase(),
       type: 'STAGE_IN',
       partId,
       quantity,
@@ -675,16 +688,21 @@ export const storageService = {
     const cleanId = partId.split(' - ')[0];
     let linkedPoId = poId;
 
+    // Check for required PO
+    const pos = this.getProductionOrders();
+    const poIndex = poId 
+      ? pos.findIndex(p => p.id === poId)
+      : pos.findIndex(p => p.partId === cleanId && p.stageId === stageId && p.status !== 'COMPLETED');
+    
+    if (poIndex === -1) {
+      throw new Error(`Lỗi: Không tìm thấy lệnh PO sản xuất hợp lệ cho linh kiện ${cleanId} tại công đoạn ${STAGES.find(s => s.id === stageId)?.name}. Chức năng nhập kho thủ công cũng yêu cầu phải có PO.`);
+    }
+
     // Apply BOM logic if entering into OUT (Production result)
     if (location === 'OUT') {
       this.applyBOMDeduction(cleanId, stageId, quantity);
 
       // Update PO progress
-      const pos = this.getProductionOrders();
-      const poIndex = poId 
-        ? pos.findIndex(p => p.id === poId)
-        : pos.findIndex(p => p.partId === cleanId && p.stageId === stageId && p.status !== 'COMPLETED');
-      
       if (poIndex !== -1) {
         const po = pos[poIndex];
         if (po.producedQuantity + quantity > po.targetQuantity) {
@@ -719,7 +737,7 @@ export const storageService = {
     
     const transactions = this.getTransactions();
     const newTransaction: Transaction = {
-      id: crypto.randomUUID(),
+      id: Math.random().toString(36).substring(2, 12).toUpperCase(),
       type: 'STAGE_IN',
       partId: cleanId,
       quantity,

@@ -2126,13 +2126,29 @@ function ProduceView({
             </div>
           </div>
 
-          <button 
-            type="submit"
-            className="w-full bg-blue-600 text-white py-5 rounded-xl font-bold uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-blue-700 active:scale-[0.98] transition-all shadow-lg shadow-blue-200"
-          >
-            <PackagePlus size={24} />
-            {sourceLocation === 'IN' ? 'Xác nhận hoàn thành (IN -> OUT)' : 'Xác nhận xuất kho & In nhãn QR'}
-          </button>
+          {availablePos.length === 0 ? (
+            <div className="w-full bg-red-50 border-2 border-red-200 p-6 rounded-xl flex flex-col items-center gap-3 text-center">
+              <AlertCircle size={32} className="text-red-600" />
+              <div>
+                <p className="font-bold text-red-800 uppercase text-lg">Không có Lệnh sản xuất (PO)</p>
+                <p className="text-sm text-red-600">Linh kiện này chưa được tạo PO cho công đoạn {STAGES.find(s => s.id === selectedStage)?.name}. Vui lòng vào mục "Lệnh sản xuất" để tạo lệnh trước.</p>
+              </div>
+            </div>
+          ) : (
+            <button 
+              type="submit"
+              disabled={!selectedPoId}
+              className={cn(
+                "w-full py-5 rounded-xl font-bold uppercase tracking-widest flex items-center justify-center gap-3 active:scale-[0.98] transition-all shadow-lg",
+                !selectedPoId 
+                  ? "bg-gray-300 text-gray-500 cursor-not-allowed" 
+                  : "bg-blue-600 text-white hover:bg-blue-700 shadow-blue-200"
+              )}
+            >
+              <PackagePlus size={24} />
+              {sourceLocation === 'IN' ? 'Xác nhận hoàn thành (IN -> OUT)' : 'Xác nhận xuất kho & In nhãn QR'}
+            </button>
+          )}
         </form>
       </div>
 
@@ -2442,13 +2458,29 @@ function WeldingInboundView({ parts, onManualInbound }: any) {
             />
           </div>
 
-          <button 
-            type="submit"
-            className="w-full bg-blue-600 text-white py-6 rounded-xl font-bold uppercase tracking-widest flex items-center justify-center gap-4 hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 text-xl"
-          >
-            <CheckCircle2 size={28} />
-            Xác nhận nhập kho Hàn
-          </button>
+          {availablePos.length === 0 ? (
+            <div className="w-full bg-red-50 border-2 border-red-200 p-6 rounded-xl flex flex-col items-center gap-3 text-center">
+              <AlertCircle size={32} className="text-red-600" />
+              <div>
+                <p className="font-bold text-red-800 uppercase">Yêu cầu Lệnh sản xuất (PO)</p>
+                <p className="text-xs text-red-600">Bạn phải chọn PO cụ thể để ghi nhận sản xuất cho công đoạn Hàn.</p>
+              </div>
+            </div>
+          ) : (
+            <button 
+              type="submit"
+              disabled={!selectedPoId}
+              className={cn(
+                "w-full py-6 rounded-xl font-bold uppercase tracking-widest flex items-center justify-center gap-4 active:scale-[0.98] transition-all shadow-lg text-xl",
+                !selectedPoId 
+                  ? "bg-gray-300 text-gray-500 cursor-not-allowed" 
+                  : "bg-blue-600 text-white hover:bg-blue-700 shadow-blue-200"
+              )}
+            >
+              <CheckCircle2 size={28} />
+              Xác nhận nhập kho Hàn
+            </button>
+          )}
         </form>
       </div>
 
@@ -2703,13 +2735,29 @@ function LaserInboundView({ parts, onManualInbound }: any) {
             />
           </div>
 
-          <button 
-            type="submit"
-            className="w-full bg-blue-600 text-white py-6 rounded-xl font-bold uppercase tracking-widest flex items-center justify-center gap-4 hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 text-xl"
-          >
-            <CheckCircle2 size={28} />
-            Xác nhận nhập kho Laser
-          </button>
+          {availablePos.length === 0 ? (
+            <div className="w-full bg-red-50 border-2 border-red-200 p-6 rounded-xl flex flex-col items-center gap-3 text-center">
+              <AlertCircle size={32} className="text-red-600" />
+              <div>
+                <p className="font-bold text-red-800 uppercase">Yêu cầu Lệnh sản xuất (PO)</p>
+                <p className="text-xs text-red-600">Mọi lệnh nhập/xuất Laser (kể cả nhập tôn) đều phải gắn với một PO đang chạy.</p>
+              </div>
+            </div>
+          ) : (
+            <button 
+              type="submit"
+              disabled={!selectedPoId}
+              className={cn(
+                "w-full py-6 rounded-xl font-bold uppercase tracking-widest flex items-center justify-center gap-4 active:scale-[0.98] transition-all shadow-lg text-xl",
+                !selectedPoId
+                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                  : "bg-blue-600 text-white hover:bg-blue-700 shadow-blue-200"
+              )}
+            >
+              <CheckCircle2 size={28} />
+              Xác nhận nhập kho Laser
+            </button>
+          )}
         </form>
       </div>
 
@@ -3028,13 +3076,29 @@ function ManualInboundView({ parts, onManualInbound }: any) {
             />
           </div>
 
-          <button 
-            type="submit"
-            className="w-full bg-blue-600 text-white py-6 rounded-xl font-bold uppercase tracking-widest flex items-center justify-center gap-4 hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 text-xl"
-          >
-            <CheckCircle2 size={28} />
-            Xác nhận nhập kho thủ công
-          </button>
+          {availablePos.length === 0 ? (
+            <div className="w-full bg-red-50 border-2 border-red-200 p-6 rounded-xl flex flex-col items-center gap-3 text-center">
+              <AlertCircle size={32} className="text-red-600" />
+              <div>
+                <p className="font-bold text-red-800 uppercase">Yêu cầu Lệnh sản xuất (PO)</p>
+                <p className="text-xs text-red-600">Bạn phải có PO con tương ứng mới được phép nhập/xuất tại công đoạn này.</p>
+              </div>
+            </div>
+          ) : (
+            <button 
+              type="submit"
+              disabled={!selectedPoId}
+              className={cn(
+                "w-full py-6 rounded-xl font-bold uppercase tracking-widest flex items-center justify-center gap-4 active:scale-[0.98] transition-all shadow-lg text-xl",
+                !selectedPoId
+                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                  : "bg-blue-600 text-white hover:bg-blue-700 shadow-blue-200"
+              )}
+            >
+              <CheckCircle2 size={28} />
+              Xác nhận nhập kho thủ công
+            </button>
+          )}
         </form>
       </div>
 
