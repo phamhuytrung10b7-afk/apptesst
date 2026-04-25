@@ -577,21 +577,41 @@ export const storageService = {
     const masterPo = masterPoId ? pos.find(p => p.id === masterPoId) : undefined;
     const masterPoTargetQty = masterPo?.targetQuantity || 0;
     
+    // Identity Transformation Logic: If jumping to PAINTING and skipping Welding,
+    // the identity of the part transforms from Level 2 Ingredient to Level 1 Result.
+    let qrIdentity = linkedPoId || cleanId;
+    let recordPartId = cleanId;
+
+    if (targetStageId === 'PAINTING' && sourceLocation === 'OUT') {
+      if (part && part.level >= 2 && part.skipWelding) {
+        if (masterPo) {
+          qrIdentity = masterPo.id;
+          recordPartId = masterPo.partId;
+        } else {
+          const bomV2 = this.getBOMV2();
+          const bomEntry = bomV2.find(b => b.ingredientPartId === cleanId);
+          if (bomEntry) {
+            qrIdentity = bomEntry.resultPartId;
+            recordPartId = bomEntry.resultPartId;
+          }
+        }
+      }
+    }
+
     // Generate a shorter unique ID: 10 chars should be enough for local context
     const txId = Math.random().toString(36).substring(2, 12).toUpperCase();
     const timestamp = Date.now();
     
     // ONLY generate QR data if exporting from OUT
     // Format: poIdOrPartId|quantity|sourceStageId|timestamp|txId|targetStageId|REMOVED_PART_NAME|masterPoId|subPoTargetQty|masterPoTargetQty
-    // Note: partName is removed to avoid UTF-8 encoding issues with hardware scanners.
     const qrData = sourceLocation === 'OUT' 
-      ? `${linkedPoId || cleanId}|${quantity}|${stageId}|${timestamp}|${txId}|${targetStageId || ''}||${masterPoId}|${subPoTargetQty}|${masterPoTargetQty}`
+      ? `${qrIdentity}|${quantity}|${stageId}|${timestamp}|${txId}|${targetStageId || ''}||${masterPoId}|${subPoTargetQty}|${masterPoTargetQty}`
       : undefined;
 
     const newTransaction: Transaction = {
       id: txId,
       type: 'STAGE_OUT',
-      partId: cleanId,
+      partId: recordPartId,
       quantity,
       stageId,
       targetStageId,
