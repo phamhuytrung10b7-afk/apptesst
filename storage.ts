@@ -294,6 +294,12 @@ export const storageService = {
     localStorage.setItem('wip_labels', JSON.stringify(labels.filter(l => l.id !== id)));
   },
 
+  markLabelAsPrinted(id: string) {
+    const labels = this.getLabels();
+    const updated = labels.map(l => l.id === id ? { ...l, printed: true } : l);
+    localStorage.setItem('wip_labels', JSON.stringify(updated));
+  },
+
   rollbackTransaction(txId: string) {
     const transactions = this.getTransactions();
     const txIndex = transactions.findIndex(t => t.id === txId);
@@ -332,7 +338,7 @@ export const storageService = {
     return transformation ? transformation.targetPartId : cleanId;
   },
 
-  updateInventory(partId: string, stageId: StageId, location: 'IN' | 'OUT', delta: number) {
+  updateInventory(partId: string, stageId: StageId, location: 'IN' | 'OUT' | 'DEFECT', delta: number) {
     const inventory = this.getInventory();
     // Clean partId
     const cleanId = partId.split(' - ')[0].trim().toUpperCase();
@@ -352,7 +358,7 @@ export const storageService = {
     this.saveInventory(inventory);
   },
 
-  setInventoryQuantity(partId: string, stageId: StageId, location: 'IN' | 'OUT', quantity: number) {
+  setInventoryQuantity(partId: string, stageId: StageId, location: 'IN' | 'OUT' | 'DEFECT', quantity: number) {
     const inventory = this.getInventory();
     const cleanId = partId.split(' - ')[0];
     const index = inventory.findIndex(
@@ -368,7 +374,7 @@ export const storageService = {
     this.saveInventory(inventory);
   },
 
-  deleteInventoryItem(partId: string, stageId: StageId, location: 'IN' | 'OUT') {
+  deleteInventoryItem(partId: string, stageId: StageId, location: 'IN' | 'OUT' | 'DEFECT') {
     const inventory = this.getInventory();
     const cleanId = partId.split(' - ')[0];
     const filtered = inventory.filter(
@@ -657,6 +663,13 @@ export const storageService = {
 
     // 1. Check if this QR (Transaction ID) has already been scanned
     const transactions = this.getTransactions();
+    
+    // Interlock: Check if this label was marked as Defect (if we ever support that)
+    const isDefect = transactions.some(tx => tx.id === sourceTxId && tx.type === 'DEFECT');
+    if (isDefect) {
+      throw new Error('CẢNH BÁO: Nhãn này đã bị đánh dấu là HÀNG LỖI (DEFECT). Không thể nhập kho công đoạn tiếp theo!');
+    }
+
     const alreadyScanned = transactions.some(tx => tx.type === 'STAGE_IN' && tx.qrData?.includes(sourceTxId));
     if (alreadyScanned) {
       throw new Error('Lỗi: Mã QR này đã được sử dụng để nhập kho trước đó. Không thể nhập lại.');
@@ -792,7 +805,49 @@ export const storageService = {
     return {
       in: inventory.filter((item) => item.stageId === stageId && item.location === 'IN'),
       out: inventory.filter((item) => item.stageId === stageId && item.location === 'OUT'),
+      defect: inventory.filter((item) => item.stageId === stageId && item.location === 'DEFECT'),
     };
+  },
+
+  recordDefect(partId: string, stageId: StageId, quantity: number, reason: string, category: string, poId?: string) {
+    const cleanId = partId.split(' - ')[0].trim().toUpperCase();
+    
+    // 1. Validation: Ensure we have enough stock in IN to mark as defect
+    const inventory = this.getInventory();
+    const effectiveId = this.getEffectivePartId(cleanId, stageId);
+    const stock = inventory.find(
+      (item) => item.partId === effectiveId && item.stageId === stageId && item.location === 'IN'
+    );
+
+    if (!stock || stock.quantity < quantity) {
+      const part = this.getParts().find(p => p.id === effectiveId);
+      throw new Error(`Lỗi: Số lượng báo lỗi (${quantity}) lớn hơn tồn kho IN của ${part?.name || effectiveId} tại ${STAGES.find(s => s.id === stageId)?.name} (Hiện có ${stock?.quantity || 0})`);
+    }
+
+    // 2. Inventory movement: Deduct from IN, Add to DEFECT
+    this.updateInventory(effectiveId, stageId, 'IN', -quantity);
+    this.updateInventory(effectiveId, stageId, 'DEFECT', quantity);
+
+    // 3. Record transaction
+    const transactions = this.getTransactions();
+    const txId = `DF-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    
+    const newTransaction: Transaction = {
+      id: txId,
+      type: 'DEFECT',
+      partId: effectiveId,
+      originalPartId: (effectiveId !== cleanId) ? cleanId : undefined,
+      quantity,
+      stageId,
+      timestamp: Date.now(),
+      defectReason: reason,
+      defectCategory: category,
+      poId: poId
+    };
+    transactions.unshift(newTransaction);
+    this.saveTransactions(transactions);
+
+    return newTransaction;
   },
 
   getProductionOrders(): ProductionOrder[] {
@@ -804,9 +859,23 @@ export const storageService = {
     localStorage.setItem(STORAGE_KEYS.PRODUCTION_ORDERS, JSON.stringify(orders));
   },
 
-  createMasterPO(modelId: string, quantity: number) {
+  createMasterPO(modelId: string, quantity: number, plannedStartTime?: number, customLeadTime?: number) {
+    const { masterPo, allChildPOs } = this.calculateMasterPOSchedule(modelId, quantity, plannedStartTime, customLeadTime);
     const pos = this.getProductionOrders();
+    const updatedPOs = [masterPo, ...allChildPOs, ...pos];
+    this.saveProductionOrders(updatedPOs);
+    return masterPo;
+  },
+
+  previewMasterPOCompletion(modelId: string, quantity: number, plannedStartTime?: number, customLeadTime?: number): number {
+    const { masterPo } = this.calculateMasterPOSchedule(modelId, quantity, plannedStartTime, customLeadTime);
+    return masterPo.expectedCompletionTime || Date.now();
+  },
+
+  calculateMasterPOSchedule(modelId: string, quantity: number, plannedStartTime?: number, customLeadTime?: number) {
+    const pos = this.getProductionOrders(); // Still needed for unique ID check
     const timestamp = Date.now();
+    const shiftConfigs = this.getShiftConfigs();
     const dateStr = format(timestamp, 'ddMM');
     const modelPrefix = modelId.length > 8 ? modelId.substring(0, 8).toUpperCase() : modelId.toUpperCase();
     const generateUniqueId = (prefix: string, suffix: string = "") => {
@@ -825,37 +894,27 @@ export const storageService = {
 
     // 1. Build part dependency map and collect required parts
     const requiredParts = new Map<string, { qty: number; minLevel: number; }>();
-    const level1Children = new Map<string, string[]>(); // Map: Level 1 Part -> List of its Level 2+ Children
+    const level1Children = new Map<string, string[]>();
 
     const traverseBOM = (currentId: string, currentQty: number, level: number, parentId: string | null) => {
-      // Avoid circular references or too deep
       if (level > 20) return;
-
       if (level > 0) {
         const existing = requiredParts.get(currentId);
         if (!existing) {
           requiredParts.set(currentId, { qty: currentQty, minLevel: level });
         } else {
-          // Always accumulate quantity, keep track of minimum level found
-          requiredParts.set(currentId, { 
-            qty: existing.qty + currentQty, 
-            minLevel: Math.min(existing.minLevel, level) 
-          });
+          requiredParts.set(currentId, { qty: existing.qty + currentQty, minLevel: Math.min(existing.minLevel, level) });
         }
-        
-        // Track Level 2+ children belonging to a Level 1 parent
         if (level >= 2 && parentId) {
           const children = level1Children.get(parentId) || [];
           if (!children.includes(currentId)) children.push(currentId);
           level1Children.set(parentId, children);
         }
       }
-      
       const v1Idx = modelBom.filter(b => b.modelId === currentId);
       for (const ing of v1Idx) {
         traverseBOM(ing.partId, currentQty * ing.quantity, level + 1, (level === 0) ? null : (level === 1 ? currentId : parentId));
       }
-
       const v2Idx = bomV2.filter(b => b.resultPartId === currentId);
       for (const ing of v2Idx) {
         const nextParentId = (level === 1) ? currentId : (level >= 2 ? parentId : null);
@@ -864,64 +923,51 @@ export const storageService = {
     };
     traverseBOM(modelId, quantity, 0, null);
 
-    // 2. Initialize PO lists
     const laserPOs: ProductionOrder[] = [];
     const bendingPOs: ProductionOrder[] = [];
     const weldingPOs: ProductionOrder[] = [];
     const paintingPOs: ProductionOrder[] = [];
 
-    requiredParts.forEach((info, partId) => {
+    const addPoToList = (partId: string, info: any, stageId: StageId, list: ProductionOrder[]) => {
       const { qty, minLevel: level } = info;
       const part = partsList.find(p => p.id === partId);
-      
-      // Check if part is a component (no ingredients) or assembly (has ingredients)
+      if (stageId === 'BENDING' && part?.skipBending) return;
+      if (stageId === 'WELDING' && part?.skipWelding) return;
+      if (stageId === 'PAINTING' && (part?.skipPainting || level > 1)) return;
+      let idSuffix = "";
+      if (stageId === 'WELDING') idSuffix = "- H";
+      else if (stageId === 'BENDING') idSuffix = "- CD";
+      list.push({
+        id: generateUniqueId(`PO-${modelPrefix}-${dateStr}-${stageId}`, idSuffix),
+        masterPoId: masterPoId,
+        partId: partId,
+        stageId: stageId,
+        targetQuantity: qty,
+        producedQuantity: 0,
+        exportedQuantity: 0,
+        status: 'PENDING',
+        createdAt: timestamp
+      });
+    };
+
+    requiredParts.forEach((info, partId) => {
+      const { minLevel: level } = info;
       const hasIngredients = bomV2.some(b => b.resultPartId === partId);
-
-      const addPo = (stageId: StageId, list: ProductionOrder[]) => {
-        if (stageId === 'BENDING' && part?.skipBending) return;
-        if (stageId === 'WELDING' && part?.skipWelding) return;
-        if (stageId === 'PAINTING' && (part?.skipPainting || level > 1)) return; // Painting is usually level 1
-
-        let idSuffix = "";
-        if (stageId === 'WELDING') idSuffix = "- H";
-        else if (stageId === 'BENDING') idSuffix = "- CD";
-
-        list.push({
-          id: generateUniqueId(`PO-${modelPrefix}-${dateStr}-${stageId}`, idSuffix),
-          masterPoId: masterPoId,
-          partId: partId,
-          stageId: stageId,
-          targetQuantity: qty,
-          producedQuantity: 0,
-          exportedQuantity: 0,
-          status: 'PENDING',
-          createdAt: timestamp
-        });
-      };
-
-      // Logic:
-      // 1. Leaf component (no ingredients): Needs Laser Cutting and Bending
       if (!hasIngredients) {
-        addPo('LASER', laserPOs);
-        addPo('BENDING', bendingPOs);
+        addPoToList(partId, info, 'LASER', laserPOs);
+        addPoToList(partId, info, 'BENDING', bendingPOs);
       }
-
-      // 2. Assembly (Has ingredients OR Level 1): Needs Welding
       if (hasIngredients || level === 1) {
-        addPo('WELDING', weldingPOs);
+        addPoToList(partId, info, 'WELDING', weldingPOs);
       }
-
-      // 3. Final Assembly (Level 1): Needs Painting
       if (level === 1) {
-        addPo('PAINTING', paintingPOs);
+        addPoToList(partId, info, 'PAINTING', paintingPOs);
       }
     });
 
-    // 3. Scheduling logic with dependencies
     const partStageFinishTime = new Map<string, Map<StageId, number>>(); 
     const allChildPOs: ProductionOrder[] = [];
     const laserNesting = this.getLaserNesting();
-    const shiftConfigs = this.getShiftConfigs();
 
     const recordFinish = (po: ProductionOrder, time: number) => {
       let stages = partStageFinishTime.get(po.partId);
@@ -933,19 +979,17 @@ export const storageService = {
     };
 
     const getFinishTime = (partId: string, stageId: StageId) => {
-      return partStageFinishTime.get(partId)?.get(stageId) || timestamp;
+      return partStageFinishTime.get(partId)?.get(stageId) || (plannedStartTime || timestamp);
     };
 
-    // Stage 1: LASER (Level 2+)
-    let mFreeLaser = timestamp;
+    const baseStartTime = plannedStartTime || timestamp;
+
+    let mFreeLaser = baseStartTime;
     const laserConfig = shiftConfigs.find(c => c.stageId === 'LASER');
     const laserWorkers = laserConfig?.workerCount || 1;
-    
     if (laserNesting.length > 0) {
       const nestedGroupMap = new Map<string, ProductionOrder[]>();
       const individualLaserPOs: ProductionOrder[] = [];
-      const nestedPartIds = new Set(laserNesting.map(ln => ln.partId));
-
       laserPOs.forEach(po => {
         const nest = laserNesting.find(ln => ln.partId === po.partId);
         if (nest) {
@@ -956,7 +1000,6 @@ export const storageService = {
           individualLaserPOs.push(po);
         }
       });
-
       individualLaserPOs.forEach(po => {
         po.createdAt = this.getNextWorkingTime(mFreeLaser, 'LASER', shiftConfigs);
         const norm = norms.find(n => n.partId === po.partId && n.stageId === 'LASER');
@@ -966,7 +1009,6 @@ export const storageService = {
         recordFinish(po, mFreeLaser);
         allChildPOs.push(po);
       });
-
       nestedGroupMap.forEach((groupPOs, nestingId) => {
         let totalDur = 0;
         groupPOs.forEach(po => {
@@ -996,8 +1038,7 @@ export const storageService = {
       });
     }
 
-    // Stage 2: BENDING (Level 2+)
-    let mFreeBending = timestamp;
+    let mFreeBending = baseStartTime;
     const bendConfig = shiftConfigs.find(c => c.stageId === 'BENDING');
     const bendWorkers = bendConfig?.workerCount || 1;
     bendingPOs.forEach(po => {
@@ -1012,15 +1053,13 @@ export const storageService = {
       allChildPOs.push(po);
     });
 
-    // Stage 3: WELDING (Level 1)
-    let mFreeWelding = timestamp;
+    let mFreeWelding = baseStartTime;
     const weldConfig = shiftConfigs.find(c => c.stageId === 'WELDING');
     const weldWorkers = weldConfig?.workerCount || 1;
-    // Sort Welding to start those whose components are ready first
     weldingPOs.sort((a, b) => {
       const getReady = (pid: string) => {
         const children = level1Children.get(pid) || [];
-        if (children.length === 0) return timestamp;
+        if (children.length === 0) return baseStartTime;
         return Math.max(...children.map(cid => {
           const bEnd = partStageFinishTime.get(cid)?.get('BENDING');
           if (bEnd !== undefined) return bEnd;
@@ -1029,15 +1068,13 @@ export const storageService = {
       };
       return getReady(a.partId) - getReady(b.partId);
     });
-
     weldingPOs.forEach(po => {
       const children = level1Children.get(po.partId) || [];
-      const componentsReadyTime = children.length === 0 ? timestamp : Math.max(...children.map(cid => {
+      const componentsReadyTime = children.length === 0 ? baseStartTime : Math.max(...children.map(cid => {
         const bEnd = partStageFinishTime.get(cid)?.get('BENDING');
         if (bEnd !== undefined) return bEnd;
         return getFinishTime(cid, 'LASER');
       }));
-
       const start = this.getNextWorkingTime(Math.max(mFreeWelding, componentsReadyTime), 'WELDING', shiftConfigs);
       po.createdAt = start;
       const norm = norms.find(n => n.partId === po.partId && n.stageId === 'WELDING');
@@ -1048,8 +1085,7 @@ export const storageService = {
       allChildPOs.push(po);
     });
 
-    // Stage 4: PAINTING (Level 1)
-    let mFreePainting = timestamp;
+    let mFreePainting = baseStartTime;
     const paintConfig = shiftConfigs.find(c => c.stageId === 'PAINTING');
     const paintWorkers = paintConfig?.workerCount || 1;
     paintingPOs.forEach(po => {
@@ -1064,7 +1100,6 @@ export const storageService = {
       allChildPOs.push(po);
     });
 
-    // Create Master PO
     const masterPo: ProductionOrder = {
       id: masterPoId,
       partId: modelId,
@@ -1073,17 +1108,13 @@ export const storageService = {
       exportedQuantity: 0,
       status: 'PENDING',
       createdAt: timestamp,
-      // Master completion is the latest time any child part finishes Painting
+      plannedStartTime: baseStartTime,
+      leadTime: customLeadTime,
       expectedCompletionTime: allChildPOs.length > 0 
         ? Math.max(...allChildPOs.filter(p => p.expectedCompletionTime).map(p => p.expectedCompletionTime!))
-        : timestamp
+        : baseStartTime
     };
-
-    // Save with unshift to show newest first
-    const updatedPOs = [masterPo, ...allChildPOs, ...pos];
-    this.saveProductionOrders(updatedPOs);
-    
-    return masterPo;
+    return { masterPo, allChildPOs };
   },
 
   deletePO(id: string) {

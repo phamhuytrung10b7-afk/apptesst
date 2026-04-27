@@ -17,13 +17,13 @@ export interface Part {
 export interface InventoryItem {
   partId: string;
   stageId: StageId;
-  location: 'IN' | 'OUT';
+  location: 'IN' | 'OUT' | 'DEFECT';
   quantity: number;
 }
 
 export interface Transaction {
   id: string;
-  type: 'STAGE_OUT' | 'STAGE_IN';
+  type: 'STAGE_OUT' | 'STAGE_IN' | 'DEFECT';
   partId: string;
   originalPartId?: string; // If part was transformed upon entry
   quantity: number;
@@ -33,6 +33,9 @@ export interface Transaction {
   sourceStageId?: StageId; // For STAGE_IN, where it came from
   targetStageId?: StageId; // For STAGE_OUT, where it is intended to go
   poId?: string; // Link to production order
+  printed?: boolean;
+  defectReason?: string;
+  defectCategory?: string;
 }
 
 export interface BOMDefinition {
@@ -64,6 +67,8 @@ export interface ProductionOrder {
   exportedQuantity: number;
   status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
   createdAt: number;
+  plannedStartTime?: number;
+  leadTime?: number;
   expectedCompletionTime?: number;
 }
 
@@ -107,6 +112,15 @@ export const STAGES: { id: StageId; name: string; nextStageId?: StageId }[] = [
   { id: 'BENDING', name: 'Chấn/Dập', nextStageId: 'WELDING' },
   { id: 'WELDING', name: 'Hàn', nextStageId: 'PAINTING' },
   { id: 'PAINTING', name: 'Sơn', nextStageId: 'DCLR' },
+];
+
+export const DEFECT_REASONS = [
+  { id: 'SCRATCH', name: 'Trầy xước / Móp méo' },
+  { id: 'DIMENSION', name: 'Sai kích thước / Bản vẽ' },
+  { id: 'WELD_FAIL', name: 'Mối hàn lỗi / Thủng' },
+  { id: 'PAINT_FAIL', name: 'Bề mặt sơn không đạt / Chảy sơn' },
+  { id: 'MATERIAL', name: 'Lỗi vật liệu (Phôi)' },
+  { id: 'OTHER', name: 'Lỗi khác (Ghi chú thêm)' },
 ];
 
 export const INITIAL_PARTS: Part[] = [];
