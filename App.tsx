@@ -52,7 +52,7 @@ import {
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
-import { STAGES, INITIAL_PARTS, StageId, Part, InventoryItem, Transaction, BOMDefinition, BOMDefinitionV2, ProductionOrder, ModelBOMDefinition, ProductivityNorm, LaserNesting, ShiftConfig } from './types';
+import { STAGES, INITIAL_PARTS, StageId, Part, InventoryItem, Transaction, BOMDefinition, BOMDefinitionV2, ProductionOrder, ModelBOMDefinition, ProductivityNorm, LaserNesting, ShiftConfig, PartTransformation } from './types';
 import { storageService } from './storage';
 
 // Utility for tailwind classes
@@ -2186,6 +2186,7 @@ function ProduceView({
                   </h2>
                   <p className="font-mono text-lg font-bold opacity-80">
                     Mã LK: {getProcessValue(lastTransaction.partId, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
+                    {lastTransaction.originalPartId && <span className="block text-xs italic mt-1">(Gốc: {lastTransaction.originalPartId})</span>}
                   </p>
                 </div>
 
@@ -3411,8 +3412,9 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
   const [isImportingBOM, setIsImportingBOM] = useState(false);
   const [isImportingBOMV2, setIsImportingBOMV2] = useState(false);
   const [isImportingModelBOM, setIsImportingModelBOM] = useState(false);
+  const [isImportingTransformations, setIsImportingTransformations] = useState(false);
 
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'parts' | 'bom' | 'label' | 'bom_v2' | 'model_bom'>('parts');
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'parts' | 'bom' | 'label' | 'bom_v2' | 'model_bom' | 'transformations'>('parts');
 
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetPassword, setResetPassword] = useState('');
@@ -3803,6 +3805,15 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
           >
             Cấu hình khổ nhãn
           </button>
+          <button 
+            onClick={() => setActiveSettingsTab('transformations')}
+            className={cn(
+              "flex-1 py-5 text-base font-bold uppercase tracking-widest transition-all border-b-2",
+              activeSettingsTab === 'transformations' ? "border-blue-600 text-blue-600" : "border-transparent text-gray-400 hover:text-gray-600"
+            )}
+          >
+            Chuyển đổi linh kiện
+          </button>
         </div>
 
         {activeSettingsTab === 'bom_v2' ? (
@@ -4073,6 +4084,148 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                   <li>Phần <strong>Lề (Margins)</strong> nên đặt là <strong>None</strong> để nhãn in ra chuẩn nhất.</li>
                   <li>Phần <strong>Tỷ lệ (Scale)</strong> nên đặt là <strong>Default</strong> hoặc <strong>100%</strong>.</li>
                 </ul>
+              </div>
+            </div>
+          </div>
+        ) : activeSettingsTab === 'transformations' ? (
+          <div className="p-10 space-y-8">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-4">
+                <div className="bg-cyan-600 p-3 rounded-xl text-white">
+                  <RotateCcw size={24} />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold tracking-tight">Cài đặt chuyển đổi linh kiện</h2>
+                  <p className="text-sm text-gray-500">Tự động chuyển đổi tên linh kiện khi nhập kho công đoạn Sơn</p>
+                </div>
+              </div>
+              <div className="flex gap-4">
+                <label className="bg-white border-2 border-cyan-600 text-cyan-600 px-6 py-3 rounded-xl font-bold uppercase cursor-pointer hover:bg-cyan-100 transition-all flex items-center gap-2">
+                  <FileUp size={20} />
+                  {isImportingTransformations ? 'Đang xử lý...' : 'Nhập Excel Chuyển đổi'}
+                  <input type="file" accept=".xlsx, .xls" className="hidden" onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setIsImportingTransformations(true);
+                    const reader = new FileReader();
+                    reader.onload = (evt) => {
+                      try {
+                        const bstr = evt.target?.result;
+                        const wb = XLSX.read(bstr, { type: 'binary' });
+                        const wsname = wb.SheetNames[0];
+                        const ws = wb.Sheets[wsname];
+                        const data = XLSX.utils.sheet_to_json(ws) as any[];
+                        
+                        // Support headers from user's image
+                        const imported: PartTransformation[] = data.map(row => {
+                          const source = String(row['Linh kiện nguồn (L2)'] || row['SourceID'] || row['Mã nguồn'] || row['Mã L2'] || '').trim();
+                          const target = String(row['Linh kiện đích (L1)'] || row['TargetID'] || row['Mã đích'] || row['Mã L1'] || '').trim();
+                          let stageStr = String(row['Công đoạn áp dụng'] || row['StageID'] || row['Công đoạn'] || 'PAINTING').trim().toUpperCase();
+                          
+                          // Map Vietnamese stage names to IDs
+                          let stageId: StageId = 'PAINTING';
+                          if (stageStr.includes('SƠN')) stageId = 'PAINTING';
+                          else if (stageStr.includes('CHẤN') || stageStr.includes('DẬP')) stageId = 'BENDING';
+                          else if (stageStr.includes('HÀN')) stageId = 'WELDING';
+                          else if (stageStr.includes('LASER') || stageStr.includes('CẮT')) stageId = 'LASER';
+                          else if (stageStr.includes('LẮP') || stageStr.includes('GÓI') || stageStr.includes('DCLR')) stageId = 'DCLR';
+                          else {
+                            // Try to find by ID if direct match
+                            const found = STAGES.find(s => s.id === stageStr || s.name.toUpperCase() === stageStr);
+                            if (found) stageId = found.id;
+                          }
+
+                          return {
+                            sourcePartId: source,
+                            targetPartId: target,
+                            targetStageId: stageId
+                          };
+                        }).filter(b => b.sourcePartId && b.targetPartId);
+
+                        if (imported.length === 0) {
+                          alert('Không tìm thấy dữ liệu hợp lệ. Cần các cột: Linh kiện nguồn (L2), Linh kiện đích (L1)');
+                        } else {
+                          storageService.saveTransformations(imported);
+                          alert(`Đã nhập thành công ${imported.length} quy tắc chuyển đổi!`);
+                          onPartsChange(); // Trigger refresh
+                        }
+                      } catch (err) {
+                        alert('Lỗi khi đọc file.');
+                      } finally {
+                        setIsImportingTransformations(false);
+                        if (e.target) e.target.value = '';
+                      }
+                    };
+                    reader.readAsBinaryString(file);
+                  }} />
+                </label>
+              </div>
+            </div>
+
+            <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+               <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="p-6 text-xs font-bold uppercase opacity-50">Linh kiện nguồn (L2)</th>
+                    <th className="p-6 text-xs font-bold uppercase opacity-50 text-center">
+                      <ArrowRight size={16} className="mx-auto" />
+                    </th>
+                    <th className="p-6 text-xs font-bold uppercase opacity-50">Linh kiện đích (L1)</th>
+                    <th className="p-6 text-xs font-bold uppercase opacity-50">Công đoạn áp dụng</th>
+                    <th className="p-6 text-xs font-bold uppercase opacity-50 text-right">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {storageService.getTransformations().length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="p-20 text-center text-gray-400 italic">Chưa có quy tắc chuyển đổi nào.</td>
+                    </tr>
+                  ) : (
+                    storageService.getTransformations().map((t, i) => (
+                      <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                        <td className="p-6">
+                           <div className="font-bold">{parts.find(p => p.id === t.sourcePartId)?.name || t.sourcePartId}</div>
+                           <div className="text-xs font-mono opacity-50">{t.sourcePartId}</div>
+                        </td>
+                        <td className="p-6 text-center text-blue-600">
+                           <ArrowRight size={20} className="mx-auto" />
+                        </td>
+                        <td className="p-6">
+                           <div className="font-bold">{parts.find(p => p.id === t.targetPartId)?.name || t.targetPartId}</div>
+                           <div className="text-xs font-mono opacity-50">{t.targetPartId}</div>
+                        </td>
+                        <td className="p-6">
+                           <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-[10px] font-bold uppercase">
+                             {STAGES.find(s => s.id === t.targetStageId)?.name || t.targetStageId}
+                           </span>
+                        </td>
+                        <td className="p-6 text-right">
+                           <button 
+                             onClick={() => {
+                               const current = storageService.getTransformations();
+                               current.splice(i, 1);
+                               storageService.saveTransformations(current);
+                               onPartsChange();
+                             }}
+                             className="p-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                           >
+                             <Trash2 size={20} />
+                           </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            
+            <div className="p-6 bg-cyan-50 rounded-xl border border-cyan-100 flex gap-4 items-start">
+              <AlertCircle size={20} className="text-cyan-600 mt-1" />
+              <div className="text-sm text-cyan-800 space-y-2">
+                <p className="font-bold">Hướng dẫn cài đặt chuyển đổi:</p>
+                <p>Quy tắc này sẽ tự động thay đổi mã linh kiện được ghi nhận vào kho IN của công đoạn chỉ định. 
+                   Ví dụ: Bạn muốn linh kiện L2 (đã chấn xong) khi vào kho Sơn sẽ được tính là linh kiện L1.</p>
+                <p className="text-xs opacity-70 italic">* Khi quét nhãn QR mã nguồn, hệ thống sẽ tự nhận diện và cộng tồn kho cho mã đích.</p>
               </div>
             </div>
           </div>
@@ -4589,7 +4742,12 @@ function HistoryView({ transactions, parts }: HistoryProps) {
                     </span>
                   </td>
                   <td className="p-6 font-bold text-lg">
-                    {getProcessValue(tx.partId, parts.find(p => p.id === tx.partId), tx.stageId, tx.type === 'STAGE_OUT' ? 'OUT' : 'IN')}
+                    <div className="flex items-center gap-2">
+                       {getProcessValue(tx.partId, parts.find(p => p.id === tx.partId), tx.stageId, tx.type === 'STAGE_OUT' ? 'OUT' : 'IN')}
+                       {tx.originalPartId && (
+                         <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full uppercase">Từ {tx.originalPartId}</span>
+                       )}
+                    </div>
                     <span className="block text-sm font-normal opacity-80">
                       {getProcessValue(parts.find(p => p.id === tx.partId)?.name, parts.find(p => p.id === tx.partId), tx.stageId, tx.type === 'STAGE_OUT' ? 'OUT' : 'IN')}
                     </span>

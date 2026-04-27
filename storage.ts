@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { InventoryItem, Transaction, StageId, STAGES, INITIAL_PARTS, Part, BOMDefinition, BOMDefinitionV2, ProductionOrder, ModelBOMDefinition, ProductivityNorm, LaserNesting, ShiftConfig } from './types';
+import { InventoryItem, Transaction, StageId, STAGES, INITIAL_PARTS, Part, BOMDefinition, BOMDefinitionV2, ProductionOrder, ModelBOMDefinition, ProductivityNorm, LaserNesting, ShiftConfig, PartTransformation } from './types';
 import { format, addMilliseconds, setHours, setMinutes, setSeconds, getHours, getMinutes, isBefore, isAfter, startOfDay, addDays } from 'date-fns';
 
 const STORAGE_KEYS = {
@@ -18,6 +18,7 @@ const STORAGE_KEYS = {
   NORMS: 'wip_productivity_norms',
   LASER_NESTING: 'wip_laser_nesting',
   SHIFT_CONFIGS: 'wip_shift_configs',
+  TRANSFORMATIONS: 'wip_transformations',
 };
 
 export const storageService = {
@@ -140,6 +141,15 @@ export const storageService = {
 
   saveShiftConfigs(configs: ShiftConfig[]) {
     localStorage.setItem(STORAGE_KEYS.SHIFT_CONFIGS, JSON.stringify(configs));
+  },
+
+  getTransformations(): PartTransformation[] {
+    const data = localStorage.getItem(STORAGE_KEYS.TRANSFORMATIONS);
+    return data ? JSON.parse(data) : [];
+  },
+
+  saveTransformations(transformations: PartTransformation[]) {
+    localStorage.setItem(STORAGE_KEYS.TRANSFORMATIONS, JSON.stringify(transformations));
   },
 
   resetShiftConfigs() {
@@ -315,10 +325,17 @@ export const storageService = {
     }
   },
 
+  getEffectivePartId(partId: string, stageId: StageId): string {
+    const cleanId = partId.split(' - ')[0].trim().toUpperCase();
+    const transformations = this.getTransformations();
+    const transformation = transformations.find(t => t.sourcePartId === cleanId && t.targetStageId === stageId);
+    return transformation ? transformation.targetPartId : cleanId;
+  },
+
   updateInventory(partId: string, stageId: StageId, location: 'IN' | 'OUT', delta: number) {
     const inventory = this.getInventory();
-    // Clean partId to ensure suffixes like " - H" or " - CD" don't create duplicate entries and lookups always work
-    const cleanId = partId.split(' - ')[0];
+    // Clean partId
+    const cleanId = partId.split(' - ')[0].trim().toUpperCase();
     const index = inventory.findIndex(
       (item) => item.partId === cleanId && item.stageId === stageId && item.location === location
     );
@@ -405,14 +422,16 @@ export const storageService = {
         const inventory = this.getInventory();
         for (const ing of ingredients) {
           const needed = quantity * ing.quantity;
-          const stock = inventory.find(i => i.partId === ing.ingredientPartId && i.stageId === 'WELDING' && i.location === 'IN');
+          const effectiveIngId = this.getEffectivePartId(ing.ingredientPartId, 'WELDING');
+          const stock = inventory.find(i => i.partId === effectiveIngId && i.stageId === 'WELDING' && i.location === 'IN');
           if (!stock || stock.quantity < needed) {
-            const ingPart = parts.find(p => p.id === ing.ingredientPartId);
-            throw new Error(`Lỗi: Không đủ tồn kho ${ingPart?.name || ing.ingredientPartId} tại WELDING_IN. Cần ${needed} ${ingPart?.unit || ''}, hiện có ${stock?.quantity || 0}`);
+            const ingPart = parts.find(p => p.id === effectiveIngId);
+            throw new Error(`Lỗi: Không đủ tồn kho ${ingPart?.name || effectiveIngId} tại WELDING_IN. Cần ${needed} ${ingPart?.unit || ''}, hiện có ${stock?.quantity || 0}`);
           }
         }
         for (const ing of ingredients) {
-          this.updateInventory(ing.ingredientPartId, 'WELDING', 'IN', -(quantity * ing.quantity));
+          const effectiveIngId = this.getEffectivePartId(ing.ingredientPartId, 'WELDING');
+          this.updateInventory(effectiveIngId, 'WELDING', 'IN', -(quantity * ing.quantity));
         }
       }
     }
@@ -430,14 +449,16 @@ export const storageService = {
         const inventory = this.getInventory();
         for (const ing of skipWeldedIngredients) {
           const needed = quantity * ing.quantity;
-          const stock = inventory.find(i => i.partId === ing.ingredientPartId && i.stageId === 'PAINTING' && i.location === 'IN');
+          const effectiveIngId = this.getEffectivePartId(ing.ingredientPartId, 'PAINTING');
+          const stock = inventory.find(i => i.partId === effectiveIngId && i.stageId === 'PAINTING' && i.location === 'IN');
           if (!stock || stock.quantity < needed) {
-            const ingPart = parts.find(p => p.id === ing.ingredientPartId);
-            throw new Error(`Lỗi: Không đủ tồn kho ${ingPart?.name || ing.ingredientPartId} tại PAINTING_IN. Cần ${needed} ${ingPart?.unit || ''}, hiện có ${stock?.quantity || 0}`);
+            const ingPart = parts.find(p => p.id === effectiveIngId);
+            throw new Error(`Lỗi: Không đủ tồn kho ${ingPart?.name || effectiveIngId} tại PAINTING_IN. Cần ${needed} ${ingPart?.unit || ''}, hiện có ${stock?.quantity || 0}`);
           }
         }
         for (const ing of skipWeldedIngredients) {
-          this.updateInventory(ing.ingredientPartId, 'PAINTING', 'IN', -(quantity * ing.quantity));
+          const effectiveIngId = this.getEffectivePartId(ing.ingredientPartId, 'PAINTING');
+          this.updateInventory(effectiveIngId, 'PAINTING', 'IN', -(quantity * ing.quantity));
         }
       }
     }
@@ -464,12 +485,14 @@ export const storageService = {
     const cleanId = partId.split(' - ')[0];
     // Validation: Check if source location has enough quantity
     const inventory = this.getInventory();
+    const effectiveId = this.getEffectivePartId(cleanId, stageId);
     const stock = inventory.find(
-      (item) => item.partId === cleanId && item.stageId === stageId && item.location === sourceLocation
+      (item) => item.partId === effectiveId && item.stageId === stageId && item.location === sourceLocation
     );
 
     if (!stock || stock.quantity < quantity) {
-      throw new Error(`Lỗi: Số lượng xuất (${quantity}) lớn hơn tồn kho tại ${STAGES.find(s => s.id === stageId)?.name}_${sourceLocation} (${stock?.quantity || 0})`);
+      const part = this.getParts().find(p => p.id === effectiveId);
+      throw new Error(`Lỗi: Số lượng xuất (${quantity}) lớn hơn tồn kho ${part?.name || effectiveId} tại ${STAGES.find(s => s.id === stageId)?.name}_${sourceLocation} (${stock?.quantity || 0})`);
     }
 
     let linkedPoId = poId;
@@ -554,21 +577,19 @@ export const storageService = {
     if (sourceLocation === 'IN') {
       // Move IN -> OUT (Finish production)
       // Apply BOM deduction before updating inventory
+      // We use cleanId for BOM lookup as the BOM schema uses the original IDs
       this.applyBOMDeduction(cleanId, stageId, quantity);
       
-      this.updateInventory(cleanId, stageId, 'IN', -quantity);
-      this.updateInventory(cleanId, stageId, 'OUT', quantity);
+      this.updateInventory(effectiveId, stageId, 'IN', -quantity);
+      this.updateInventory(effectiveId, stageId, 'OUT', quantity);
     } else {
       // Deduct from OUT (Export already finished items)
-      this.updateInventory(cleanId, stageId, 'OUT', -quantity);
+      this.updateInventory(effectiveId, stageId, 'OUT', -quantity);
     }
 
     // 2. Record transaction
     const transactions = this.getTransactions();
     const parts = this.getParts();
-    const stage = STAGES.find(s => s.id === stageId);
-    const part = parts.find(p => p.id === cleanId);
-    
     // Get master PO ID and target quantities if exists
     const pos = this.getProductionOrders();
     const po = pos.find(p => p.id === linkedPoId);
@@ -582,16 +603,15 @@ export const storageService = {
     const timestamp = Date.now();
     
     // ONLY generate QR data if exporting from OUT
-    // Format: poIdOrPartId|quantity|sourceStageId|timestamp|txId|targetStageId|REMOVED_PART_NAME|masterPoId|subPoTargetQty|masterPoTargetQty
-    // Note: partName is removed to avoid UTF-8 encoding issues with hardware scanners.
     const qrData = sourceLocation === 'OUT' 
-      ? `${linkedPoId || cleanId}|${quantity}|${stageId}|${timestamp}|${txId}|${targetStageId || ''}||${masterPoId}|${subPoTargetQty}|${masterPoTargetQty}`
+      ? `${linkedPoId || effectiveId}|${quantity}|${stageId}|${timestamp}|${txId}|${targetStageId || ''}||${masterPoId}|${subPoTargetQty}|${masterPoTargetQty}`
       : undefined;
 
     const newTransaction: Transaction = {
       id: txId,
       type: 'STAGE_OUT',
-      partId: cleanId,
+      partId: effectiveId,
+      originalPartId: (effectiveId !== cleanId) ? cleanId : undefined,
       quantity,
       stageId,
       targetStageId,
@@ -660,13 +680,19 @@ export const storageService = {
     // 3. Add to currentStage target location
     // FORCE targetLocation to 'IN' when scanning QR code as per user request
     const finalTargetLocation = 'IN';
-    this.updateInventory(partId, currentStageId, finalTargetLocation, quantity);
+    
+    // Part Transformation Logic: Only check for transformation at the moment of entry (IN)
+    const finalPartId = this.getEffectivePartId(partId, currentStageId);
+    const isTransformed = finalPartId !== partId.trim().toUpperCase();
+
+    this.updateInventory(finalPartId, currentStageId, finalTargetLocation, quantity);
 
     // 4. Record transaction
     const newTransaction: Transaction = {
       id: Math.random().toString(36).substring(2, 12).toUpperCase(),
       type: 'STAGE_IN',
-      partId,
+      partId: finalPartId,
+      originalPartId: isTransformed ? partId : undefined, // Track original if transformed
       quantity,
       stageId: currentStageId,
       sourceStageId: sourceStageId as StageId,
@@ -734,13 +760,21 @@ export const storageService = {
       }
     }
 
-    this.updateInventory(cleanId, stageId, location, quantity);
+    // Part Transformation Logic
+    const finalPartId = (location === 'IN') 
+      ? this.getEffectivePartId(cleanId, stageId)
+      : cleanId;
+      
+    const isTransformed = (location === 'IN' && finalPartId !== cleanId);
+
+    this.updateInventory(finalPartId, stageId, location, quantity);
     
     const transactions = this.getTransactions();
     const newTransaction: Transaction = {
       id: Math.random().toString(36).substring(2, 12).toUpperCase(),
       type: 'STAGE_IN',
-      partId: cleanId,
+      partId: finalPartId,
+      originalPartId: isTransformed ? cleanId : undefined,
       quantity,
       stageId,
       timestamp: Date.now(),
@@ -790,16 +824,23 @@ export const storageService = {
     const bomV2 = this.getBOMV2();
 
     // 1. Build part dependency map and collect required parts
-    const requiredParts = new Map<string, { qty: number, minLevel: number }>();
+    const requiredParts = new Map<string, { qty: number; minLevel: number; }>();
     const level1Children = new Map<string, string[]>(); // Map: Level 1 Part -> List of its Level 2+ Children
 
     const traverseBOM = (currentId: string, currentQty: number, level: number, parentId: string | null) => {
+      // Avoid circular references or too deep
+      if (level > 20) return;
+
       if (level > 0) {
         const existing = requiredParts.get(currentId);
-        if (!existing || level < existing.minLevel) {
-          requiredParts.set(currentId, { qty: (existing?.qty || 0) + currentQty, minLevel: level });
+        if (!existing) {
+          requiredParts.set(currentId, { qty: currentQty, minLevel: level });
         } else {
-          requiredParts.set(currentId, { ...existing, qty: existing.qty + currentQty });
+          // Always accumulate quantity, keep track of minimum level found
+          requiredParts.set(currentId, { 
+            qty: existing.qty + currentQty, 
+            minLevel: Math.min(existing.minLevel, level) 
+          });
         }
         
         // Track Level 2+ children belonging to a Level 1 parent
@@ -810,14 +851,15 @@ export const storageService = {
         }
       }
       
-      const modelIdx = modelBom.filter(b => b.modelId === currentId);
-      for (const ing of modelIdx) {
-        traverseBOM(ing.partId, currentQty * ing.quantity, level + 1, level === 0 ? null : (level === 1 ? currentId : parentId));
+      const v1Idx = modelBom.filter(b => b.modelId === currentId);
+      for (const ing of v1Idx) {
+        traverseBOM(ing.partId, currentQty * ing.quantity, level + 1, (level === 0) ? null : (level === 1 ? currentId : parentId));
       }
 
       const v2Idx = bomV2.filter(b => b.resultPartId === currentId);
       for (const ing of v2Idx) {
-        traverseBOM(ing.ingredientPartId, currentQty * ing.quantity, level + 1, level === 1 ? currentId : parentId);
+        const nextParentId = (level === 1) ? currentId : (level >= 2 ? parentId : null);
+        traverseBOM(ing.ingredientPartId, currentQty * ing.quantity, level + 1, nextParentId);
       }
     };
     traverseBOM(modelId, quantity, 0, null);
@@ -831,9 +873,14 @@ export const storageService = {
     requiredParts.forEach((info, partId) => {
       const { qty, minLevel: level } = info;
       const part = partsList.find(p => p.id === partId);
+      
+      // Check if part is a component (no ingredients) or assembly (has ingredients)
+      const hasIngredients = bomV2.some(b => b.resultPartId === partId);
+
       const addPo = (stageId: StageId, list: ProductionOrder[]) => {
         if (stageId === 'BENDING' && part?.skipBending) return;
         if (stageId === 'WELDING' && part?.skipWelding) return;
+        if (stageId === 'PAINTING' && (part?.skipPainting || level > 1)) return; // Painting is usually level 1
 
         let idSuffix = "";
         if (stageId === 'WELDING') idSuffix = "- H";
@@ -851,12 +898,22 @@ export const storageService = {
           createdAt: timestamp
         });
       };
-      if (level === 1) {
-        addPo('WELDING', weldingPOs);
-        addPo('PAINTING', paintingPOs);
-      } else if (level >= 2) {
+
+      // Logic:
+      // 1. Leaf component (no ingredients): Needs Laser Cutting and Bending
+      if (!hasIngredients) {
         addPo('LASER', laserPOs);
         addPo('BENDING', bendingPOs);
+      }
+
+      // 2. Assembly (Has ingredients OR Level 1): Needs Welding
+      if (hasIngredients || level === 1) {
+        addPo('WELDING', weldingPOs);
+      }
+
+      // 3. Final Assembly (Level 1): Needs Painting
+      if (level === 1) {
+        addPo('PAINTING', paintingPOs);
       }
     });
 

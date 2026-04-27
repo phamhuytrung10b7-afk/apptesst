@@ -25,6 +25,7 @@ export interface Transaction {
   id: string;
   type: 'STAGE_OUT' | 'STAGE_IN';
   partId: string;
+  originalPartId?: string; // If part was transformed upon entry
   quantity: number;
   stageId: StageId;
   timestamp: number;
@@ -93,6 +94,12 @@ export interface ShiftConfig {
     end: string;   // HH:mm
   }[];
   breaks: BreakTime[];
+}
+
+export interface PartTransformation {
+  sourcePartId: string;
+  targetPartId: string;
+  targetStageId: StageId;
 }
 
 export const STAGES: { id: StageId; name: string; nextStageId?: StageId }[] = [
