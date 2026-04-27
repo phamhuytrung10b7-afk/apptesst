@@ -647,6 +647,11 @@ export const storageService = {
     
     // Format: poIdOrPartId|quantity|sourceStageId|timestamp|txId|targetStageId
     const [idOrPo, quantityStr, sourceStageId, , sourceTxId, targetStageId] = parts;
+
+    if (idOrPo === 'DISPOSAL') {
+      throw new Error('Lỗi: Đây là mã QR XUẤT HỦY. Hàng này không thể nhập lại vào kho sản xuất!');
+    }
+
     const quantity = parseFloat(quantityStr);
 
     let partId = idOrPo.split(' - ')[0];
@@ -843,6 +848,48 @@ export const storageService = {
       defectReason: reason,
       defectCategory: category,
       poId: poId
+    };
+    transactions.unshift(newTransaction);
+    this.saveTransactions(transactions);
+
+    return newTransaction;
+  },
+
+  recordDisposal(partId: string, stageId: StageId, quantity: number) {
+    const cleanId = partId.split(' - ')[0].trim().toUpperCase();
+    
+    // 1. Validation
+    const inventory = this.getInventory();
+    const effectiveId = this.getEffectivePartId(cleanId, stageId);
+    const stock = inventory.find(
+      (item) => item.partId === effectiveId && item.stageId === stageId && item.location === 'DEFECT'
+    );
+
+    if (!stock || stock.quantity < quantity) {
+      const part = this.getParts().find(p => p.id === effectiveId);
+      throw new Error(`Lỗi: Số lượng xuất hủy (${quantity}) lớn hơn tồn kho DEFECT của ${part?.name || effectiveId} tại ${STAGES.find(s => s.id === stageId)?.name} (Hiện có ${stock?.quantity || 0})`);
+    }
+
+    // 2. Inventory move: Deduct from DEFECT
+    this.updateInventory(effectiveId, stageId, 'DEFECT', -quantity);
+
+    // 3. Record transaction
+    const transactions = this.getTransactions();
+    const txId = `DS-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    const timestamp = Date.now();
+    
+    // QR data for disposal
+    const qrData = `DISPOSAL|${quantity}|${stageId}|${timestamp}|${txId}|DISPOSAL_ONLY`;
+
+    const newTransaction: Transaction = {
+      id: txId,
+      type: 'DISPOSAL',
+      partId: effectiveId,
+      originalPartId: (effectiveId !== cleanId) ? cleanId : undefined,
+      quantity,
+      stageId,
+      timestamp,
+      qrData,
     };
     transactions.unshift(newTransaction);
     this.saveTransactions(transactions);

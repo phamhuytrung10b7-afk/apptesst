@@ -23,7 +23,7 @@ export interface InventoryItem {
 
 export interface Transaction {
   id: string;
-  type: 'STAGE_OUT' | 'STAGE_IN' | 'DEFECT';
+  type: 'STAGE_OUT' | 'STAGE_IN' | 'DEFECT' | 'DISPOSAL';
   partId: string;
   originalPartId?: string; // If part was transformed upon entry
   quantity: number;
