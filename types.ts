@@ -67,6 +67,7 @@ export interface ProductionOrder {
   exportedQuantity: number;
   status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
   createdAt: number;
+  completedAt?: number;
   plannedStartTime?: number;
   leadTime?: number;
   expectedCompletionTime?: number;

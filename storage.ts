@@ -21,283 +21,204 @@ const STORAGE_KEYS = {
   TRANSFORMATIONS: 'wip_transformations',
 };
 
+// In-memory cache to reduce localStorage hits
+const cache: Record<string, any> = {};
+
+function getCached<T>(key: string, fetchFn: () => T): T {
+  if (cache[key] !== undefined) return cache[key];
+  const data = fetchFn();
+  cache[key] = data;
+  return data;
+}
+
+function clearCache(key?: string) {
+  if (key) delete cache[key];
+  else Object.keys(cache).forEach(k => delete cache[k]);
+}
+
 export const storageService = {
   getLabelSettings() {
-    const data = localStorage.getItem(STORAGE_KEYS.LABEL_SETTINGS);
-    return data ? JSON.parse(data) : { width: 100, height: 50, fontSize: 14, qrSize: 120 };
+    return getCached(STORAGE_KEYS.LABEL_SETTINGS, () => {
+      const data = localStorage.getItem(STORAGE_KEYS.LABEL_SETTINGS);
+      return data ? JSON.parse(data) : { width: 100, height: 50, fontSize: 14, qrSize: 120 };
+    });
   },
 
   saveLabelSettings(settings: any) {
     localStorage.setItem(STORAGE_KEYS.LABEL_SETTINGS, JSON.stringify(settings));
+    cache[STORAGE_KEYS.LABEL_SETTINGS] = settings;
   },
+
   getParts(): Part[] {
-    const data = localStorage.getItem(STORAGE_KEYS.PARTS);
-    return data ? JSON.parse(data) : INITIAL_PARTS;
+    return getCached(STORAGE_KEYS.PARTS, () => {
+      const data = localStorage.getItem(STORAGE_KEYS.PARTS);
+      return data ? JSON.parse(data) : INITIAL_PARTS;
+    });
   },
 
   saveParts(parts: Part[]) {
     localStorage.setItem(STORAGE_KEYS.PARTS, JSON.stringify(parts));
+    cache[STORAGE_KEYS.PARTS] = parts;
   },
 
   getBOM(): BOMDefinition[] {
-    const data = localStorage.getItem(STORAGE_KEYS.BOM);
-    return data ? JSON.parse(data) : [];
+    return getCached(STORAGE_KEYS.BOM, () => {
+      const data = localStorage.getItem(STORAGE_KEYS.BOM);
+      return data ? JSON.parse(data) : [];
+    });
   },
 
   saveBOM(bom: BOMDefinition[]) {
     localStorage.setItem(STORAGE_KEYS.BOM, JSON.stringify(bom));
+    cache[STORAGE_KEYS.BOM] = bom;
   },
 
   getBOMV2(): BOMDefinitionV2[] {
-    const data = localStorage.getItem(STORAGE_KEYS.BOM_V2);
-    return data ? JSON.parse(data) : [];
+    return getCached(STORAGE_KEYS.BOM_V2, () => {
+      const data = localStorage.getItem(STORAGE_KEYS.BOM_V2);
+      return data ? JSON.parse(data) : [];
+    });
   },
 
   saveBOMV2(bom: BOMDefinitionV2[]) {
     localStorage.setItem(STORAGE_KEYS.BOM_V2, JSON.stringify(bom));
+    cache[STORAGE_KEYS.BOM_V2] = bom;
   },
 
   getModelBOM(): ModelBOMDefinition[] {
-    const data = localStorage.getItem(STORAGE_KEYS.MODEL_BOM);
-    return data ? JSON.parse(data) : [];
+    return getCached(STORAGE_KEYS.MODEL_BOM, () => {
+      const data = localStorage.getItem(STORAGE_KEYS.MODEL_BOM);
+      return data ? JSON.parse(data) : [];
+    });
   },
 
   saveModelBOM(bom: ModelBOMDefinition[]) {
     localStorage.setItem(STORAGE_KEYS.MODEL_BOM, JSON.stringify(bom));
+    cache[STORAGE_KEYS.MODEL_BOM] = bom;
   },
   
   getNorms(): ProductivityNorm[] {
-    const data = localStorage.getItem(STORAGE_KEYS.NORMS);
-    return data ? JSON.parse(data) : [];
+    return getCached(STORAGE_KEYS.NORMS, () => {
+      const data = localStorage.getItem(STORAGE_KEYS.NORMS);
+      return data ? JSON.parse(data) : [];
+    });
   },
 
   saveNorms(norms: ProductivityNorm[]) {
     localStorage.setItem(STORAGE_KEYS.NORMS, JSON.stringify(norms));
+    cache[STORAGE_KEYS.NORMS] = norms;
   },
 
   getLaserNesting(): LaserNesting[] {
-    const data = localStorage.getItem(STORAGE_KEYS.LASER_NESTING);
-    return data ? JSON.parse(data) : [];
+    return getCached(STORAGE_KEYS.LASER_NESTING, () => {
+      const data = localStorage.getItem(STORAGE_KEYS.LASER_NESTING);
+      return data ? JSON.parse(data) : [];
+    });
   },
 
   saveLaserNesting(nesting: LaserNesting[]) {
     localStorage.setItem(STORAGE_KEYS.LASER_NESTING, JSON.stringify(nesting));
+    cache[STORAGE_KEYS.LASER_NESTING] = nesting;
   },
   
   getShiftConfigs(): ShiftConfig[] {
-    const data = localStorage.getItem(STORAGE_KEYS.SHIFT_CONFIGS);
-    if (data) return JSON.parse(data);
-    
-    // Default configs
-    return [
-      {
-        stageId: 'LASER',
-        workerCount: 1,
-        shifts: [
-          { start: '06:00', end: '18:00' },
-          { start: '18:00', end: '06:00' }
-        ],
-        breaks: [
-          { start: '10:00', end: '10:10' },
-          { start: '11:50', end: '13:00' },
-          { start: '15:00', end: '15:10' },
-          { start: '18:00', end: '18:30' }
-        ]
-      },
-      {
-        stageId: 'BENDING',
-        workerCount: 2,
-        shifts: [{ start: '08:00', end: '20:00' }],
-        breaks: [
-          { start: '10:00', end: '10:10' },
-          { start: '11:50', end: '13:00' },
-          { start: '15:00', end: '15:10' }
-        ]
-      },
-      {
-        stageId: 'WELDING',
-        workerCount: 5,
-        shifts: [{ start: '08:00', end: '20:00' }],
-        breaks: [
-          { start: '10:00', end: '10:10' },
-          { start: '11:50', end: '13:00' },
-          { start: '15:00', end: '15:10' },
-          { start: '17:00', end: '17:10' }
-        ]
-      },
-      {
-        stageId: 'PAINTING',
-        workerCount: 1,
-        shifts: [{ start: '08:00', end: '20:00' }],
-        breaks: [
-          { start: '10:00', end: '10:10' },
-          { start: '11:50', end: '13:00' },
-          { start: '15:00', end: '15:10' },
-          { start: '17:00', end: '17:10' }
-        ]
-      }
-    ];
+    return getCached(STORAGE_KEYS.SHIFT_CONFIGS, () => {
+      const data = localStorage.getItem(STORAGE_KEYS.SHIFT_CONFIGS);
+      if (data) return JSON.parse(data);
+      
+      return [
+        {
+          stageId: 'LASER',
+          workerCount: 1,
+          shifts: [{ start: '06:00', end: '18:00' }, { start: '18:00', end: '06:00' }],
+          breaks: [{ start: '10:00', end: '10:10' }, { start: '11:50', end: '13:00' }, { start: '15:00', end: '15:10' }, { start: '18:00', end: '18:30' }]
+        },
+        {
+          stageId: 'BENDING',
+          workerCount: 2,
+          shifts: [{ start: '08:00', end: '20:00' }],
+          breaks: [{ start: '10:00', end: '10:10' }, { start: '11:50', end: '13:00' }, { start: '15:00', end: '15:10' }]
+        },
+        {
+          stageId: 'WELDING',
+          workerCount: 5,
+          shifts: [{ start: '08:00', end: '20:00' }],
+          breaks: [{ start: '10:00', end: '10:10' }, { start: '11:50', end: '13:00' }, { start: '15:00', end: '15:10' }, { start: '17:00', end: '17:10' }]
+        },
+        {
+          stageId: 'PAINTING',
+          workerCount: 1,
+          shifts: [{ start: '08:00', end: '20:00' }],
+          breaks: [{ start: '10:00', end: '10:10' }, { start: '11:50', end: '13:00' }, { start: '15:00', end: '15:10' }, { start: '17:00', end: '17:10' }]
+        }
+      ];
+    });
   },
 
   saveShiftConfigs(configs: ShiftConfig[]) {
     localStorage.setItem(STORAGE_KEYS.SHIFT_CONFIGS, JSON.stringify(configs));
+    cache[STORAGE_KEYS.SHIFT_CONFIGS] = configs;
   },
 
   getTransformations(): PartTransformation[] {
-    const data = localStorage.getItem(STORAGE_KEYS.TRANSFORMATIONS);
-    return data ? JSON.parse(data) : [];
+    return getCached(STORAGE_KEYS.TRANSFORMATIONS, () => {
+      const data = localStorage.getItem(STORAGE_KEYS.TRANSFORMATIONS);
+      return data ? JSON.parse(data) : [];
+    });
   },
 
   saveTransformations(transformations: PartTransformation[]) {
     localStorage.setItem(STORAGE_KEYS.TRANSFORMATIONS, JSON.stringify(transformations));
-  },
-
-  resetShiftConfigs() {
-    localStorage.removeItem(STORAGE_KEYS.SHIFT_CONFIGS);
-  },
-
-  getNextWorkingTime(timestamp: number, stageId: StageId, shiftConfigs: ShiftConfig[]): number {
-    const config = shiftConfigs.find(c => c.stageId === stageId);
-    if (!config) return timestamp;
-
-    const timeToDate = (timeStr: string, baseDate: Date) => {
-      const [h, m] = timeStr.split(':').map(Number);
-      return setSeconds(setMinutes(setHours(baseDate, h), m), 0);
-    };
-
-    let checkTime = new Date(timestamp);
-    for (let day = 0; day < 10; day++) {
-      const baseDay = startOfDay(checkTime);
-      const workingIntervals: { start: Date, end: Date }[] = [];
-      config.shifts.forEach(shift => {
-        const s = timeToDate(shift.start, baseDay);
-        let e = timeToDate(shift.end, baseDay);
-        if (isBefore(e, s)) e = addDays(e, 1);
-        
-        let intervals = [{ start: s, end: e }];
-        config.breaks.forEach(brk => {
-          const bs = timeToDate(brk.start, baseDay);
-          const be = timeToDate(brk.end, baseDay);
-          const newIntervals: typeof intervals = [];
-          intervals.forEach(inv => {
-            if (isAfter(be, inv.start) && isBefore(bs, inv.end)) {
-              if (isAfter(bs, inv.start)) newIntervals.push({ start: inv.start, end: bs });
-              if (isBefore(be, inv.end)) newIntervals.push({ start: be, end: inv.end });
-            } else {
-              newIntervals.push(inv);
-            }
-          });
-          intervals = newIntervals;
-        });
-        workingIntervals.push(...intervals);
-      });
-      workingIntervals.sort((a, b) => a.start.getTime() - b.start.getTime());
-
-      for (const inv of workingIntervals) {
-        if (isBefore(checkTime, inv.end)) {
-          if (isBefore(checkTime, inv.start)) return inv.start.getTime();
-          else return checkTime.getTime();
-        }
-      }
-      checkTime = startOfDay(addDays(baseDay, 1));
-    }
-    return timestamp;
-  },
-
-  calculateEndTime(startTime: number, durationMs: number, stageId: StageId, shiftConfigs: ShiftConfig[]): number {
-    if (durationMs <= 0) return startTime;
-    let remaining = durationMs;
-    let currentTime = this.getNextWorkingTime(startTime, stageId, shiftConfigs);
-    const config = shiftConfigs.find(c => c.stageId === stageId);
-    if (!config) return startTime + durationMs;
-
-    const timeToDate = (timeStr: string, baseDate: Date) => {
-      const [h, m] = timeStr.split(':').map(Number);
-      return setSeconds(setMinutes(setHours(baseDate, h), m), 0);
-    };
-
-    while (remaining > 0) {
-      const baseDay = startOfDay(new Date(currentTime));
-      const workingIntervals: { start: Date, end: Date }[] = [];
-      config.shifts.forEach(shift => {
-        const s = timeToDate(shift.start, baseDay);
-        let e = timeToDate(shift.end, baseDay);
-        if (isBefore(e, s)) e = addDays(e, 1);
-        let intervals = [{ start: s, end: e }];
-        config.breaks.forEach(brk => {
-          const bs = timeToDate(brk.start, baseDay);
-          const be = timeToDate(brk.end, baseDay);
-          const newIntervals: typeof intervals = [];
-          intervals.forEach(inv => {
-            if (isAfter(be, inv.start) && isBefore(bs, inv.end)) {
-              if (isAfter(bs, inv.start)) newIntervals.push({ start: inv.start, end: bs });
-              if (isBefore(be, inv.end)) newIntervals.push({ start: be, end: inv.end });
-            } else {
-              newIntervals.push(inv);
-            }
-          });
-          intervals = newIntervals;
-        });
-        workingIntervals.push(...intervals);
-      });
-      workingIntervals.sort((a, b) => a.start.getTime() - b.start.getTime());
-
-      let moved = false;
-      for (const inv of workingIntervals) {
-        if (isBefore(currentTime, inv.end)) {
-          const startInInv = isAfter(currentTime, inv.start) ? currentTime : inv.start.getTime();
-          const available = inv.end.getTime() - startInInv;
-          const consume = Math.min(remaining, available);
-          remaining -= consume;
-          currentTime = startInInv + consume;
-          if (remaining <= 0) return currentTime;
-          moved = true;
-        }
-      }
-      if (!moved || remaining > 0) {
-        currentTime = this.getNextWorkingTime(currentTime, stageId, shiftConfigs);
-      }
-    }
-    return currentTime;
+    cache[STORAGE_KEYS.TRANSFORMATIONS] = transformations;
   },
 
   getInventory(): InventoryItem[] {
-    const data = localStorage.getItem(STORAGE_KEYS.INVENTORY);
-    return data ? JSON.parse(data) : [];
+    return getCached(STORAGE_KEYS.INVENTORY, () => {
+      const data = localStorage.getItem(STORAGE_KEYS.INVENTORY);
+      return data ? JSON.parse(data) : [];
+    });
   },
 
   getTransactions(): Transaction[] {
-    const data = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
-    return data ? JSON.parse(data) : [];
+    return getCached(STORAGE_KEYS.TRANSACTIONS, () => {
+      const data = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
+      return data ? JSON.parse(data) : [];
+    });
   },
 
   saveInventory(inventory: InventoryItem[]) {
     localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(inventory));
+    cache[STORAGE_KEYS.INVENTORY] = inventory;
   },
 
   saveTransactions(transactions: Transaction[]) {
     localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
+    cache[STORAGE_KEYS.TRANSACTIONS] = transactions;
   },
 
   getLabels(): Transaction[] {
-    const data = localStorage.getItem('wip_labels');
-    return data ? JSON.parse(data) : [];
+    return getCached('wip_labels', () => {
+      const data = localStorage.getItem('wip_labels');
+      return data ? JSON.parse(data) : [];
+    });
   },
 
   saveLabel(label: Transaction) {
-    const labels = this.getLabels();
-    localStorage.setItem('wip_labels', JSON.stringify([label, ...labels]));
+    const labels = [label, ...this.getLabels()];
+    localStorage.setItem('wip_labels', JSON.stringify(labels));
+    cache['wip_labels'] = labels;
   },
 
   deleteLabel(id: string) {
-    const labels = this.getLabels();
-    localStorage.setItem('wip_labels', JSON.stringify(labels.filter(l => l.id !== id)));
+    const labels = this.getLabels().filter(l => l.id !== id);
+    localStorage.setItem('wip_labels', JSON.stringify(labels));
+    cache['wip_labels'] = labels;
   },
 
   markLabelAsPrinted(id: string) {
-    const labels = this.getLabels();
-    const updated = labels.map(l => l.id === id ? { ...l, printed: true } : l);
-    localStorage.setItem('wip_labels', JSON.stringify(updated));
+    const labels = this.getLabels().map(l => l.id === id ? { ...l, printed: true } : l);
+    localStorage.setItem('wip_labels', JSON.stringify(labels));
+    cache['wip_labels'] = labels;
   },
 
   rollbackTransaction(txId: string) {
@@ -563,7 +484,11 @@ export const storageService = {
         // PO is completed only if both production and export are done
         const isProduced = po.producedQuantity >= po.targetQuantity;
         const isExported = po.exportedQuantity >= po.targetQuantity;
-        po.status = (isProduced && isExported) ? 'COMPLETED' : 'IN_PROGRESS';
+        const newStatus = (isProduced && isExported) ? 'COMPLETED' : 'IN_PROGRESS';
+        if (newStatus === 'COMPLETED' && po.status !== 'COMPLETED') {
+          po.completedAt = Date.now();
+        }
+        po.status = newStatus;
         
         // Update master PO status if needed
         if (po.masterPoId) {
@@ -571,7 +496,12 @@ export const storageService = {
           if (masterPo) {
             const allSubPos = pos.filter(p => p.masterPoId === po.masterPoId);
             const allCompleted = allSubPos.every(p => p.status === 'COMPLETED');
-            masterPo.status = allCompleted ? 'COMPLETED' : 'IN_PROGRESS';
+            if (allCompleted) {
+              if (masterPo.status !== 'COMPLETED') masterPo.completedAt = Date.now();
+              masterPo.status = 'COMPLETED';
+            } else {
+              masterPo.status = 'IN_PROGRESS';
+            }
           }
         }
 
@@ -893,17 +823,133 @@ export const storageService = {
     };
     transactions.unshift(newTransaction);
     this.saveTransactions(transactions);
+    
+    // Save to label history for reprint
+    this.saveLabel(newTransaction);
 
     return newTransaction;
   },
 
   getProductionOrders(): ProductionOrder[] {
-    const data = localStorage.getItem(STORAGE_KEYS.PRODUCTION_ORDERS);
-    return data ? JSON.parse(data) : [];
+    return getCached(STORAGE_KEYS.PRODUCTION_ORDERS, () => {
+      const data = localStorage.getItem(STORAGE_KEYS.PRODUCTION_ORDERS);
+      return data ? JSON.parse(data) : [];
+    });
   },
 
   saveProductionOrders(orders: ProductionOrder[]) {
     localStorage.setItem(STORAGE_KEYS.PRODUCTION_ORDERS, JSON.stringify(orders));
+    cache[STORAGE_KEYS.PRODUCTION_ORDERS] = orders;
+  },
+
+  resetShiftConfigs() {
+    localStorage.removeItem(STORAGE_KEYS.SHIFT_CONFIGS);
+    clearCache(STORAGE_KEYS.SHIFT_CONFIGS);
+  },
+
+  getNextWorkingTime(timestamp: number, stageId: StageId, shiftConfigs: ShiftConfig[]): number {
+    const config = shiftConfigs.find(c => c.stageId === stageId);
+    if (!config) return timestamp;
+
+    const timeToDate = (timeStr: string, baseDate: Date) => {
+      const [h, m] = timeStr.split(':').map(Number);
+      return setSeconds(setMinutes(setHours(baseDate, h), m), 0);
+    };
+
+    let checkTime = new Date(timestamp);
+    for (let day = 0; day < 10; day++) {
+      const baseDay = startOfDay(checkTime);
+      const workingIntervals: { start: Date, end: Date }[] = [];
+      config.shifts.forEach(shift => {
+        const s = timeToDate(shift.start, baseDay);
+        let e = timeToDate(shift.end, baseDay);
+        if (isBefore(e, s)) e = addDays(e, 1);
+        
+        let intervals = [{ start: s, end: e }];
+        config.breaks.forEach(brk => {
+          const bs = timeToDate(brk.start, baseDay);
+          const be = timeToDate(brk.end, baseDay);
+          const newIntervals: typeof intervals = [];
+          intervals.forEach(inv => {
+            if (isAfter(be, inv.start) && isBefore(bs, inv.end)) {
+              if (isAfter(bs, inv.start)) newIntervals.push({ start: inv.start, end: bs });
+              if (isBefore(be, inv.end)) newIntervals.push({ start: be, end: inv.end });
+            } else {
+              newIntervals.push(inv);
+            }
+          });
+          intervals = newIntervals;
+        });
+        workingIntervals.push(...intervals);
+      });
+      workingIntervals.sort((a, b) => a.start.getTime() - b.start.getTime());
+
+      for (const inv of workingIntervals) {
+        if (isBefore(checkTime, inv.end)) {
+          if (isBefore(checkTime, inv.start)) return inv.start.getTime();
+          else return checkTime.getTime();
+        }
+      }
+      checkTime = startOfDay(addDays(baseDay, 1));
+    }
+    return timestamp;
+  },
+
+  calculateEndTime(startTime: number, durationMs: number, stageId: StageId, shiftConfigs: ShiftConfig[]): number {
+    if (durationMs <= 0) return startTime;
+    let remaining = durationMs;
+    let currentTime = this.getNextWorkingTime(startTime, stageId, shiftConfigs);
+    const config = shiftConfigs.find(c => c.stageId === stageId);
+    if (!config) return startTime + durationMs;
+
+    const timeToDate = (timeStr: string, baseDate: Date) => {
+      const [h, m] = timeStr.split(':').map(Number);
+      return setSeconds(setMinutes(setHours(baseDate, h), m), 0);
+    };
+
+    while (remaining > 0) {
+      const baseDay = startOfDay(new Date(currentTime));
+      const workingIntervals: { start: Date, end: Date }[] = [];
+      config.shifts.forEach(shift => {
+        const s = timeToDate(shift.start, baseDay);
+        let e = timeToDate(shift.end, baseDay);
+        if (isBefore(e, s)) e = addDays(e, 1);
+        let intervals = [{ start: s, end: e }];
+        config.breaks.forEach(brk => {
+          const bs = timeToDate(brk.start, baseDay);
+          const be = timeToDate(brk.end, baseDay);
+          const newIntervals: typeof intervals = [];
+          intervals.forEach(inv => {
+            if (isAfter(be, inv.start) && isBefore(bs, inv.end)) {
+              if (isAfter(bs, inv.start)) newIntervals.push({ start: inv.start, end: bs });
+              if (isBefore(be, inv.end)) newIntervals.push({ start: be, end: inv.end });
+            } else {
+              newIntervals.push(inv);
+            }
+          });
+          intervals = newIntervals;
+        });
+        workingIntervals.push(...intervals);
+      });
+      workingIntervals.sort((a, b) => a.start.getTime() - b.start.getTime());
+
+      let moved = false;
+      for (const inv of workingIntervals) {
+        if (isBefore(currentTime, inv.end)) {
+          const startInInv = isAfter(currentTime, inv.start) ? currentTime : inv.start.getTime();
+          const available = inv.end.getTime() - startInInv;
+          const consume = Math.min(remaining, available);
+          remaining -= consume;
+          currentTime = startInInv + consume;
+          if (remaining <= 0) return currentTime;
+          moved = true;
+        }
+      }
+      if (!moved || remaining > 0) {
+        currentTime = this.getNextWorkingTime(currentTime, stageId, shiftConfigs);
+      }
+    }
+    return currentTime;
   },
 
   createMasterPO(modelId: string, quantity: number, plannedStartTime?: number, customLeadTime?: number) {
@@ -1048,10 +1094,11 @@ export const storageService = {
         }
       });
       individualLaserPOs.forEach(po => {
-        po.createdAt = this.getNextWorkingTime(mFreeLaser, 'LASER', shiftConfigs);
+        const start = this.getNextWorkingTime(mFreeLaser, 'LASER', shiftConfigs);
+        po.plannedStartTime = start;
         const norm = norms.find(n => n.partId === po.partId && n.stageId === 'LASER');
         const duration = norm ? (po.targetQuantity * norm.secondsPerUnit * 1000) / laserWorkers : 0;
-        po.expectedCompletionTime = this.calculateEndTime(po.createdAt, duration, 'LASER', shiftConfigs);
+        po.expectedCompletionTime = this.calculateEndTime(start, duration, 'LASER', shiftConfigs);
         mFreeLaser = po.expectedCompletionTime;
         recordFinish(po, mFreeLaser);
         allChildPOs.push(po);
@@ -1066,8 +1113,8 @@ export const storageService = {
         const start = this.getNextWorkingTime(mFreeLaser, 'LASER', shiftConfigs);
         const end = this.calculateEndTime(start, adjustedDur, 'LASER', shiftConfigs);
         groupPOs.forEach(po => {
-          po.createdAt = start;
-          po.expectedCompletionTime = end;
+        po.plannedStartTime = start;
+        po.expectedCompletionTime = end;
           recordFinish(po, end);
           allChildPOs.push(po);
         });
@@ -1075,10 +1122,11 @@ export const storageService = {
       });
     } else {
       laserPOs.forEach(po => {
-        po.createdAt = this.getNextWorkingTime(mFreeLaser, 'LASER', shiftConfigs);
+        const start = this.getNextWorkingTime(mFreeLaser, 'LASER', shiftConfigs);
+        po.plannedStartTime = start;
         const norm = norms.find(n => n.partId === po.partId && n.stageId === 'LASER');
         const duration = norm ? (po.targetQuantity * norm.secondsPerUnit * 1000) / laserWorkers : 0;
-        po.expectedCompletionTime = this.calculateEndTime(po.createdAt, duration, 'LASER', shiftConfigs);
+        po.expectedCompletionTime = this.calculateEndTime(start, duration, 'LASER', shiftConfigs);
         mFreeLaser = po.expectedCompletionTime;
         recordFinish(po, mFreeLaser);
         allChildPOs.push(po);
@@ -1091,7 +1139,7 @@ export const storageService = {
     bendingPOs.forEach(po => {
       const laserEnd = getFinishTime(po.partId, 'LASER');
       const start = this.getNextWorkingTime(Math.max(mFreeBending, laserEnd), 'BENDING', shiftConfigs);
-      po.createdAt = start;
+      po.plannedStartTime = start;
       const norm = norms.find(n => n.partId === po.partId && n.stageId === 'BENDING');
       const duration = norm ? (po.targetQuantity * norm.secondsPerUnit * 1000) / bendWorkers : 0;
       po.expectedCompletionTime = this.calculateEndTime(start, duration, 'BENDING', shiftConfigs);
@@ -1123,7 +1171,7 @@ export const storageService = {
         return getFinishTime(cid, 'LASER');
       }));
       const start = this.getNextWorkingTime(Math.max(mFreeWelding, componentsReadyTime), 'WELDING', shiftConfigs);
-      po.createdAt = start;
+      po.plannedStartTime = start;
       const norm = norms.find(n => n.partId === po.partId && n.stageId === 'WELDING');
       const duration = norm ? (po.targetQuantity * norm.secondsPerUnit * 1000) / weldWorkers : 0;
       po.expectedCompletionTime = this.calculateEndTime(start, duration, 'WELDING', shiftConfigs);
@@ -1138,7 +1186,7 @@ export const storageService = {
     paintingPOs.forEach(po => {
       const weldEnd = getFinishTime(po.partId, 'WELDING');
       const start = this.getNextWorkingTime(Math.max(mFreePainting, weldEnd), 'PAINTING', shiftConfigs);
-      po.createdAt = start;
+      po.plannedStartTime = start;
       const norm = norms.find(n => n.partId === po.partId && n.stageId === 'PAINTING');
       const duration = norm ? (po.targetQuantity * norm.secondsPerUnit * 1000) / paintWorkers : 0;
       po.expectedCompletionTime = this.calculateEndTime(start, duration, 'PAINTING', shiftConfigs);

@@ -330,111 +330,186 @@ export default function App() {
       {/* Hidden Print Area */}
       <div id="print-area" className="hidden print:block">
         {lastTransaction && (
-          <div className="w-full h-full bg-white text-black flex flex-col items-center p-4 box-border border-2 border-black">
-            {/* QR Code Section */}
-            <div className="mb-4 border-2 border-black p-1">
-              <QRCodeSVG value={lastTransaction.qrData || ''} size={labelSettings.qrSize * 1.8} level="H" />
-            </div>
-
-            {/* Part Name & ID */}
-            <div className="text-center w-full mb-3">
-              <h1 className="font-black uppercase leading-tight" style={{ fontSize: `${labelSettings.qrSize / 6}px` }}>
-                {getProcessValue(parts.find(p => p.id === lastTransaction.partId)?.name, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
-              </h1>
-              <p className="font-mono font-bold mt-1" style={{ fontSize: `${labelSettings.fontSize}px` }}>
-                Mã LK: {getProcessValue(lastTransaction.partId, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
-              </p>
-            </div>
-
-            {/* Quantity & Source Stage */}
-            <div className="grid grid-cols-2 w-full border-t-2 border-b-2 border-black py-3 mb-3">
-              <div className="flex flex-col items-center border-r-2 border-black">
-                <span className="text-[10px] font-bold uppercase opacity-60 mb-1">Số lượng:</span>
-                <span className="font-black" style={{ fontSize: `${labelSettings.fontSize + 12}px` }}>
-                  {lastTransaction.quantity} {parts.find(p => p.id === lastTransaction.partId)?.unit}
-                </span>
+          lastTransaction.type === 'DISPOSAL' ? (
+            <div className="w-full h-full bg-white text-black flex flex-col items-center p-4 box-border border-4 border-black border-dashed">
+              {/* NG Watermark */}
+              <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none overflow-hidden">
+                <span className="text-[120px] font-black rotate-45 whitespace-nowrap">NG - HỦY - NG</span>
               </div>
-              <div className="flex flex-col items-center">
-                <span className="text-[10px] font-bold uppercase opacity-60 mb-1">Từ công đoạn:</span>
-                <span className="font-black uppercase text-center" style={{ fontSize: `${labelSettings.fontSize + 4}px` }}>
-                  {STAGES.find(s => s.id === lastTransaction.stageId)?.name}
-                </span>
+
+              {/* Top NG bar */}
+              <div className="w-full bg-black text-white text-center py-2 mb-4 font-black text-xl tracking-tighter">
+                NHÃN XUẤT HỦY (DISPOSAL ONLY)
+              </div>
+
+              {/* QR Code Section */}
+              <div className="mb-4 border-2 border-black p-1 bg-white relative z-10">
+                <QRCodeSVG value={lastTransaction.qrData || ''} size={labelSettings.qrSize * 1.8} level="H" />
+              </div>
+
+              {/* Part Name & ID */}
+              <div className="text-center w-full mb-3 relative z-10">
+                <h1 className="font-black uppercase leading-tight" style={{ fontSize: `${labelSettings.qrSize / 6}px` }}>
+                  {parts.find(p => p.id === lastTransaction.partId)?.name || lastTransaction.partId}
+                </h1>
+                <p className="font-mono font-bold mt-1" style={{ fontSize: `${labelSettings.fontSize}px` }}>
+                  Mã LK: {lastTransaction.partId}
+                </p>
+              </div>
+
+              {/* Quantity & Source Stage */}
+              <div className="grid grid-cols-2 w-full border-t-2 border-b-2 border-black py-4 mb-4 relative z-10">
+                <div className="flex flex-col items-center border-r-2 border-black">
+                  <span className="text-[10px] font-bold uppercase opacity-60 mb-1">Số lượng:</span>
+                  <span className="font-black" style={{ fontSize: `${labelSettings.fontSize + 16}px` }}>
+                    {lastTransaction.quantity} {parts.find(p => p.id === lastTransaction.partId)?.unit}
+                  </span>
+                </div>
+                <div className="flex flex-col items-center">
+                  <span className="text-[10px] font-bold uppercase opacity-60 mb-1">Từ kho:</span>
+                  <span className="font-black uppercase text-center leading-none" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
+                    {STAGES.find(s => s.id === lastTransaction.stageId)?.name} (NG)
+                  </span>
+                </div>
+              </div>
+
+              {/* Warnings */}
+              <div className="w-full border-2 border-black rounded-lg p-2 mb-3 text-center bg-gray-100/50">
+                <span className="text-sm font-black uppercase block">HÀNG KHÔNG ĐẠT (NG)</span>
+                <span className="text-[10px] font-bold block opacity-70">CẤM NHẬP KHO - CHỜ TIÊU HỦY</span>
+              </div>
+
+              {/* Footer */}
+              <div className="mt-auto w-full flex justify-between items-end font-mono border-t border-black pt-2 pb-1" style={{ fontSize: `${labelSettings.fontSize - 6}px` }}>
+                <div className="flex flex-col leading-tight">
+                  <span className="font-bold">TX ID: {lastTransaction.id}</span>
+                  <span>Thời gian: {format(lastTransaction.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
+                </div>
+                <div className="font-black italic bg-black text-white px-2 py-0.5">
+                  DISPOSAL
+                </div>
               </div>
             </div>
-
-            {/* Route / Destination */}
-            <div className="w-full border-2 border-black rounded p-2 mb-3 text-center">
-              <span className="text-[10px] font-bold uppercase opacity-60 block mb-1">Đích tiếp theo:</span>
-              <div className="flex items-center justify-center gap-4 font-black italic" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
-                <span className="uppercase">{STAGES.find(s => s.id === lastTransaction.stageId)?.name}</span>
-                <span className="text-xl">→</span>
-                <span className="uppercase">
-                  {STAGES.find(s => s.id === (lastTransaction.targetStageId || lastTransaction.qrData?.split('|')?.[5]))?.name || 
-                   ((lastTransaction.targetStageId || lastTransaction.qrData?.split('|')?.[5]) === 'DCLR' ? 'Lắp ráp (DCLR)' : 'KẾ THÚC')}
-                </span>
+          ) : (
+            <div className="w-full h-full bg-white text-black flex flex-col items-center p-4 box-border border-2 border-black">
+              {/* QR Code Section */}
+              <div className="mb-4 border-2 border-black p-1">
+                <QRCodeSVG value={lastTransaction.qrData || ''} size={labelSettings.qrSize * 1.8} level="H" />
               </div>
-            </div>
 
-            {/* PO Details Section (NEW) */}
-            <div className="w-full space-y-1 mb-4 text-[11px] font-bold border border-black/20 p-2 rounded">
-              <div className="flex justify-between items-center">
-                <span className="opacity-50 uppercase">LOẠI PO:</span>
+              {/* Part Name & ID */}
+              <div className="text-center w-full mb-3">
+                <h1 className="font-black uppercase leading-tight" style={{ fontSize: `${labelSettings.qrSize / 6}px` }}>
+                  {getProcessValue(parts.find(p => p.id === lastTransaction.partId)?.name, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
+                </h1>
+                <p className="font-mono font-bold mt-1" style={{ fontSize: `${labelSettings.fontSize}px` }}>
+                  Mã LK: {getProcessValue(lastTransaction.partId, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
+                </p>
+              </div>
+
+              {/* Quantity & Source Stage */}
+              <div className="grid grid-cols-2 w-full border-t-2 border-b-2 border-black py-3 mb-3">
+                <div className="flex flex-col items-center border-r-2 border-black">
+                  <span className="text-[10px] font-bold uppercase opacity-60 mb-1">Số lượng:</span>
+                  <span className="font-black" style={{ fontSize: `${labelSettings.fontSize + 12}px` }}>
+                    {lastTransaction.quantity} {parts.find(p => p.id === lastTransaction.partId)?.unit}
+                  </span>
+                </div>
+                <div className="flex flex-col items-center">
+                  <span className="text-[10px] font-bold uppercase opacity-60 mb-1">Từ công đoạn:</span>
+                  <span className="font-black uppercase text-center" style={{ fontSize: `${labelSettings.fontSize + 4}px` }}>
+                    {STAGES.find(s => s.id === lastTransaction.stageId)?.name}
+                  </span>
+                </div>
+              </div>
+
+              {/* Route / Destination */}
+              <div className="w-full border-2 border-black rounded p-2 mb-3 text-center">
+                <span className="text-[10px] font-bold uppercase opacity-60 block mb-1">Đích tiếp theo:</span>
+                <div className="flex items-center justify-center gap-4 font-black italic" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
+                  <span className="uppercase">{STAGES.find(s => s.id === lastTransaction.stageId)?.name}</span>
+                  <span className="text-xl">→</span>
+                  <span className="uppercase">
+                    {STAGES.find(s => s.id === (lastTransaction.targetStageId || lastTransaction.qrData?.split('|')?.[5]))?.name || 
+                     ((lastTransaction.targetStageId || lastTransaction.qrData?.split('|')?.[5]) === 'DCLR' ? 'Lắp ráp (DCLR)' : 'KẾ THÚC')}
+                  </span>
+                </div>
+              </div>
+
+              {/* PO Details Section (NEW) */}
+              <div className="w-full space-y-1 mb-4 text-[11px] font-bold border border-black/20 p-2 rounded">
+                <div className="flex justify-between items-center">
+                  <span className="opacity-50 uppercase">LOẠI PO:</span>
+                  {(() => {
+                    const po = storageService.getProductionOrders().find(p => p.id === lastTransaction.poId);
+                    return (
+                      <span className="text-[9px] uppercase">
+                        {po?.masterPoId ? 'PO Con (Sub)' : 'PO Tổng (Master)'}
+                      </span>
+                    );
+                  })()}
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="opacity-50 uppercase">MÃ PO:</span>
+                  <span className="font-mono">{lastTransaction.poId || 'N/A'}</span>
+                </div>
+                <div className="flex justify-between items-center text-[9px] text-gray-500 italic">
+                  <span>Kế hoạch PO Con:</span>
+                  <span>{lastTransaction.qrData?.split('|')?.[8] || storageService.getProductionOrders().find(p => p.id === lastTransaction.poId)?.targetQuantity || 0} linh kiện</span>
+                </div>
                 {(() => {
                   const po = storageService.getProductionOrders().find(p => p.id === lastTransaction.poId);
+                  const masterId = po?.masterPoId || lastTransaction.qrData?.split('|')?.[7];
                   return (
-                    <span className="text-[9px] uppercase">
-                      {po?.masterPoId ? 'PO Con (Sub)' : 'PO Tổng (Master)'}
-                    </span>
+                    <>
+                      {po?.plannedStartTime && (
+                        <div className="flex justify-between items-center pt-1 border-t border-black/5">
+                          <span className="opacity-50 uppercase">KH Bắt đầu PO:</span>
+                          <span className="font-mono">{format(po.plannedStartTime, 'dd/MM HH:mm')}</span>
+                        </div>
+                      )}
+                      {po?.expectedCompletionTime && (
+                        <div className="flex justify-between items-center">
+                          <span className="opacity-50 uppercase">KH Kết thúc PO:</span>
+                          <span className="font-mono">{format(po.expectedCompletionTime, 'dd/MM HH:mm')}</span>
+                        </div>
+                      )}
+                      {masterId && (
+                        <>
+                          <div className="flex justify-between items-center pt-1 border-t border-black/5">
+                            <span className="opacity-50 uppercase">PO TỔNG:</span>
+                            <span className="font-mono">{masterId}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-[9px] text-gray-500 italic">
+                            <span>Kế hoạch PO Tổng:</span>
+                            <span>{lastTransaction.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0} máy</span>
+                          </div>
+                        </>
+                      )}
+                    </>
                   );
                 })()}
+                <div className="flex justify-between items-center pt-1 border-t border-black/5">
+                  <span className="opacity-50 uppercase text-[9px]">Hoàn thành thực tế:</span>
+                  <span className="font-mono">{format(lastTransaction.timestamp, 'HH:mm:ss')}</span>
+                </div>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="opacity-50 uppercase">MÃ PO:</span>
-                <span className="font-mono">{lastTransaction.poId || 'N/A'}</span>
-              </div>
-              <div className="flex justify-between items-center text-[9px] text-gray-500 italic">
-                <span>Kế hoạch PO Con:</span>
-                <span>{lastTransaction.qrData?.split('|')?.[8] || storageService.getProductionOrders().find(p => p.id === lastTransaction.poId)?.targetQuantity || 0} linh kiện</span>
-              </div>
-              {(() => {
-                const po = storageService.getProductionOrders().find(p => p.id === lastTransaction.poId);
-                const masterId = po?.masterPoId || lastTransaction.qrData?.split('|')?.[7];
-                return masterId && (
-                  <>
-                    <div className="flex justify-between items-center">
-                      <span className="opacity-50 uppercase">PO TỔNG:</span>
-                      <span className="font-mono">{masterId}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-[9px] text-gray-500 italic">
-                      <span>Kế hoạch PO Tổng:</span>
-                      <span>{lastTransaction.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0} máy</span>
-                    </div>
-                  </>
-                );
-              })()}
-              <div className="flex justify-between items-center pt-1 border-t border-black/5">
-                <span className="opacity-50 uppercase">Bắt đầu đi:</span>
-                <span className="font-mono">{format(lastTransaction.timestamp, 'HH:mm:ss')}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="opacity-50 uppercase">Đến dự kiến:</span>
-                <span className="font-mono">{format(lastTransaction.timestamp, 'HH:mm:ss')}</span>
-              </div>
-            </div>
 
-            {/* Footer: ID & Time */}
-            <div className="mt-auto w-full flex justify-between items-end font-mono border-t border-black pt-2" style={{ fontSize: `${labelSettings.fontSize - 6}px` }}>
-              <div className="flex flex-col leading-tight">
-                <span className="font-bold">ID: {lastTransaction.id}</span>
-                <span>Thời gian: {format(lastTransaction.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
-              </div>
-              <div className="font-black italic">
-                WIP TRACKING
+              {/* Footer: ID & Time */}
+              <div className="mt-auto w-full flex justify-between items-end font-mono border-t border-black pt-2" style={{ fontSize: `${labelSettings.fontSize - 6}px` }}>
+                <div className="flex flex-col leading-tight">
+                  <span className="font-bold">ID: {lastTransaction.id}</span>
+                  <span>Thời gian: {format(lastTransaction.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
+                </div>
+                <div className="font-black italic">
+                  WIP TRACKING
+                </div>
               </div>
             </div>
-          </div>
+          )
         )}
       </div>
+
       {/* Sidebar */}
       <aside className={cn(
         "bg-white border-r border-gray-200 transition-all duration-300 flex flex-col z-50",
@@ -664,7 +739,7 @@ export default function App() {
                 <ProductionOrderView parts={parts} />
               )}
               {currentView === 'defects' && (
-                <DefectView key="defects" parts={parts} transactions={transactions} inventory={inventory} refreshData={refreshData} />
+                <DefectView key="defects" parts={parts} transactions={transactions} inventory={inventory} refreshData={refreshData} setLastTransaction={setLastTransaction} />
               )}
               {currentView === 'norms' && (
                 <NormsView parts={parts} onNormsChange={refreshData} />
@@ -781,7 +856,7 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
   const [selectedPart, setSelectedPart] = useState("");
   const [quantity, setQuantity] = useState(0);
   const [plannedStart, setPlannedStart] = useState("");
-  const [customLeadTime, setCustomLeadTime] = useState<number | "">("");
+  const [searchTerm, setSearchTerm] = useState("");
   const [estimatedEnd, setEstimatedEnd] = useState<number | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState<string | null>(null);
   const [password, setPassword] = useState("");
@@ -792,33 +867,14 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
     setPlannedStart(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
   }, []);
 
-  // Update estimatedEnd and default leadTime whenever inputs change
+  // Update estimatedEnd directly based on storageService calculation
   useEffect(() => {
     if (selectedPart && quantity > 0 && plannedStart) {
       const startTs = new Date(plannedStart).getTime();
       const calculatedEndTs = storageService.previewMasterPOCompletion(selectedPart, quantity, startTs);
-      
-      if (customLeadTime === "") {
-        // If no custom lead time, show calculated end time
-        setEstimatedEnd(calculatedEndTs);
-      } else {
-        // If custom lead time provided (in hours), calculate end time based on it
-        // Note: For simplicity, we just add hours to startTs, ignoring shifts unless we want to be very precise
-        // But the user probably wants a simple addition if they override it
-        setEstimatedEnd(startTs + (Number(customLeadTime) * 3600000));
-      }
+      setEstimatedEnd(calculatedEndTs);
     } else {
       setEstimatedEnd(null);
-    }
-  }, [selectedPart, quantity, plannedStart, customLeadTime]);
-
-  // When model/qty changes and customLeadTime is empty, we could suggest a lead time
-  useEffect(() => {
-    if (selectedPart && quantity > 0 && plannedStart && customLeadTime === "") {
-      const startTs = new Date(plannedStart).getTime();
-      const calculatedEndTs = storageService.previewMasterPOCompletion(selectedPart, quantity, startTs);
-      const hours = (calculatedEndTs - startTs) / 3600000;
-      // We don't auto-set customLeadTime state here to allow "auto" behavior
     }
   }, [selectedPart, quantity, plannedStart]);
 
@@ -838,11 +894,10 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
     
     try {
       const startTs = plannedStart ? new Date(plannedStart).getTime() : Date.now();
-      storageService.createMasterPO(selectedPart, quantity, startTs, customLeadTime === "" ? undefined : Number(customLeadTime));
+      storageService.createMasterPO(selectedPart, quantity, startTs);
       setOrders(storageService.getProductionOrders());
       setSelectedPart("");
       setQuantity(0);
-      setCustomLeadTime("");
       alert('Đã tạo lệnh sản xuất PO Tổng và các PO Con thành công!');
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Lỗi khi tạo PO');
@@ -862,8 +917,24 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
     }
   };
 
-  // Group orders by masterPoId
-  const masterOrders = orders.filter(o => !o.masterPoId);
+  // Group orders by masterPoId with optimized filtering and searching
+  const masterOrders = useMemo(() => {
+    const partsMap = new Map(parts.map(p => [p.id, p]));
+    const searchLower = searchTerm.toLowerCase();
+    
+    return orders
+      .filter(o => !o.masterPoId)
+      .filter(master => {
+        const part = partsMap.get(master.partId);
+        const partName = part?.name || "";
+        
+        return (
+          master.id.toLowerCase().includes(searchLower) ||
+          master.partId.toLowerCase().includes(searchLower) ||
+          partName.toLowerCase().includes(searchLower)
+        );
+      });
+  }, [orders, parts, searchTerm]);
   
   return (
     <div className="space-y-8">
@@ -885,8 +956,6 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
                 value={selectedPart}
                 onChange={(val) => {
                   setSelectedPart(val);
-                  // Optional: Reset custom lead time when model changes to trigger re-calculation
-                  setCustomLeadTime("");
                 }}
                 placeholder="Chọn model..."
               />
@@ -900,7 +969,7 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
                 className="w-full p-4 p-y-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none"
               />
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2 col-span-1 md:col-span-2 lg:col-span-1">
               <label className="text-sm font-bold uppercase opacity-50">Số lượng (pcs)</label>
               <input 
                 type="number"
@@ -910,20 +979,6 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
                 className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none"
                 placeholder="Nhập số lượng..."
               />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-bold uppercase opacity-50">Leadtime (Giờ)</label>
-              <div className="relative">
-                <input 
-                  type="number"
-                  step="0.1"
-                  value={customLeadTime}
-                  onChange={e => setCustomLeadTime(e.target.value === "" ? "" : parseFloat(e.target.value))}
-                  className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none pr-12"
-                  placeholder="Auto..."
-                />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold opacity-30">H</span>
-              </div>
             </div>
           </div>
 
@@ -943,7 +998,7 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
                 </div>
                 {estimatedEnd && (
                   <p className="text-sm font-medium text-gray-500 italic">
-                    {customLeadTime !== "" ? "* Đang sử dụng leadtime tùy chỉnh" : "* Tính toán theo định mức sản xuất"}
+                    * Tính toán tự động theo định mức sản xuất
                   </p>
                 )}
               </div>
@@ -963,8 +1018,18 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
 
       {/* PO List */}
       <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="p-8 border-b border-gray-100 flex justify-between items-center">
+        <div className="p-8 border-b border-gray-100 flex flex-col md:flex-row justify-between items-center gap-4">
           <h2 className="text-2xl font-bold">Danh sách Lệnh Sản Xuất</h2>
+          <div className="relative w-full md:w-80">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            <input 
+              type="text"
+              placeholder="Tìm kiếm mã PO, Model..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl font-medium focus:bg-white focus:border-blue-600 outline-none transition-all"
+            />
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left">
@@ -1201,7 +1266,7 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
   const [selectedLabel, setSelectedLabel] = useState<Transaction | null>(null);
   const [dateFilter, setDateFilter] = useState("");
   const [limit, setLimit] = useState(50);
-  const [activeTab, setActiveTab] = useState<'PENDING' | 'FINISHED' | 'PAINTING'>('PENDING');
+  const [activeTab, setActiveTab] = useState<'PENDING' | 'FINISHED' | 'PAINTING' | 'DISPOSAL'>('PENDING');
 
   useEffect(() => {
     setLabels(initialLabels);
@@ -1284,14 +1349,18 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
   const filteredLabels = labels.filter(label => {
     const isScanned = scannedIds.has(label.id);
     const isPaintingOut = label.stageId === 'PAINTING' && label.type === 'STAGE_OUT';
+    const isDisposal = label.type === 'DISPOSAL';
     
-    // Split logic into 3 tabs
+    // Split logic into 4 tabs
     if (activeTab === 'PENDING') {
-      // Pending: Not scanned and NOT a Painting OUT label
-      if (isScanned || isPaintingOut) return false;
+      // Pending: Not scanned and NOT a Painting OUT label and NOT disposal
+      if (isScanned || isPaintingOut || isDisposal) return false;
     } else if (activeTab === 'PAINTING') {
       // Painting: Only Painting OUT labels
       if (!isPaintingOut) return false;
+    } else if (activeTab === 'DISPOSAL') {
+      // Disposal: Only disposal labels
+      if (!isDisposal) return false;
     } else {
       // Finished: Scanned labels (any stage)
       if (!isScanned) return false;
@@ -1360,7 +1429,16 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                 activeTab === 'PAINTING' ? "bg-white text-purple-600 shadow-sm" : "text-gray-500 hover:text-gray-700"
               )}
             >
-              Hàng Sơn (OUT)
+              Hàng Sơn
+            </button>
+            <button 
+              onClick={() => setActiveTab('DISPOSAL')}
+              className={cn(
+                "flex-1 py-2 text-[10px] font-bold uppercase tracking-tight rounded-lg transition-all",
+                activeTab === 'DISPOSAL' ? "bg-white text-red-600 shadow-sm" : "text-gray-500 hover:text-gray-700"
+              )}
+            >
+              Hàng Hủy
             </button>
           </div>
           
@@ -1411,6 +1489,8 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                           <CheckCircle2 size={14} className="text-green-600" />
                         ) : isPrinted ? (
                           <Printer size={14} className="text-blue-600" />
+                        ) : label.type === 'DISPOSAL' ? (
+                          <Trash2 size={14} className="text-red-600" />
                         ) : null}
                         <span className="font-bold text-sm">{parts.find(p => p.id === label.partId)?.name || label.partId}</span>
                       </div>
@@ -1422,6 +1502,9 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                         )}
                         {isPaintingOut && (
                           <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">Sơn OUT</span>
+                        )}
+                        {label.type === 'DISPOSAL' && (
+                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-red-100 text-red-700 rounded">HÀNG HỦY</span>
                         )}
                       </div>
                       <div className="flex items-center gap-2 text-[10px] font-mono opacity-50">
@@ -1483,46 +1566,73 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                 </button>
               </div>
               
-              <div id="qr-label-display" className="w-[420px] bg-white border-2 border-black p-6 flex flex-col items-center">
+              <div id="qr-label-display" className={cn(
+                "w-[420px] bg-white border-4 p-6 flex flex-col items-center relative overflow-hidden",
+                selectedLabel.type === 'DISPOSAL' ? "border-black border-dashed" : "border-black"
+              )}>
+                {selectedLabel.type === 'DISPOSAL' && (
+                  <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none rotate-45">
+                    <span className="text-[100px] font-black whitespace-nowrap">HÀNG HỦY NG</span>
+                  </div>
+                )}
+                
+                {selectedLabel.type === 'DISPOSAL' && (
+                  <div className="w-full bg-black text-white text-center py-2 mb-6 font-black text-lg tracking-widest relative z-10">
+                    NHÃN XUẤT HỦY (DISPOSAL)
+                  </div>
+                )}
+
                 {/* QR Section */}
-                <div className="mb-6 border-[3px] border-black p-1">
+                <div className="mb-6 border-[3px] border-black p-1 bg-white relative z-10">
                   <QRCodeSVG value={selectedLabel.qrData || ''} size={240} level="H" />
                 </div>
 
                 {/* Part Info */}
-                <div className="w-full text-center mb-6">
+                <div className="w-full text-center mb-6 relative z-10">
                   <h2 className="text-3xl font-black uppercase tracking-tight leading-none mb-2">
-                    {getProcessValue(parts.find(p => p.id === selectedLabel.partId)?.name, parts.find(p => p.id === selectedLabel.partId), selectedLabel.stageId, 'OUT')}
+                    {selectedLabel.type === 'DISPOSAL' 
+                      ? (parts.find(p => p.id === selectedLabel.partId)?.name || selectedLabel.partId)
+                      : getProcessValue(parts.find(p => p.id === selectedLabel.partId)?.name, parts.find(p => p.id === selectedLabel.partId), selectedLabel.stageId, 'OUT')}
                   </h2>
                   <p className="font-mono text-lg font-bold opacity-80">
-                    Mã LK: {getProcessValue(selectedLabel.partId, parts.find(p => p.id === selectedLabel.partId), selectedLabel.stageId, 'OUT')}
+                    Mã LK: {selectedLabel.type === 'DISPOSAL' 
+                      ? selectedLabel.partId 
+                      : getProcessValue(selectedLabel.partId, parts.find(p => p.id === selectedLabel.partId), selectedLabel.stageId, 'OUT')}
                   </p>
                 </div>
 
                 {/* Main Stats */}
-                <div className="w-full grid grid-cols-2 border-t-[3px] border-black py-4">
+                <div className="w-full grid grid-cols-2 border-t-[3px] border-black py-4 relative z-10">
                   <div className="text-center border-r-[3px] border-black px-2 flex flex-col justify-center">
                     <span className="text-[10px] font-bold uppercase opacity-60 mb-1">Số lượng:</span>
                     <span className="text-3xl font-black">{selectedLabel.quantity} {parts.find(p => p.id === selectedLabel.partId)?.unit}</span>
                   </div>
                   <div className="text-center px-2 flex flex-col justify-center">
-                    <span className="text-[10px] font-bold uppercase opacity-60 mb-1">Từ công đoạn:</span>
+                    <span className="text-[10px] font-bold uppercase opacity-60 mb-1">
+                      {selectedLabel.type === 'DISPOSAL' ? 'Kho xuất:' : 'Từ công đoạn:'}
+                    </span>
                     <span className="text-2xl font-black uppercase leading-tight">
-                      {STAGES.find(s => s.id === selectedLabel.stageId)?.name}
+                      {STAGES.find(s => s.id === selectedLabel.stageId)?.name} {selectedLabel.type === 'DISPOSAL' && '(NG)'}
                     </span>
                   </div>
                 </div>
 
-                {/* Destination Box */}
-                <div className="w-full border-[3px] border-black rounded-lg p-4 my-4 text-center">
-                  <span className="text-[10px] font-bold uppercase opacity-60 block mb-2">Đích tiếp theo:</span>
-                  <div className="flex items-center justify-center gap-4 font-black text-xl italic group">
-                    <span>{STAGES.find(s => s.id === selectedLabel.stageId)?.name}</span>
-                    <ArrowRight size={24} strokeWidth={3} className="text-[#F27D26]" />
-                    <span>{STAGES.find(s => s.id === (selectedLabel.targetStageId || selectedLabel.qrData?.split('|')?.[5]))?.name || 
-                           ((selectedLabel.targetStageId || selectedLabel.qrData?.split('|')?.[5]) === 'DCLR' ? 'Lắp ráp (DCLR)' : 'HOÀN THÀNH')}</span>
+                {/* Destination Box / Warning */}
+                {selectedLabel.type === 'DISPOSAL' ? (
+                  <div className="w-full border-[3px] border-black rounded-lg p-3 my-4 text-center bg-gray-50 relative z-10">
+                    <span className="text-sm font-black uppercase block tracking-tighter text-red-600">HÀNG LỖI CẤM NHẬP KHO</span>
                   </div>
-                </div>
+                ) : (
+                  <div className="w-full border-[3px] border-black rounded-lg p-4 my-4 text-center">
+                    <span className="text-[10px] font-bold uppercase opacity-60 block mb-2">Đích tiếp theo:</span>
+                    <div className="flex items-center justify-center gap-4 font-black text-xl italic group">
+                      <span>{STAGES.find(s => s.id === selectedLabel.stageId)?.name}</span>
+                      <ArrowRight size={24} strokeWidth={3} className="text-[#F27D26]" />
+                      <span>{STAGES.find(s => s.id === (selectedLabel.targetStageId || selectedLabel.qrData?.split('|')?.[5]))?.name || 
+                             ((selectedLabel.targetStageId || selectedLabel.qrData?.split('|')?.[5]) === 'DCLR' ? 'Lắp ráp (DCLR)' : 'HOÀN THÀNH')}</span>
+                    </div>
+                  </div>
+                )}
 
                 {/* PO Details Section */}
                 <div className="w-full space-y-1 mb-6 text-[11px] font-bold bg-gray-50 p-3 border border-black/10 rounded">
@@ -1551,25 +1661,37 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                   {(() => {
                     const po = storageService.getProductionOrders().find(p => p.id === selectedLabel.poId);
                     const masterId = po?.masterPoId || selectedLabel.qrData?.split('|')?.[7];
-                    return masterId && (
+                    return (
                       <>
-                        <div className="flex justify-between items-center">
-                          <span className="opacity-50 uppercase">Thuộc PO Tổng:</span>
-                          <span className="font-mono text-[12px] text-red-600">{masterId}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-[10px] text-gray-500 italic">
-                          <span>Kế hoạch PO Tổng:</span>
-                          <span>{selectedLabel.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0} máy</span>
-                        </div>
+                        {po?.plannedStartTime && (
+                          <div className="flex justify-between items-center pt-1 border-t border-black/5">
+                            <span className="opacity-50 uppercase">KH Bắt đầu PO:</span>
+                            <span className="font-mono">{format(po.plannedStartTime, 'dd/MM HH:mm')}</span>
+                          </div>
+                        )}
+                        {po?.expectedCompletionTime && (
+                          <div className="flex justify-between items-center">
+                            <span className="opacity-50 uppercase">KH Kết thúc PO:</span>
+                            <span className="font-mono">{format(po.expectedCompletionTime, 'dd/MM HH:mm')}</span>
+                          </div>
+                        )}
+                        {masterId && (
+                          <>
+                            <div className="flex justify-between items-center pt-1 border-t border-black/5">
+                              <span className="opacity-50 uppercase">Thuộc PO Tổng:</span>
+                              <span className="font-mono text-[12px] text-red-600">{masterId}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-[10px] text-gray-500 italic">
+                              <span>Kế hoạch PO Tổng:</span>
+                              <span>{selectedLabel.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0} máy</span>
+                            </div>
+                          </>
+                        )}
                       </>
                     );
                   })()}
                   <div className="flex justify-between items-center pt-1 border-t border-black/5 mt-1">
-                    <span className="opacity-50 uppercase">Bắt đầu đi:</span>
-                    <span className="font-mono">{format(selectedLabel.timestamp, 'HH:mm:ss')}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="opacity-50 uppercase">Đến dự kiến:</span>
+                    <span className="opacity-50 uppercase text-[9px]">Hoàn thành thực tế:</span>
                     <span className="font-mono">{format(selectedLabel.timestamp, 'HH:mm:ss')}</span>
                   </div>
                 </div>
@@ -1723,28 +1845,48 @@ function DashboardView({ inventory, parts, refreshData, setDefectModal }: Dashbo
   const [selectedStageDetail, setSelectedStageDetail] = useState<StageId | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const chartData = STAGES.map(stage => {
-    const inQty = inventory
-      .filter(item => item.stageId === stage.id && item.location === 'IN')
-      .reduce((sum, item) => sum + item.quantity, 0);
-    const outQty = inventory
-      .filter(item => item.stageId === stage.id && item.location === 'OUT')
-      .reduce((sum, item) => sum + item.quantity, 0);
-    const defectQty = inventory
-      .filter(item => item.stageId === stage.id && item.location === 'DEFECT')
-      .reduce((sum, item) => sum + item.quantity, 0);
-    
-    return {
-      name: stage.name,
-      'Chờ SX (IN)': inQty,
-      'Hoàn thành (OUT)': outQty,
-      'Lỗi (Defect)': defectQty,
-    };
-  });
+  const chartData = useMemo(() => {
+    return STAGES.map(stage => {
+      const stageItems = inventory.filter(item => item.stageId === stage.id);
+      const inQty = stageItems
+        .filter(item => item.location === 'IN')
+        .reduce((sum, item) => sum + item.quantity, 0);
+      const outQty = stageItems
+        .filter(item => item.location === 'OUT')
+        .reduce((sum, item) => sum + item.quantity, 0);
+      const defectQty = stageItems
+        .filter(item => item.location === 'DEFECT')
+        .reduce((sum, item) => sum + item.quantity, 0);
+      
+      return {
+        name: stage.name,
+        'Chờ SX (IN)': inQty,
+        'Hoàn thành (OUT)': outQty,
+        'Lỗi (Defect)': defectQty,
+      };
+    });
+  }, [inventory]);
 
-  const totalOk = inventory.filter(i => i.location === 'OUT').reduce((sum, i) => sum + i.quantity, 0);
-  const totalNg = inventory.filter(i => i.location === 'DEFECT').reduce((sum, i) => sum + i.quantity, 0);
-  const yieldRate = totalOk + totalNg > 0 ? (totalOk / (totalOk + totalNg)) * 100 : 100;
+  const { totalOk, totalNg, yieldRate } = useMemo(() => {
+    const ok = inventory.filter(i => i.location === 'OUT').reduce((sum, i) => sum + i.quantity, 0);
+    const ng = inventory.filter(i => i.location === 'DEFECT').reduce((sum, i) => sum + i.quantity, 0);
+    const rate = ok + ng > 0 ? (ok / (ok + ng)) * 100 : 100;
+    return { totalOk: ok, totalNg: ng, yieldRate: rate };
+  }, [inventory]);
+
+  const stageSummaries = useMemo(() => {
+    return STAGES.map(stage => {
+      const stageItems = inventory.filter(item => item.stageId === stage.id);
+      return {
+        id: stage.id,
+        name: stage.name,
+        total: stageItems.reduce((sum, item) => sum + item.quantity, 0),
+        in: stageItems.filter(i => i.location === 'IN').reduce((sum, i) => sum + i.quantity, 0),
+        out: stageItems.filter(i => i.location === 'OUT').reduce((sum, i) => sum + i.quantity, 0),
+        defect: stageItems.filter(i => i.location === 'DEFECT').reduce((sum, i) => sum + i.quantity, 0),
+      };
+    });
+  }, [inventory]);
 
   return (
     <motion.div 
@@ -1755,16 +1897,13 @@ function DashboardView({ inventory, parts, refreshData, setDefectModal }: Dashbo
     >
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {STAGES.map(stage => {
-          const total = inventory
-            .filter(item => item.stageId === stage.id)
-            .reduce((sum, item) => sum + item.quantity, 0);
-          const isActive = selectedStageDetail === stage.id;
+        {stageSummaries.map((summary, idx) => {
+          const isActive = selectedStageDetail === summary.id;
 
           return (
             <button 
-              key={stage.id} 
-              onClick={() => setSelectedStageDetail(isActive ? null : stage.id)}
+              key={summary.id} 
+              onClick={() => setSelectedStageDetail(isActive ? null : summary.id)}
               className={cn(
                 "bg-white p-6 rounded-xl border transition-all text-left group",
                 isActive 
@@ -1780,27 +1919,27 @@ function DashboardView({ inventory, parts, refreshData, setDefectModal }: Dashbo
                   <Package size={20} />
                 </div>
                 <div className="flex flex-col items-end">
-                  <span className="text-sm font-mono font-bold text-gray-600 uppercase tracking-widest">Stage {STAGES.indexOf(stage) + 1}</span>
+                  <span className="text-sm font-mono font-bold text-gray-600 uppercase tracking-widest">Stage {idx + 1}</span>
                   {isActive && <div className="w-2 h-2 rounded-full bg-[#F27D26] mt-1 animate-pulse" />}
                 </div>
               </div>
-              <h3 className="font-bold text-2xl text-gray-900 mb-1">{stage.name}</h3>
-              <p className="text-4xl font-mono font-bold tracking-tighter">{total}</p>
+              <h3 className="font-bold text-2xl text-gray-900 mb-1">{summary.name}</h3>
+              <p className="text-4xl font-mono font-bold tracking-tighter">{summary.total}</p>
               <div className="mt-4 flex gap-4 text-xs font-mono uppercase font-bold overflow-x-auto pb-2">
                 <div className="flex flex-col min-w-[60px]">
                   <span className="opacity-50">Tồn IN</span>
-                  <span className="text-lg">{inventory.filter(i => i.stageId === stage.id && i.location === 'IN').reduce((s, i) => s + i.quantity, 0)}</span>
+                  <span className="text-lg">{summary.in}</span>
                 </div>
                 <div className="flex flex-col min-w-[60px]">
                   <span className="opacity-50">Tồn OUT</span>
                   <span className={cn("text-lg", isActive ? "text-[#F27D26]" : "text-[#F27D26]/80")}>
-                    {inventory.filter(i => i.stageId === stage.id && i.location === 'OUT').reduce((s, i) => s + i.quantity, 0)}
+                    {summary.out}
                   </span>
                 </div>
                 <div className="flex flex-col min-w-[60px]">
                   <span className="text-red-500">Defect</span>
                   <span className="text-lg text-red-600">
-                    {inventory.filter(i => i.stageId === stage.id && i.location === 'DEFECT').reduce((s, i) => s + i.quantity, 0)}
+                    {summary.defect}
                   </span>
                 </div>
               </div>
@@ -3703,14 +3842,6 @@ function InboundView({ selectedStage, setSelectedStage, onScanSuccess, parts, se
                 <CheckCircle2 size={24} />
                 Xác nhận
               </button>
-              <button 
-                type="button"
-                onClick={() => setDefectModal({ partId: '', stageId: selectedStage })}
-                className="w-48 h-20 bg-red-50 text-red-600 border-2 border-red-200 rounded-3xl font-bold uppercase tracking-tighter flex flex-col items-center justify-center gap-1 hover:bg-red-100 transition-all active:scale-95 shadow-lg shadow-red-100"
-              >
-                <AlertCircle size={28} />
-                <span className="text-[11px] font-black">Báo lỗi nhanh (NG)</span>
-              </button>
             </div>
           </form>
         </div>
@@ -5578,7 +5709,7 @@ function DefectModal({ data, onClose, onDefectRecorded, inventory }: { data: any
   );
 }
 
-function DisposalModal({ data, onClose, onDisposed }: { data: any, onClose: () => void, onDisposed: (tx: Transaction) => void }) {
+function DisposalModal({ data, onClose, onDisposed, setLastTransaction }: { data: any, onClose: () => void, onDisposed: (tx: Transaction) => void, setLastTransaction: (tx: Transaction) => void }) {
   const [qty, setQty] = useState(data.quantity);
   const [recordedTx, setRecordedTx] = useState<Transaction | null>(null);
 
@@ -5592,9 +5723,18 @@ function DisposalModal({ data, onClose, onDisposed }: { data: any, onClose: () =
     }
   };
 
+  const handlePrint = () => {
+    if (recordedTx) {
+      setLastTransaction(recordedTx);
+      setTimeout(() => {
+        window.print();
+      }, 200);
+    }
+  };
+
   if (recordedTx) {
     return (
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 no-print">
         <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl relative text-gray-900">
           <button onClick={onClose} className="absolute right-6 top-6 text-gray-400 hover:text-black"><X size={24} /></button>
           <div className="text-center">
@@ -5610,8 +5750,8 @@ function DisposalModal({ data, onClose, onDisposed }: { data: any, onClose: () =
               <div className="text-[10px] text-gray-500 uppercase mt-1 tracking-widest font-bold">NHÃN ĐEM HỦY (DISPOSAL)</div>
             </div>
 
-            <div className="flex gap-4">
-              <button onClick={() => window.print()} className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200">
+            <div className="flex gap-4 line-clamp-1">
+              <button onClick={handlePrint} className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200">
                 IN MÃ HỦY
               </button>
               <button onClick={onClose} className="flex-1 bg-gray-100 text-gray-600 py-4 rounded-xl font-bold hover:bg-gray-200">
@@ -5668,7 +5808,7 @@ function DisposalModal({ data, onClose, onDisposed }: { data: any, onClose: () =
   );
 }
 
-function DefectView({ parts, transactions, inventory, refreshData }: any) {
+function DefectView({ parts, transactions, inventory, refreshData, setLastTransaction }: any) {
   const [searchTerm, setSearchTerm] = useState("");
   const [disposalModal, setDisposalModal] = useState<any>(null);
 
@@ -5821,6 +5961,7 @@ function DefectView({ parts, transactions, inventory, refreshData }: any) {
       {disposalModal && (
         <DisposalModal 
           data={disposalModal} 
+          setLastTransaction={setLastTransaction}
           onClose={() => setDisposalModal(null)} 
           onDisposed={(tx) => {
             refreshData();
