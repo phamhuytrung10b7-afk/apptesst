@@ -969,7 +969,8 @@ export const storageService = {
     const pos = this.getProductionOrders(); // Still needed for unique ID check
     const timestamp = Date.now();
     const shiftConfigs = this.getShiftConfigs();
-    const dateStr = format(timestamp, 'ddMM');
+    const baseStartTime = plannedStartTime || timestamp;
+    const dateStr = format(baseStartTime, 'ddMM');
     const modelPrefix = modelId.length > 8 ? modelId.substring(0, 8).toUpperCase() : modelId.toUpperCase();
     const generateUniqueId = (prefix: string, suffix: string = "") => {
       let newId = "";
@@ -1072,10 +1073,8 @@ export const storageService = {
     };
 
     const getFinishTime = (partId: string, stageId: StageId) => {
-      return partStageFinishTime.get(partId)?.get(stageId) || (plannedStartTime || timestamp);
+      return partStageFinishTime.get(partId)?.get(stageId) || baseStartTime;
     };
-
-    const baseStartTime = plannedStartTime || timestamp;
 
     let mFreeLaser = baseStartTime;
     const laserConfig = shiftConfigs.find(c => c.stageId === 'LASER');
