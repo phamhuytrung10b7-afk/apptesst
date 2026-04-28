@@ -349,10 +349,10 @@ export default function App() {
 
               {/* Part Name & ID */}
               <div className="text-center w-full mb-3 relative z-10">
-                <h1 className="font-black uppercase leading-tight" style={{ fontSize: `${labelSettings.qrSize / 6}px` }}>
+                <h1 className="font-black uppercase leading-tight" style={{ fontSize: `${labelSettings.qrSize / 4.5}px` }}>
                   {parts.find(p => p.id === lastTransaction.partId)?.name || lastTransaction.partId}
                 </h1>
-                <p className="font-mono font-bold mt-1" style={{ fontSize: `${labelSettings.fontSize}px` }}>
+                <p className="font-mono font-bold mt-1 opacity-70" style={{ fontSize: `${labelSettings.fontSize * 0.8}px` }}>
                   Mã LK: {lastTransaction.partId}
                 </p>
               </div>
@@ -399,10 +399,10 @@ export default function App() {
 
               {/* Part Name & ID */}
               <div className="text-center w-full mb-3">
-                <h1 className="font-black uppercase leading-tight" style={{ fontSize: `${labelSettings.qrSize / 6}px` }}>
+                <h1 className="font-black uppercase leading-tight" style={{ fontSize: `${labelSettings.qrSize / 4.5}px` }}>
                   {getProcessValue(parts.find(p => p.id === lastTransaction.partId)?.name, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
                 </h1>
-                <p className="font-mono font-bold mt-1" style={{ fontSize: `${labelSettings.fontSize}px` }}>
+                <p className="font-mono font-bold mt-1 opacity-70" style={{ fontSize: `${labelSettings.fontSize * 0.8}px` }}>
                   Mã LK: {getProcessValue(lastTransaction.partId, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
                 </p>
               </div>
@@ -1645,12 +1645,12 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
 
                 {/* Part Info */}
                 <div className="w-full text-center mb-6 relative z-10">
-                  <h2 className="text-3xl font-black uppercase tracking-tight leading-none mb-2">
+                  <h2 className="text-4xl font-black uppercase tracking-tight leading-none mb-2">
                     {selectedLabel.type === 'DISPOSAL' 
                       ? (parts.find(p => p.id === selectedLabel.partId)?.name || selectedLabel.partId)
                       : getProcessValue(parts.find(p => p.id === selectedLabel.partId)?.name, parts.find(p => p.id === selectedLabel.partId), selectedLabel.stageId, 'OUT')}
                   </h2>
-                  <p className="font-mono text-lg font-bold opacity-80">
+                  <p className="font-mono text-sm font-bold opacity-60">
                     Mã LK: {selectedLabel.type === 'DISPOSAL' 
                       ? selectedLabel.partId 
                       : getProcessValue(selectedLabel.partId, parts.find(p => p.id === selectedLabel.partId), selectedLabel.stageId, 'OUT')}
@@ -2768,12 +2768,12 @@ function ProduceView({
 
                 {/* Part Info */}
                 <div className="w-full text-center mb-6">
-                  <h2 className="text-3xl font-black uppercase tracking-tight leading-none mb-2">
+                  <h2 className="text-4xl font-black uppercase tracking-tight leading-none mb-2">
                     {getProcessValue(parts.find(p => p.id === lastTransaction.partId)?.name, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
                   </h2>
-                  <p className="font-mono text-lg font-bold opacity-80">
+                  <p className="font-mono text-sm font-bold opacity-60">
                     Mã LK: {getProcessValue(lastTransaction.partId, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
-                    {lastTransaction.originalPartId && <span className="block text-xs italic mt-1">(Gốc: {lastTransaction.originalPartId})</span>}
+                    {lastTransaction.originalPartId && <span className="block text-[10px] italic mt-1">(Gốc: {lastTransaction.originalPartId})</span>}
                   </p>
                 </div>
 
