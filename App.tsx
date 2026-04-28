@@ -663,7 +663,7 @@ export default function App() {
           <div className="w-full max-w-[1600px] mx-auto">
             <AnimatePresence mode="wait">
               {currentView === 'dashboard' && (
-                <DashboardView key="dashboard" inventory={inventory} parts={parts} refreshData={refreshData} setDefectModal={setDefectModal} />
+                <DashboardView key="dashboard" transactions={transactions} inventory={inventory} parts={parts} refreshData={refreshData} setDefectModal={setDefectModal} />
               )}
               {currentView === 'produce' && (
                 <ProduceView 
@@ -841,6 +841,7 @@ function SidebarLink({ active, onClick, icon, label, collapsed }: { active: bool
 interface DashboardProps {
   inventory: InventoryItem[];
   parts: Part[];
+  transactions: Transaction[];
   refreshData: () => void;
   key?: string;
 }
@@ -1892,7 +1893,7 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
   );
 }
 
-function DashboardView({ inventory, parts, refreshData, setDefectModal }: DashboardProps & { setDefectModal: any }) {
+function DashboardView({ inventory, parts, transactions, refreshData, setDefectModal }: DashboardProps & { setDefectModal: any }) {
   const [selectedStageDetail, setSelectedStageDetail] = useState<StageId | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -1918,12 +1919,26 @@ function DashboardView({ inventory, parts, refreshData, setDefectModal }: Dashbo
     });
   }, [inventory]);
 
-  const { totalOk, totalNg, yieldRate } = useMemo(() => {
+  const { totalOk, totalNg, yieldRate, totalScrapped, topDefects } = useMemo(() => {
     const ok = inventory.filter(i => i.location === 'OUT').reduce((sum, i) => sum + i.quantity, 0);
     const ng = inventory.filter(i => i.location === 'DEFECT').reduce((sum, i) => sum + i.quantity, 0);
     const rate = ok + ng > 0 ? (ok / (ok + ng)) * 100 : 100;
-    return { totalOk: ok, totalNg: ng, yieldRate: rate };
-  }, [inventory]);
+    
+    const scrapped = transactions.filter(t => t.type === 'DISPOSAL').reduce((sum, t) => sum + t.quantity, 0);
+    
+    const defectReasons: Record<string, number> = {};
+    transactions.filter(t => t.type === 'DEFECT' && t.defectReason).forEach(t => {
+      const reason = t.defectReason as string;
+      defectReasons[reason] = (defectReasons[reason] || 0) + t.quantity;
+    });
+    
+    const top = Object.entries(defectReasons)
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 3);
+
+    return { totalOk: ok, totalNg: ng, yieldRate: rate, totalScrapped: scrapped, topDefects: top };
+  }, [inventory, transactions]);
 
   const stageSummaries = useMemo(() => {
     return STAGES.map(stage => {
@@ -2384,9 +2399,25 @@ function DashboardView({ inventory, parts, refreshData, setDefectModal }: Dashbo
             </div>
           </div>
 
-          <div className="pt-6 border-t border-gray-50 w-full">
-            <p className="text-xs text-center text-gray-400 italic">
-              * Tỷ lệ hàng đạt (Yield Rate) dựa trên tổng số lượng linh kiện hoàn thành so với hàng lỗi ghi nhận.
+          <div className="pt-6 border-t border-gray-100 w-full space-y-4">
+            <div className="flex justify-between items-center">
+              <span className="text-sm font-bold uppercase opacity-60">Lũy kế hủy (Scrapped)</span>
+              <span className="text-xl font-black text-red-600 font-mono bg-red-50 px-3 py-1 rounded">{totalScrapped}</span>
+            </div>
+            
+            {topDefects.length > 0 && (
+              <div className="space-y-2 pt-2 border-t border-gray-50">
+                <span className="text-[10px] font-bold uppercase tracking-widest opacity-50 block mb-2">Top lý do gây lỗi phổ biến</span>
+                {topDefects.map((def, idx) => (
+                  <div key={idx} className="flex justify-between items-center bg-red-50/50 p-2 rounded">
+                    <span className="text-xs font-bold text-red-800">{idx + 1}. {def.reason}</span>
+                    <span className="text-xs font-mono font-bold text-red-600">{def.count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="text-[10px] text-center text-gray-400 italic pt-2">
+              * Tỷ lệ hàng đạt (Yield Rate) dựa trên tổng số lượng linh kiện hoàn thành so với xuất hủy (Disposal).
             </p>
           </div>
         </div>
