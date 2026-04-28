@@ -515,16 +515,10 @@ export default function App() {
         "bg-white border-r border-gray-200 transition-all duration-300 flex flex-col z-50",
         isSidebarOpen ? "w-64" : "w-20"
       )}>
-        <div className="p-6 flex items-center gap-3 border-b border-gray-100">
+        <div className="p-6 flex items-center justify-center border-b border-gray-100">
           <div className="bg-[#F27D26] p-3 rounded-lg">
             <Package size={28} className="text-white" />
           </div>
-          {isSidebarOpen && (
-            <div className="flex flex-col">
-              <span className="font-mono text-lg font-bold tracking-tighter italic leading-none text-gray-900">WIP.SYSTEM</span>
-              <span className="text-xs font-mono opacity-80 uppercase tracking-widest mt-1 text-gray-700">Desktop v2.0</span>
-            </div>
-          )}
         </div>
 
         <nav className="flex-1 p-4 space-y-3">

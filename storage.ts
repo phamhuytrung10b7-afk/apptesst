@@ -782,6 +782,27 @@ export const storageService = {
     transactions.unshift(newTransaction);
     this.saveTransactions(transactions);
 
+    // Auto-create supplementary POs for compensation if stage is Bending, Welding, or Painting
+    if (['BENDING', 'WELDING', 'PAINTING'].includes(stageId)) {
+      try {
+        const orders = this.getProductionOrders();
+        const currentPo = poId ? orders.find(o => o.id === poId) : null;
+        const targetMasterPoId = currentPo?.masterPoId || currentPo?.id || `SUPP-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+        
+        // We use createMasterPO logic but we need to ensure it only targets this specific part and its sub-components
+        // To avoid side effects, we can just manually trigger a small-scale creation if possible, 
+        // OR just call createMasterPO with the partId as the "modelId".
+        // Calling createMasterPO(effectiveId, quantity, Date.now()) is the most robust way to get the full BOM tree for compensation.
+        // We use "REPAIR" as prefix to differentiate from regular POs
+        this.createMasterPO(effectiveId, quantity, Date.now(), undefined, "REPAIR");
+        
+        // Optional: We could tag these new POs as supplementary in their IDs or a field
+        // But createMasterPO already creates unique IDs.
+      } catch (err) {
+        console.error("Failed to create supplementary PO:", err);
+      }
+    }
+
     return newTransaction;
   },
 
@@ -952,8 +973,8 @@ export const storageService = {
     return currentTime;
   },
 
-  createMasterPO(modelId: string, quantity: number, plannedStartTime?: number, customLeadTime?: number) {
-    const { masterPo, allChildPOs } = this.calculateMasterPOSchedule(modelId, quantity, plannedStartTime, customLeadTime);
+  createMasterPO(modelId: string, quantity: number, plannedStartTime?: number, customLeadTime?: number, idPrefix: string = "PO") {
+    const { masterPo, allChildPOs } = this.calculateMasterPOSchedule(modelId, quantity, plannedStartTime, customLeadTime, idPrefix);
     const pos = this.getProductionOrders();
     const updatedPOs = [masterPo, ...allChildPOs, ...pos];
     this.saveProductionOrders(updatedPOs);
@@ -961,11 +982,11 @@ export const storageService = {
   },
 
   previewMasterPOCompletion(modelId: string, quantity: number, plannedStartTime?: number, customLeadTime?: number): number {
-    const { masterPo } = this.calculateMasterPOSchedule(modelId, quantity, plannedStartTime, customLeadTime);
+    const { masterPo } = this.calculateMasterPOSchedule(modelId, quantity, plannedStartTime, customLeadTime, "PO");
     return masterPo.expectedCompletionTime || Date.now();
   },
 
-  calculateMasterPOSchedule(modelId: string, quantity: number, plannedStartTime?: number, customLeadTime?: number) {
+  calculateMasterPOSchedule(modelId: string, quantity: number, plannedStartTime?: number, customLeadTime?: number, idPrefix: string = "PO") {
     const pos = this.getProductionOrders(); // Still needed for unique ID check
     const timestamp = Date.now();
     const shiftConfigs = this.getShiftConfigs();
@@ -980,7 +1001,7 @@ export const storageService = {
       return newId;
     };
 
-    const masterPoId = generateUniqueId(`PO-${modelPrefix}-${dateStr}`);
+    const masterPoId = generateUniqueId(`${idPrefix}-${modelPrefix}-${dateStr}`);
     const norms = this.getNorms();
     const partsList = this.getParts();
     const modelBom = this.getModelBOM();
@@ -1032,7 +1053,7 @@ export const storageService = {
       if (stageId === 'WELDING') idSuffix = "- H";
       else if (stageId === 'BENDING') idSuffix = "- CD";
       list.push({
-        id: generateUniqueId(`PO-${modelPrefix}-${dateStr}-${stageId}`, idSuffix),
+        id: generateUniqueId(`${idPrefix}-${modelPrefix}-${dateStr}-${stageId}`, idSuffix),
         masterPoId: masterPoId,
         partId: partId,
         stageId: stageId,
