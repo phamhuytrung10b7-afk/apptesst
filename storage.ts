@@ -587,7 +587,8 @@ export const storageService = {
     let partId = idOrPo.split(' - ')[0];
     let linkedPoId: string | undefined;
 
-    if (idOrPo.startsWith('PO-')) {
+    // Recognize PO IDs (PO- or REPAIR-)
+    if (idOrPo.startsWith('PO-') || idOrPo.startsWith('REPAIR-')) {
       linkedPoId = idOrPo;
       const pos = this.getProductionOrders();
       const po = pos.find(p => p.id === idOrPo);
@@ -782,22 +783,10 @@ export const storageService = {
     transactions.unshift(newTransaction);
     this.saveTransactions(transactions);
 
-    // Auto-create supplementary POs for compensation if stage is Bending, Welding, or Painting
-    if (['BENDING', 'WELDING', 'PAINTING'].includes(stageId)) {
+    // Auto-create supplementary POs for compensation for any stage
+    if (stageId !== 'LASER') {
       try {
-        const orders = this.getProductionOrders();
-        const currentPo = poId ? orders.find(o => o.id === poId) : null;
-        const targetMasterPoId = currentPo?.masterPoId || currentPo?.id || `SUPP-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-        
-        // We use createMasterPO logic but we need to ensure it only targets this specific part and its sub-components
-        // To avoid side effects, we can just manually trigger a small-scale creation if possible, 
-        // OR just call createMasterPO with the partId as the "modelId".
-        // Calling createMasterPO(effectiveId, quantity, Date.now()) is the most robust way to get the full BOM tree for compensation.
-        // We use "REPAIR" as prefix to differentiate from regular POs
-        this.createMasterPO(effectiveId, quantity, Date.now(), undefined, "REPAIR");
-        
-        // Optional: We could tag these new POs as supplementary in their IDs or a field
-        // But createMasterPO already creates unique IDs.
+        this.createMasterPO(cleanId, quantity, Date.now(), undefined, "REPAIR", stageId);
       } catch (err) {
         console.error("Failed to create supplementary PO:", err);
       }
@@ -973,8 +962,8 @@ export const storageService = {
     return currentTime;
   },
 
-  createMasterPO(modelId: string, quantity: number, plannedStartTime?: number, customLeadTime?: number, idPrefix: string = "PO") {
-    const { masterPo, allChildPOs } = this.calculateMasterPOSchedule(modelId, quantity, plannedStartTime, customLeadTime, idPrefix);
+  createMasterPO(modelId: string, quantity: number, plannedStartTime?: number, customLeadTime?: number, idPrefix: string = "PO", targetStageId?: string) {
+    const { masterPo, allChildPOs } = this.calculateMasterPOSchedule(modelId, quantity, plannedStartTime, customLeadTime, idPrefix, targetStageId);
     const pos = this.getProductionOrders();
     const updatedPOs = [masterPo, ...allChildPOs, ...pos];
     this.saveProductionOrders(updatedPOs);
@@ -986,7 +975,7 @@ export const storageService = {
     return masterPo.expectedCompletionTime || Date.now();
   },
 
-  calculateMasterPOSchedule(modelId: string, quantity: number, plannedStartTime?: number, customLeadTime?: number, idPrefix: string = "PO") {
+  calculateMasterPOSchedule(modelId: string, quantity: number, plannedStartTime?: number, customLeadTime?: number, idPrefix: string = "PO", targetStageId?: string) {
     const pos = this.getProductionOrders(); // Still needed for unique ID check
     const timestamp = Date.now();
     const shiftConfigs = this.getShiftConfigs();
@@ -1013,7 +1002,7 @@ export const storageService = {
 
     const traverseBOM = (currentId: string, currentQty: number, level: number, parentId: string | null) => {
       if (level > 20) return;
-      if (level > 0) {
+      if (level > 0 || (idPrefix.startsWith("REPAIR") && level === 0)) {
         const existing = requiredParts.get(currentId);
         if (!existing) {
           requiredParts.set(currentId, { qty: currentQty, minLevel: level });
@@ -1043,7 +1032,11 @@ export const storageService = {
     const weldingPOs: ProductionOrder[] = [];
     const paintingPOs: ProductionOrder[] = [];
 
+    const STAGE_ORDER = ['LASER', 'BENDING', 'WELDING', 'PAINTING'];
+    const targetStageIdx = targetStageId ? STAGE_ORDER.indexOf(targetStageId) : 999;
+
     const addPoToList = (partId: string, info: any, stageId: StageId, list: ProductionOrder[]) => {
+      if (STAGE_ORDER.indexOf(stageId) >= targetStageIdx) return;
       const { qty, minLevel: level } = info;
       const part = partsList.find(p => p.id === partId);
       if (stageId === 'BENDING' && part?.skipBending) return;
@@ -1072,10 +1065,10 @@ export const storageService = {
         addPoToList(partId, info, 'LASER', laserPOs);
         addPoToList(partId, info, 'BENDING', bendingPOs);
       }
-      if (hasIngredients || level === 1) {
+      if (hasIngredients || level <= 1) {
         addPoToList(partId, info, 'WELDING', weldingPOs);
       }
-      if (level === 1) {
+      if (level <= 1) {
         addPoToList(partId, info, 'PAINTING', paintingPOs);
       }
     });

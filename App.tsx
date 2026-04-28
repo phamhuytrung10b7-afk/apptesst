@@ -1043,7 +1043,7 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
                     : "text-gray-500 hover:text-gray-700"
                 )}
               >
-                Kế hoạch Repair
+                Kế hoạch bù (Repair)
               </button>
             </div>
           </div>
@@ -1082,6 +1082,21 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
                 const totalProduced = subOrders.reduce((sum, o) => sum + o.producedQuantity, 0);
                 const overallProgress = totalTarget > 0 ? (totalProduced / totalTarget) * 100 : 0;
                 const isExpanded = expandedMasterPos.has(master.id);
+                
+                let currentStageText = 'MODEL';
+                if (master.id.startsWith('REPAIR')) {
+                  const sortedSubOrders = [...subOrders].sort((a, b) => {
+                    return STAGES.findIndex(s => s.id === a.stageId) - STAGES.findIndex(s => s.id === b.stageId);
+                  });
+                  const activeSubOrder = sortedSubOrders.find(o => o.status !== 'COMPLETED');
+                  if (activeSubOrder) {
+                    currentStageText = `Đang làm: ${STAGES.find(s => s.id === activeSubOrder.stageId)?.name}`;
+                  } else if (sortedSubOrders.length > 0 && sortedSubOrders.every(o => o.status === 'COMPLETED')) {
+                    currentStageText = 'Hoàn thành';
+                  } else {
+                    currentStageText = 'Đang chờ';
+                  }
+                }
 
                 return (
                   <React.Fragment key={`${master.id}-${idx}`}>
@@ -1097,9 +1112,18 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
                           <ChevronRight size={18} />
                         </div>
                         {master.id}
+                        {master.id.startsWith('REPAIR') && (
+                          <span className="bg-red-100 text-red-600 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-tighter shadow-sm animate-pulse">REPAIR</span>
+                        )}
                       </td>
                       <td className="px-8 py-5 text-lg">{parts.find(p => p.id === master.partId)?.name || master.partId}</td>
-                      <td className="px-8 py-5"><span className="px-2 py-1 bg-blue-600 text-white rounded text-xs font-bold">MODEL</span></td>
+                      <td className="px-8 py-5">
+                        {master.id.startsWith('REPAIR') ? (
+                          <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-bold">{currentStageText}</span>
+                        ) : (
+                          <span className="px-2 py-1 bg-blue-600 text-white rounded text-xs font-bold">MODEL</span>
+                        )}
+                      </td>
                       <td className="px-8 py-5 text-right text-xl">{master.targetQuantity}</td>
                       <td className="px-8 py-5 text-right text-xl text-blue-600">{master.producedQuantity}</td>
                       <td className="px-8 py-5 text-right text-xl text-orange-600">{master.exportedQuantity || 0}</td>
@@ -2556,7 +2580,7 @@ function ProduceView({
               >
                 {availablePos.map(po => (
                   <option key={po.id} value={po.id}>
-                    {po.id} ({sourceLocation === 'IN' ? po.producedQuantity : po.exportedQuantity || 0}/{po.targetQuantity})
+                    {po.id.startsWith('REPAIR') ? '🛠️ [BÙ] ' : ''}{po.id} ({sourceLocation === 'IN' ? po.producedQuantity : po.exportedQuantity || 0}/{po.targetQuantity})
                   </option>
                 ))}
               </select>
@@ -2770,25 +2794,37 @@ function ProduceView({
                   {(() => {
                     const po = storageService.getProductionOrders().find(p => p.id === lastTransaction.poId);
                     const masterId = po?.masterPoId || lastTransaction.qrData?.split('|')?.[7];
-                    return masterId && (
+                    return (
                       <>
-                        <div className="flex justify-between items-center">
-                          <span className="opacity-50 uppercase">Thuộc PO Tổng:</span>
-                          <span className="font-mono text-[12px] text-red-600">{masterId}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-[10px] text-gray-500 italic">
-                          <span>Kế hoạch PO Tổng:</span>
-                          <span>{lastTransaction.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0} máy</span>
-                        </div>
+                        {po?.plannedStartTime && (
+                          <div className="flex justify-between items-center pt-1 border-t border-black/5">
+                            <span className="opacity-50 uppercase">KH Bắt đầu PO:</span>
+                            <span className="font-mono">{format(po.plannedStartTime, 'dd/MM HH:mm')}</span>
+                          </div>
+                        )}
+                        {po?.expectedCompletionTime && (
+                          <div className="flex justify-between items-center">
+                            <span className="opacity-50 uppercase">KH Kết thúc PO:</span>
+                            <span className="font-mono">{format(po.expectedCompletionTime, 'dd/MM HH:mm')}</span>
+                          </div>
+                        )}
+                        {masterId && (
+                          <>
+                            <div className="flex justify-between items-center pt-1 border-t border-black/5">
+                              <span className="opacity-50 uppercase text-red-600">PO TỔNG:</span>
+                              <span className="font-mono text-[12px] text-red-600">{masterId}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-[10px] text-gray-500 italic">
+                              <span>Kế hoạch PO Tổng:</span>
+                              <span>{lastTransaction.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0} máy</span>
+                            </div>
+                          </>
+                        )}
                       </>
                     );
                   })()}
                   <div className="flex justify-between items-center pt-1 border-t border-black/5 mt-1">
-                    <span className="opacity-50 uppercase">Bắt đầu đi:</span>
-                    <span className="font-mono">{format(lastTransaction.timestamp, 'HH:mm:ss')}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="opacity-50 uppercase">Đến dự kiến:</span>
+                    <span className="opacity-50 uppercase">Hoàn thành thực tế:</span>
                     <span className="font-mono">{format(lastTransaction.timestamp, 'HH:mm:ss')}</span>
                   </div>
                 </div>
@@ -2961,7 +2997,7 @@ function WeldingInboundView({ parts, onManualInbound, setDefectModal }: any) {
               >
                 {availablePos.map(po => (
                   <option key={po.id} value={po.id}>
-                    {po.id} ({po.producedQuantity}/{po.targetQuantity})
+                    {po.id.startsWith('REPAIR') ? '🛠️ [BÙ] ' : ''}{po.id} ({po.producedQuantity}/{po.targetQuantity})
                   </option>
                 ))}
               </select>
@@ -3249,7 +3285,7 @@ function LaserInboundView({ parts, onManualInbound, setDefectModal }: any) {
               >
                 {availablePos.map(po => (
                   <option key={po.id} value={po.id}>
-                    {po.id} ({po.producedQuantity}/{po.targetQuantity})
+                    {po.id.startsWith('REPAIR') ? '🛠️ [BÙ] ' : ''}{po.id} ({po.producedQuantity}/{po.targetQuantity})
                   </option>
                 ))}
               </select>
@@ -3601,7 +3637,7 @@ function ManualInboundView({ parts, onManualInbound, setDefectModal }: any) {
               >
                 {availablePos.map(po => (
                   <option key={po.id} value={po.id}>
-                    {po.id} ({po.producedQuantity}/{po.targetQuantity})
+                    {po.id.startsWith('REPAIR') ? '🛠️ [BÙ] ' : ''}{po.id} ({po.producedQuantity}/{po.targetQuantity})
                   </option>
                 ))}
               </select>
