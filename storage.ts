@@ -1185,307 +1185,201 @@ export const storageService = {
       }
     });
 
-    const partStageStartTime = new Map<string, Map<StageId, number>>(); 
-    const allChildPOs: ProductionOrder[] = [];
+    const sortByLevelDesc = (a: ProductionOrder, b: ProductionOrder) => {
+      return (requiredParts.get(b.partId)?.minLevel || 0) - (requiredParts.get(a.partId)?.minLevel || 0);
+    };
+
+    laserPOs.sort(sortByLevelDesc);
+    bendingPOs.sort(sortByLevelDesc);
+    weldingPOs.sort(sortByLevelDesc);
+    paintingPOs.sort(sortByLevelDesc);
+
     const laserNesting = this.getLaserNesting();
 
-    const recordStart = (po: ProductionOrder, time: number) => {
-      let stages = partStageStartTime.get(po.partId);
-      if (!stages) {
-        stages = new Map<StageId, number>();
-        partStageStartTime.set(po.partId, stages);
-      }
-      stages.set(po.stageId as StageId, time);
-    };
-
-    const getConsumerStart = (partId: string) => {
-      let consumerStart = Infinity;
-      
-      let pBend = partStageStartTime.get(partId)?.get('BENDING');
-      if (pBend !== undefined) consumerStart = Math.min(consumerStart, pBend);
-      
-      let pPaint = partStageStartTime.get(partId)?.get('PAINTING');
-      if (pPaint !== undefined) consumerStart = Math.min(consumerStart, pPaint);
-      
-      let pWeld = partStageStartTime.get(partId)?.get('WELDING');
-      if (pWeld !== undefined) consumerStart = Math.min(consumerStart, pWeld);
-
-      parentsMap.get(partId)?.forEach(pid => {
-        let parentWeld = partStageStartTime.get(pid)?.get('WELDING');
-        if (parentWeld !== undefined) consumerStart = Math.min(consumerStart, parentWeld);
-      });
-
-      return consumerStart === Infinity ? baseEndTime : consumerStart;
-    };
-
-    // 1. BACKWARD SCHEDULE PAINTING
-    let mFreePainting = baseEndTime;
-    const paintConfig = shiftConfigs.find(c => c.stageId === 'PAINTING');
-    const paintWorkers = paintConfig?.workerCount || 1;
-    // Reverse iterating to schedule latest first
-    const reversedPaintingPOs = [...paintingPOs].reverse();
-    reversedPaintingPOs.forEach(po => {
-      const end = this.getPreviousWorkingTime(mFreePainting, 'PAINTING', shiftConfigs);
-      po.expectedCompletionTime = end;
-      const norm = norms.find(n => n.partId === po.partId && n.stageId === 'PAINTING');
-      const duration = norm ? (po.targetQuantity * norm.secondsPerUnit * 1000) / paintWorkers : 0;
-      const start = this.calculateStartTime(end, duration, 'PAINTING', shiftConfigs);
-      po.plannedStartTime = start;
-      mFreePainting = start;
-      recordStart(po, start);
-      allChildPOs.push(po);
-    });
-
-    // 2. BACKWARD SCHEDULE WELDING
-    let mFreeWelding = baseEndTime;
-    const weldConfig = shiftConfigs.find(c => c.stageId === 'WELDING');
-    const weldWorkers = weldConfig?.workerCount || 1;
-    // Sort weldingPOs so dependencies are scheduled first (parents first, then children)
-    // We want parents to define consumerStart for children
-    weldingPOs.sort((a, b) => {
-      const aLevel = requiredParts.get(a.partId)?.minLevel || 0;
-      const bLevel = requiredParts.get(b.partId)?.minLevel || 0;
-      return aLevel - bLevel; // ascending level: parents (level 1) before children (level 2)
-    });
-    
-    weldingPOs.forEach(po => {
-      const consumerStart = getConsumerStart(po.partId);
-      const end = this.getPreviousWorkingTime(Math.min(mFreeWelding, consumerStart), 'WELDING', shiftConfigs);
-      po.expectedCompletionTime = end;
-      const norm = norms.find(n => n.partId === po.partId && n.stageId === 'WELDING');
-      const duration = norm ? (po.targetQuantity * norm.secondsPerUnit * 1000) / weldWorkers : 0;
-      const start = this.calculateStartTime(end, duration, 'WELDING', shiftConfigs);
-      po.plannedStartTime = start;
-      mFreeWelding = start;
-      recordStart(po, start);
-      allChildPOs.push(po);
-    });
-
-    // 3. BACKWARD SCHEDULE BENDING
-    let mFreeBending = baseEndTime;
-    const bendConfig = shiftConfigs.find(c => c.stageId === 'BENDING');
-    const bendWorkers = bendConfig?.workerCount || 1;
-    [...bendingPOs].reverse().forEach(po => {
-      const consumerStart = getConsumerStart(po.partId);
-      const end = this.getPreviousWorkingTime(Math.min(mFreeBending, consumerStart), 'BENDING', shiftConfigs);
-      po.expectedCompletionTime = end;
-      const norm = norms.find(n => n.partId === po.partId && n.stageId === 'BENDING');
-      const duration = norm ? (po.targetQuantity * norm.secondsPerUnit * 1000) / bendWorkers : 0;
-      const start = this.calculateStartTime(end, duration, 'BENDING', shiftConfigs);
-      po.plannedStartTime = start;
-      mFreeBending = start;
-      recordStart(po, start);
-      allChildPOs.push(po);
-    });
-
-    // 4. BACKWARD SCHEDULE LASER
-    let mFreeLaser = baseEndTime;
-    const laserConfig = shiftConfigs.find(c => c.stageId === 'LASER');
-    const laserWorkers = laserConfig?.workerCount || 1;
-
-    if (laserNesting.length > 0) {
-      const nestedGroupMap = new Map<string, ProductionOrder[]>();
-      const individualLaserPOs: ProductionOrder[] = [];
-      [...laserPOs].reverse().forEach(po => {
-        const nest = laserNesting.find(ln => ln.partId === po.partId);
-        if (nest) {
-          const group = nestedGroupMap.get(nest.nestingId) || [];
-          group.push(po);
-          nestedGroupMap.set(nest.nestingId, group);
-        } else {
-          individualLaserPOs.push(po);
+    const runForwardPass = (globalStart: number) => {
+      const outChildPOs: ProductionOrder[] = [];
+      const partStageFinishTime = new Map<string, Map<StageId, number>>(); 
+      const recordFinish = (po: ProductionOrder, time: number) => {
+        let stages = partStageFinishTime.get(po.partId);
+        if (!stages) {
+          stages = new Map<StageId, number>();
+          partStageFinishTime.set(po.partId, stages);
         }
-      });
-      // Handle groups first to use contiguous blocks
-      nestedGroupMap.forEach((groupPOs, nestingId) => {
-        let totalDur = 0;
-        let minConsumerStart = baseEndTime;
-        groupPOs.forEach(po => {
-          const nest = laserNesting.find(ln => ln.partId === po.partId && ln.nestingId === nestingId);
-          if (nest) totalDur += po.targetQuantity * nest.secondsPerUnit * 1000;
-          minConsumerStart = Math.min(minConsumerStart, getConsumerStart(po.partId));
+        stages.set(po.stageId as StageId, time);
+      };
+      const getFinishTime = (partId: string, stageId: StageId) => {
+        return partStageFinishTime.get(partId)?.get(stageId) || globalStart;
+      };
+
+      // 1. LASER
+      let fFreeLaser = globalStart;
+      const laserConfig = shiftConfigs.find(c => c.stageId === 'LASER');
+      const laserWorkers = laserConfig?.workerCount || 1;
+      
+      if (laserNesting.length > 0) {
+        const nestedGroupMap = new Map<string, ProductionOrder[]>();
+        const individualLaserPOs: ProductionOrder[] = [];
+        laserPOs.forEach(po => {
+          const p = {...po};
+          const nest = laserNesting.find(ln => ln.partId === po.partId);
+          if (nest) {
+            const group = nestedGroupMap.get(nest.nestingId) || [];
+            group.push(p);
+            nestedGroupMap.set(nest.nestingId, group);
+          } else {
+            individualLaserPOs.push(p);
+          }
         });
-        const adjustedDur = totalDur / laserWorkers;
-        const end = this.getPreviousWorkingTime(Math.min(mFreeLaser, minConsumerStart), 'LASER', shiftConfigs);
-        const start = this.calculateStartTime(end, adjustedDur, 'LASER', shiftConfigs);
-        groupPOs.forEach(po => {
-          po.expectedCompletionTime = end;
-          po.plannedStartTime = start;
-          recordStart(po, start);
-          allChildPOs.push(po);
+        individualLaserPOs.forEach(p => {
+          const start = this.getNextWorkingTime(fFreeLaser, 'LASER', shiftConfigs);
+          p.plannedStartTime = start;
+          const norm = norms.find(n => n.partId === p.partId && n.stageId === 'LASER');
+          const duration = norm ? (p.targetQuantity * norm.secondsPerUnit * 1000) / laserWorkers : 0;
+          const end = this.calculateEndTime(start, duration, 'LASER', shiftConfigs);
+          p.expectedCompletionTime = end;
+          fFreeLaser = end;
+          recordFinish(p, end);
+          outChildPOs.push(p);
         });
-        mFreeLaser = start;
+        nestedGroupMap.forEach((groupPOs, nestingId) => {
+          let totalDur = 0;
+          groupPOs.forEach(p => {
+            const nest = laserNesting.find(ln => ln.partId === p.partId && ln.nestingId === nestingId);
+            if (nest) totalDur += p.targetQuantity * nest.secondsPerUnit * 1000;
+          });
+          const adjustedDur = totalDur / laserWorkers;
+          const start = this.getNextWorkingTime(fFreeLaser, 'LASER', shiftConfigs);
+          const end = this.calculateEndTime(start, adjustedDur, 'LASER', shiftConfigs);
+          groupPOs.forEach(p => {
+            p.plannedStartTime = start;
+            p.expectedCompletionTime = end;
+            recordFinish(p, end);
+            outChildPOs.push(p);
+          });
+          fFreeLaser = end;
+        });
+      } else {
+        laserPOs.forEach(po => {
+          const p = {...po};
+          const start = this.getNextWorkingTime(fFreeLaser, 'LASER', shiftConfigs);
+          p.plannedStartTime = start;
+          const norm = norms.find(n => n.partId === p.partId && n.stageId === 'LASER');
+          const duration = norm ? (p.targetQuantity * norm.secondsPerUnit * 1000) / laserWorkers : 0;
+          const end = this.calculateEndTime(start, duration, 'LASER', shiftConfigs);
+          p.expectedCompletionTime = end;
+          fFreeLaser = end;
+          recordFinish(p, end);
+          outChildPOs.push(p);
+        });
+      }
+
+      // 2. BENDING
+      let fFreeBending = globalStart;
+      const bendConfig = shiftConfigs.find(c => c.stageId === 'BENDING');
+      const bendWorkers = bendConfig?.workerCount || 1;
+      bendingPOs.forEach(po => {
+        const p = {...po};
+        const laserEnd = getFinishTime(p.partId, 'LASER');
+        const start = this.getNextWorkingTime(Math.max(fFreeBending, laserEnd), 'BENDING', shiftConfigs);
+        p.plannedStartTime = start;
+        const norm = norms.find(n => n.partId === p.partId && n.stageId === 'BENDING');
+        const duration = norm ? (p.targetQuantity * norm.secondsPerUnit * 1000) / bendWorkers : 0;
+        const end = this.calculateEndTime(start, duration, 'BENDING', shiftConfigs);
+        p.expectedCompletionTime = end;
+        fFreeBending = end;
+        recordFinish(p, end);
+        outChildPOs.push(p);
       });
-      individualLaserPOs.forEach(po => {
-        const consumerStart = getConsumerStart(po.partId);
-        const end = this.getPreviousWorkingTime(Math.min(mFreeLaser, consumerStart), 'LASER', shiftConfigs);
-        po.expectedCompletionTime = end;
-        const norm = norms.find(n => n.partId === po.partId && n.stageId === 'LASER');
-        const duration = norm ? (po.targetQuantity * norm.secondsPerUnit * 1000) / laserWorkers : 0;
-        const start = this.calculateStartTime(end, duration, 'LASER', shiftConfigs);
-        po.plannedStartTime = start;
-        mFreeLaser = start;
-        recordStart(po, start);
-        allChildPOs.push(po);
+
+      // 3. WELDING
+      let fFreeWelding = globalStart;
+      const weldConfig = shiftConfigs.find(c => c.stageId === 'WELDING');
+      const weldWorkers = weldConfig?.workerCount || 1;
+      weldingPOs.forEach(po => {
+        const p = {...po};
+        const children = level1Children.get(p.partId) || [];
+        const componentsReadyTime = children.length === 0 ? globalStart : Math.max(...children.map(cid => {
+          const wEnd = partStageFinishTime.get(cid)?.get('WELDING');
+          if (wEnd !== undefined) return wEnd;
+          const bEnd = partStageFinishTime.get(cid)?.get('BENDING');
+          if (bEnd !== undefined) return bEnd;
+          return getFinishTime(cid, 'LASER');
+        }));
+        
+        let myBendingEnd = partStageFinishTime.get(p.partId)?.get('BENDING');
+        let myLaserEnd = partStageFinishTime.get(p.partId)?.get('LASER');
+        let myReadyTime = myBendingEnd !== undefined ? myBendingEnd : (myLaserEnd !== undefined ? myLaserEnd : globalStart);
+        
+        const start = this.getNextWorkingTime(Math.max(fFreeWelding, componentsReadyTime, myReadyTime), 'WELDING', shiftConfigs);
+        p.plannedStartTime = start;
+        const norm = norms.find(n => n.partId === p.partId && n.stageId === 'WELDING');
+        const duration = norm ? (p.targetQuantity * norm.secondsPerUnit * 1000) / weldWorkers : 0;
+        const end = this.calculateEndTime(start, duration, 'WELDING', shiftConfigs);
+        p.expectedCompletionTime = end;
+        fFreeWelding = end;
+        recordFinish(p, end);
+        outChildPOs.push(p);
       });
-    } else {
-      [...laserPOs].reverse().forEach(po => {
-        const consumerStart = getConsumerStart(po.partId);
-        const end = this.getPreviousWorkingTime(Math.min(mFreeLaser, consumerStart), 'LASER', shiftConfigs);
-        po.expectedCompletionTime = end;
-        const norm = norms.find(n => n.partId === po.partId && n.stageId === 'LASER');
-        const duration = norm ? (po.targetQuantity * norm.secondsPerUnit * 1000) / laserWorkers : 0;
-        const start = this.calculateStartTime(end, duration, 'LASER', shiftConfigs);
-        po.plannedStartTime = start;
-        mFreeLaser = start;
-        recordStart(po, start);
-        allChildPOs.push(po);
+
+      // 4. PAINTING
+      let fFreePainting = globalStart;
+      const paintConfig = shiftConfigs.find(c => c.stageId === 'PAINTING');
+      const paintWorkers = paintConfig?.workerCount || 1;
+      paintingPOs.forEach(po => {
+        const p = {...po};
+        let weldEnd = partStageFinishTime.get(p.partId)?.get('WELDING');
+        let bendEnd = partStageFinishTime.get(p.partId)?.get('BENDING');
+        let laserEnd = partStageFinishTime.get(p.partId)?.get('LASER');
+        let readyTime = weldEnd !== undefined ? weldEnd : (bendEnd !== undefined ? bendEnd : (laserEnd !== undefined ? laserEnd : globalStart));
+
+        const start = this.getNextWorkingTime(Math.max(fFreePainting, readyTime), 'PAINTING', shiftConfigs);
+        p.plannedStartTime = start;
+        const norm = norms.find(n => n.partId === p.partId && n.stageId === 'PAINTING');
+        const duration = norm ? (p.targetQuantity * norm.secondsPerUnit * 1000) / paintWorkers : 0;
+        const end = this.calculateEndTime(start, duration, 'PAINTING', shiftConfigs);
+        p.expectedCompletionTime = end;
+        fFreePainting = end;
+        recordFinish(p, end);
+        outChildPOs.push(p);
       });
+
+      const maxEnd = outChildPOs.length > 0 
+        ? Math.max(...outChildPOs.filter(p => p.expectedCompletionTime).map(p => p.expectedCompletionTime!))
+        : globalStart;
+        
+      const actualMinStart = outChildPOs.length > 0
+        ? Math.min(...outChildPOs.filter(p => p.plannedStartTime).map(p => p.plannedStartTime!))
+        : globalStart;
+
+      return { outChildPOs, maxEnd, minStart: actualMinStart };
+    };
+
+    // Binary search for exact optimal start time
+    let low = baseEndTime - 100 * 24 * 60 * 60 * 1000;
+    let high = baseEndTime;
+    let bestChildPOs: ProductionOrder[] = [];
+    let bestStart = low;
+    let bestEnd = low;
+
+    for (let i = 0; i < 40; i++) {
+        const mid = low + Math.floor((high - low) / 2);
+        const { outChildPOs, maxEnd, minStart } = runForwardPass(mid);
+        if (maxEnd <= baseEndTime) {
+            bestChildPOs = outChildPOs;
+            bestStart = minStart;
+            bestEnd = maxEnd;
+            low = mid + 1;
+        } else {
+            high = mid - 1;
+        }
     }
 
-    // -------- FORWARD PASS TO ENSURE CONTINUOUS FLOW --------
-    // The backward pass found exactly how early we must start (globalStart) to finish exactly at baseEndTime
-    // But it pulls everything "as late as possible" recursively, causing WIP gaps at the start of stages
-    // Running a forward pass from `globalStart` pushes everything "as early as possible" relative to the start
-    // producing a contiguous plan where resources work immediately when ready.
-    
-    // globalStart is the earliest planned start time computed from the backward pass
-    const globalStart = allChildPOs.length > 0 
-      ? Math.min(...allChildPOs.filter(p => p.plannedStartTime).map(p => p.plannedStartTime!))
-      : baseEndTime;
-
-    // Reset all records for forward scheduling
-    const partStageFinishTime = new Map<string, Map<StageId, number>>(); 
-    const recordFinish = (po: ProductionOrder, time: number) => {
-      let stages = partStageFinishTime.get(po.partId);
-      if (!stages) {
-        stages = new Map<StageId, number>();
-        partStageFinishTime.set(po.partId, stages);
-      }
-      stages.set(po.stageId as StageId, time);
-    };
-    
-    const getFinishTime = (partId: string, stageId: StageId) => {
-      return partStageFinishTime.get(partId)?.get(stageId) || globalStart;
-    };
-
-    // Forward Schedule Laser
-    let fFreeLaser = globalStart;
-    if (laserNesting.length > 0) {
-      const nestedGroupMap = new Map<string, ProductionOrder[]>();
-      const individualLaserPOs: ProductionOrder[] = [];
-      laserPOs.forEach(po => {
-        const nest = laserNesting.find(ln => ln.partId === po.partId);
-        if (nest) {
-          const group = nestedGroupMap.get(nest.nestingId) || [];
-          group.push(po);
-          nestedGroupMap.set(nest.nestingId, group);
-        } else {
-          individualLaserPOs.push(po);
-        }
-      });
-      individualLaserPOs.forEach(po => {
-        const start = this.getNextWorkingTime(fFreeLaser, 'LASER', shiftConfigs);
-        po.plannedStartTime = start;
-        const norm = norms.find(n => n.partId === po.partId && n.stageId === 'LASER');
-        const duration = norm ? (po.targetQuantity * norm.secondsPerUnit * 1000) / laserWorkers : 0;
-        const end = this.calculateEndTime(start, duration, 'LASER', shiftConfigs);
-        po.expectedCompletionTime = end;
-        fFreeLaser = end;
-        recordFinish(po, end);
-      });
-      nestedGroupMap.forEach((groupPOs, nestingId) => {
-        let totalDur = 0;
-        groupPOs.forEach(po => {
-          const nest = laserNesting.find(ln => ln.partId === po.partId && ln.nestingId === nestingId);
-          if (nest) totalDur += po.targetQuantity * nest.secondsPerUnit * 1000;
-        });
-        const adjustedDur = totalDur / laserWorkers;
-        const start = this.getNextWorkingTime(fFreeLaser, 'LASER', shiftConfigs);
-        const end = this.calculateEndTime(start, adjustedDur, 'LASER', shiftConfigs);
-        groupPOs.forEach(po => {
-          po.plannedStartTime = start;
-          po.expectedCompletionTime = end;
-          recordFinish(po, end);
-        });
-        fFreeLaser = end;
-      });
-    } else {
-      laserPOs.forEach(po => {
-        const start = this.getNextWorkingTime(fFreeLaser, 'LASER', shiftConfigs);
-        po.plannedStartTime = start;
-        const norm = norms.find(n => n.partId === po.partId && n.stageId === 'LASER');
-        const duration = norm ? (po.targetQuantity * norm.secondsPerUnit * 1000) / laserWorkers : 0;
-        const end = this.calculateEndTime(start, duration, 'LASER', shiftConfigs);
-        po.expectedCompletionTime = end;
-        fFreeLaser = end;
-        recordFinish(po, end);
-      });
+    if (bestChildPOs.length === 0) {
+      const fb = runForwardPass(baseEndTime - 24 * 60 * 60 * 1000);
+      bestChildPOs = fb.outChildPOs;
+      bestStart = fb.minStart;
+      bestEnd = fb.maxEnd;
     }
-
-    // Forward Schedule Bending
-    let fFreeBending = globalStart;
-    bendingPOs.forEach(po => {
-      const laserEnd = getFinishTime(po.partId, 'LASER');
-      const start = this.getNextWorkingTime(Math.max(fFreeBending, laserEnd), 'BENDING', shiftConfigs);
-      po.plannedStartTime = start;
-      const norm = norms.find(n => n.partId === po.partId && n.stageId === 'BENDING');
-      const duration = norm ? (po.targetQuantity * norm.secondsPerUnit * 1000) / bendWorkers : 0;
-      const end = this.calculateEndTime(start, duration, 'BENDING', shiftConfigs);
-      po.expectedCompletionTime = end;
-      fFreeBending = end;
-      recordFinish(po, end);
-    });
-
-    // Forward Schedule Welding
-    let fFreeWelding = globalStart;
-    weldingPOs.sort((a, b) => {
-      const aLevel = requiredParts.get(a.partId)?.minLevel || 0;
-      const bLevel = requiredParts.get(b.partId)?.minLevel || 0;
-      return bLevel - aLevel;
-    });
-    
-    weldingPOs.forEach(po => {
-      const children = level1Children.get(po.partId) || [];
-      const componentsReadyTime = children.length === 0 ? globalStart : Math.max(...children.map(cid => {
-        const wEnd = partStageFinishTime.get(cid)?.get('WELDING');
-        if (wEnd !== undefined) return wEnd;
-        const bEnd = partStageFinishTime.get(cid)?.get('BENDING');
-        if (bEnd !== undefined) return bEnd;
-        return getFinishTime(cid, 'LASER');
-      }));
-      
-      let myBendingEnd = partStageFinishTime.get(po.partId)?.get('BENDING');
-      let myLaserEnd = partStageFinishTime.get(po.partId)?.get('LASER');
-      let myReadyTime = myBendingEnd !== undefined ? myBendingEnd : (myLaserEnd !== undefined ? myLaserEnd : globalStart);
-      
-      const start = this.getNextWorkingTime(Math.max(fFreeWelding, componentsReadyTime, myReadyTime), 'WELDING', shiftConfigs);
-      po.plannedStartTime = start;
-      const norm = norms.find(n => n.partId === po.partId && n.stageId === 'WELDING');
-      const duration = norm ? (po.targetQuantity * norm.secondsPerUnit * 1000) / weldWorkers : 0;
-      const end = this.calculateEndTime(start, duration, 'WELDING', shiftConfigs);
-      po.expectedCompletionTime = end;
-      fFreeWelding = end;
-      recordFinish(po, end);
-    });
-
-    // Forward Schedule Painting
-    let fFreePainting = globalStart;
-    paintingPOs.forEach(po => {
-      let weldEnd = partStageFinishTime.get(po.partId)?.get('WELDING');
-      let bendEnd = partStageFinishTime.get(po.partId)?.get('BENDING');
-      let laserEnd = partStageFinishTime.get(po.partId)?.get('LASER');
-      let readyTime = weldEnd !== undefined ? weldEnd : (bendEnd !== undefined ? bendEnd : (laserEnd !== undefined ? laserEnd : globalStart));
-
-      const start = this.getNextWorkingTime(Math.max(fFreePainting, readyTime), 'PAINTING', shiftConfigs);
-      po.plannedStartTime = start;
-      const norm = norms.find(n => n.partId === po.partId && n.stageId === 'PAINTING');
-      const duration = norm ? (po.targetQuantity * norm.secondsPerUnit * 1000) / paintWorkers : 0;
-      const end = this.calculateEndTime(start, duration, 'PAINTING', shiftConfigs);
-      po.expectedCompletionTime = end;
-      fFreePainting = end;
-      recordFinish(po, end);
-    });
 
     const masterPo: ProductionOrder = {
       id: masterPoId,
@@ -1495,13 +1389,11 @@ export const storageService = {
       exportedQuantity: 0,
       status: 'PENDING',
       createdAt: timestamp,
-      plannedStartTime: globalStart,
+      plannedStartTime: bestStart,
       leadTime: customLeadTime,
-      expectedCompletionTime: allChildPOs.length > 0 
-        ? Math.max(...allChildPOs.filter(p => p.expectedCompletionTime).map(p => p.expectedCompletionTime!))
-        : baseEndTime
+      expectedCompletionTime: bestEnd
     };
-    return { masterPo, allChildPOs };
+    return { masterPo, allChildPOs: bestChildPOs };
   },
 
   deletePO(id: string) {
