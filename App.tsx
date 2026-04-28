@@ -851,28 +851,28 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
   const [activeTab, setActiveTab] = useState<'STANDARD' | 'REPAIR'>('STANDARD');
   const [selectedPart, setSelectedPart] = useState("");
   const [quantity, setQuantity] = useState(0);
-  const [plannedStart, setPlannedStart] = useState("");
+  const [targetCompletion, setTargetCompletion] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
-  const [estimatedEnd, setEstimatedEnd] = useState<number | null>(null);
+  const [estimatedStart, setEstimatedStart] = useState<number | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState<string | null>(null);
   const [password, setPassword] = useState("");
   const [expandedMasterPos, setExpandedMasterPos] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setOrders(storageService.getProductionOrders());
-    setPlannedStart(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
+    setTargetCompletion(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
   }, []);
 
-  // Update estimatedEnd directly based on storageService calculation
+  // Update estimatedStart directly based on storageService calculation
   useEffect(() => {
-    if (selectedPart && quantity > 0 && plannedStart) {
-      const startTs = new Date(plannedStart).getTime();
-      const calculatedEndTs = storageService.previewMasterPOCompletion(selectedPart, quantity, startTs);
-      setEstimatedEnd(calculatedEndTs);
+    if (selectedPart && quantity > 0 && targetCompletion) {
+      const endTs = new Date(targetCompletion).getTime();
+      const calculatedStartTs = storageService.previewMasterPOStart(selectedPart, quantity, endTs);
+      setEstimatedStart(calculatedStartTs);
     } else {
-      setEstimatedEnd(null);
+      setEstimatedStart(null);
     }
-  }, [selectedPart, quantity, plannedStart]);
+  }, [selectedPart, quantity, targetCompletion]);
 
   const toggleExpand = (masterPoId: string) => {
     const newExpanded = new Set(expandedMasterPos);
@@ -889,8 +889,8 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
     if (!selectedPart || quantity <= 0) return;
     
     try {
-      const startTs = plannedStart ? new Date(plannedStart).getTime() : Date.now();
-      storageService.createMasterPO(selectedPart, quantity, startTs);
+      const endTs = targetCompletion ? new Date(targetCompletion).getTime() : Date.now();
+      storageService.createMasterPO(selectedPart, quantity, endTs);
       setOrders(storageService.getProductionOrders());
       setSelectedPart("");
       setQuantity(0);
@@ -963,11 +963,11 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-bold uppercase opacity-50">Thời gian Bắt đầu</label>
+              <label className="text-sm font-bold uppercase opacity-50">Thời gian mong muốn hoàn thành</label>
               <input 
                 type="datetime-local"
-                value={plannedStart}
-                onChange={e => setPlannedStart(e.target.value)}
+                value={targetCompletion}
+                onChange={e => setTargetCompletion(e.target.value)}
                 className="w-full p-4 p-y-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none"
               />
             </div>
@@ -986,19 +986,19 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center pt-4 border-t border-gray-50">
             <div className="space-y-1">
-              <label className="text-xs font-bold uppercase opacity-30">Dự kiến hoàn thành</label>
+              <label className="text-xs font-bold uppercase opacity-30">Dự kiến bắt đầu cơ khí</label>
               <div className="flex items-center gap-4">
                 <div className="bg-gray-50 px-6 py-3 rounded-xl border border-gray-100 flex items-center gap-3">
                   <Clock className="text-blue-600" size={20} />
-                  {estimatedEnd ? (
+                  {estimatedStart ? (
                     <span className="text-xl font-bold text-blue-700">
-                      {format(new Date(estimatedEnd), 'HH:mm - dd/MM/yyyy')}
+                      {format(new Date(estimatedStart), 'HH:mm - dd/MM/yyyy')}
                     </span>
                   ) : (
                     <span className="text-xl font-bold text-gray-300">--:--</span>
                   )}
                 </div>
-                {estimatedEnd && (
+                {estimatedStart && (
                   <p className="text-sm font-medium text-gray-500 italic">
                     * Tính toán tự động theo định mức sản xuất
                   </p>
@@ -1185,7 +1185,7 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
                     {isExpanded && subOrders.sort((a, b) => {
                       const orderA = STAGES.findIndex(s => s.id === a.stageId);
                       const orderB = STAGES.findIndex(s => s.id === b.stageId);
-                      return orderA - orderB;
+                      return orderB - orderA; // order from latest stage (Painting) down to earliest (Mechanics like Laser)
                     }).map((sub, subIdx) => {
                       const progress = (sub.producedQuantity / sub.targetQuantity) * 100;
                       return (
@@ -1211,14 +1211,18 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
                             </div>
                           </td>
                           <td className="px-8 py-4">
-                            <div className="flex flex-col">
-                              <span className="font-mono text-sm font-bold text-gray-500">
-                                {format(new Date(sub.createdAt), 'HH:mm')}
-                              </span>
-                              <span className="text-xs opacity-50">
-                                {format(new Date(sub.createdAt), 'dd/MM')}
-                              </span>
-                            </div>
+                            {sub.plannedStartTime ? (
+                              <div className="flex flex-col">
+                                <span className="font-mono text-sm font-bold text-gray-500">
+                                  {format(new Date(sub.plannedStartTime), 'HH:mm')}
+                                </span>
+                                <span className="text-xs opacity-50">
+                                  {format(new Date(sub.plannedStartTime), 'dd/MM')}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-[10px] opacity-30 italic">-</span>
+                            )}
                           </td>
                           <td className="px-8 py-4">
                             {sub.expectedCompletionTime ? (
