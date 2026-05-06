@@ -2448,8 +2448,28 @@ function ProduceView({
     (STAGES.find(s => s.id === selectedStage)?.nextStageId || '') as StageId
   );
 
-  // Filter parts based on stage and BOM level
+  const allAvailablePos = useMemo(() => {
+    return storageService.getProductionOrders().filter(p => {
+      if (p.stageId !== selectedStage || p.status === 'COMPLETED') return false;
+      
+      if (sourceLocation === 'IN') {
+        return p.producedQuantity < p.targetQuantity;
+      } else {
+        return (p.exportedQuantity || 0) < p.producedQuantity;
+      }
+    });
+  }, [selectedStage, sourceLocation, storageService.getProductionOrders()]); // Depend on getter
+
+  // Filter parts based on stage, BOM level, and selected PO
   const filteredParts = parts.filter((p: any) => {
+    if (selectedPoId) {
+      const selectedPo = allAvailablePos.find(po => po.id === selectedPoId);
+      if (selectedPo && p.id !== selectedPo.partId) return false;
+    } else {
+      const hasAvailablePo = allAvailablePos.some(po => po.partId === p.id);
+      if (!hasAvailablePo) return false;
+    }
+
     if (selectedStage === 'LASER') {
       return sourceLocation === 'IN' ? p.level === 3 : p.level === 2;
     }
@@ -2463,30 +2483,34 @@ function ProduceView({
     return true;
   });
 
-  const availablePos = storageService.getProductionOrders().filter(p => {
-    if (p.partId !== selectedPart || p.stageId !== selectedStage || p.status === 'COMPLETED') return false;
-    
-    if (sourceLocation === 'IN') {
-      return p.producedQuantity < p.targetQuantity;
-    } else {
-      return (p.exportedQuantity || 0) < p.producedQuantity;
+  const availablePos = allAvailablePos.filter(p => p.partId === selectedPart);
+
+  // Handlers for selection
+  const handlePartChange = (partId: string) => {
+    setSelectedPart(partId);
+    const pos = allAvailablePos.filter(p => p.partId === partId);
+    setSelectedPoId(pos.length > 0 ? pos[0].id : "");
+  };
+
+  const handlePoChange = (poId: string) => {
+    setSelectedPoId(poId);
+    if (poId) {
+      const po = allAvailablePos.find(p => p.id === poId);
+      if (po && po.partId !== selectedPart) {
+        setSelectedPart(po.partId);
+      }
     }
-  });
+  };
 
   // Auto-select first filtered part if current selection is not in list
   useEffect(() => {
     if (filteredParts.length > 0 && !filteredParts.find((p: any) => p.id === selectedPart)) {
-      setSelectedPart(filteredParts[0].id);
+      const firstPartId = filteredParts[0].id;
+      setSelectedPart(firstPartId);
+      const pos = allAvailablePos.filter(p => p.partId === firstPartId);
+      setSelectedPoId(pos.length > 0 ? pos[0].id : "");
     }
-  }, [selectedStage, filteredParts, selectedPart, setSelectedPart]);
-
-  useEffect(() => {
-    if (availablePos.length > 0) {
-      setSelectedPoId(availablePos[0].id);
-    } else {
-      setSelectedPoId("");
-    }
-  }, [selectedPart, selectedStage, availablePos.length]);
+  }, [selectedStage, filteredParts, selectedPart, allAvailablePos]);
 
   useEffect(() => {
     const currentIdx = STAGES.findIndex(s => s.id === selectedStage);
@@ -2592,35 +2616,33 @@ function ProduceView({
             </div>
           </div>
 
+          {allAvailablePos.length > 0 && (
+            <div className="space-y-4">
+              <label className="text-base font-bold uppercase tracking-widest opacity-80">3. Chọn Lệnh PO (Tiến độ)</label>
+              <SearchableSelect 
+                options={allAvailablePos.map(po => ({
+                  id: po.id,
+                  label: `${po.id.startsWith('REPAIR') ? '🛠️ [BÙ] ' : ''}${po.id} - ${getProcessValue(parts.find((p: any) => p.id === po.partId)?.name || po.partId, parts.find((p: any) => p.id === po.partId), selectedStage, sourceLocation)} (${sourceLocation === 'IN' ? po.producedQuantity : po.exportedQuantity || 0}/${po.targetQuantity})`
+                }))}
+                value={selectedPoId}
+                onChange={handlePoChange}
+                placeholder="Tìm Lệnh PO..."
+              />
+            </div>
+          )}
+
           <div className="space-y-4">
-            <label className="text-base font-bold uppercase tracking-widest opacity-80">3. Chọn mã linh kiện</label>
+            <label className="text-sm font-bold uppercase tracking-widest opacity-50">4. Chọn mã linh kiện</label>
             <SearchableSelect 
               options={filteredParts.map((p: any) => ({ 
                 id: p.id, 
                 label: `${getProcessValue(p.id, p, selectedStage, sourceLocation)} - ${getProcessValue(p.name, p, selectedStage, sourceLocation)}` 
               }))}
               value={selectedPart}
-              onChange={setSelectedPart}
+              onChange={handlePartChange}
               placeholder="Tìm mã linh kiện..."
             />
           </div>
-
-          {availablePos.length > 0 && (
-            <div className="space-y-4">
-              <label className="text-sm font-bold uppercase tracking-widest opacity-50">Chọn Lệnh PO (Tiến độ)</label>
-              <select 
-                value={selectedPoId}
-                onChange={(e) => setSelectedPoId(e.target.value)}
-                className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none bg-white cursor-pointer"
-              >
-                {availablePos.map(po => (
-                  <option key={po.id} value={po.id}>
-                    {po.id.startsWith('REPAIR') ? '🛠️ [BÙ] ' : ''}{po.id} ({sourceLocation === 'IN' ? po.producedQuantity : po.exportedQuantity || 0}/{po.targetQuantity})
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
 
           {sourceLocation === 'OUT' && selectedStage !== 'PAINTING' && (
             <div className="space-y-4">
@@ -2916,33 +2938,49 @@ function WeldingInboundView({ parts, onManualInbound, setDefectModal }: any) {
   const selectedStage = 'WELDING';
   const targetLocation = 'OUT';
 
-  useEffect(() => {
-    if (parts.length > 0 && !manualPart) {
-      // For Welding OUT, Level 1 is result, but exclude parts skipping welding
-      const weldingParts = parts.filter((p: any) => p.level === 1 && !p.skipWelding);
-      if (weldingParts.length > 0) setManualPart(weldingParts[0].id);
-    }
-  }, [parts]);
+  const allAvailablePos = useMemo(() => {
+    return storageService.getProductionOrders().filter(
+      p => p.stageId === selectedStage && p.status !== 'COMPLETED'
+    );
+  }, [selectedStage, storageService.getProductionOrders()]);
 
-  const filteredParts = parts.filter((p: any) => p.level === 1 && !p.skipWelding);
+  const filteredParts = parts.filter((p: any) => {
+    if (selectedPoId) {
+      const selectedPo = allAvailablePos.find(po => po.id === selectedPoId);
+      if (selectedPo && p.id !== selectedPo.partId) return false;
+    } else {
+      const hasAvailablePo = allAvailablePos.some(po => po.partId === p.id);
+      if (!hasAvailablePo) return false;
+    }
+    return p.level === 1 && !p.skipWelding;
+  });
+
+  const availablePos = allAvailablePos.filter(p => p.partId === manualPart);
+
+  const handlePartChange = (partId: string) => {
+    setManualPart(partId);
+    const pos = allAvailablePos.filter(p => p.partId === partId);
+    setSelectedPoId(pos.length > 0 ? pos[0].id : "");
+  };
+
+  const handlePoChange = (poId: string) => {
+    setSelectedPoId(poId);
+    if (poId) {
+      const po = allAvailablePos.find(p => p.id === poId);
+      if (po && po.partId !== manualPart) {
+        setManualPart(po.partId);
+      }
+    }
+  };
 
   useEffect(() => {
     if (filteredParts.length > 0 && !filteredParts.find((p: any) => p.id === manualPart)) {
-      setManualPart(filteredParts[0].id);
+      const firstPartId = filteredParts[0].id;
+      setManualPart(firstPartId);
+      const pos = allAvailablePos.filter(p => p.partId === firstPartId);
+      setSelectedPoId(pos.length > 0 ? pos[0].id : "");
     }
-  }, [filteredParts, manualPart]);
-
-  const availablePos = storageService.getProductionOrders().filter(
-    p => p.partId === manualPart && p.stageId === selectedStage && p.status !== 'COMPLETED'
-  );
-
-  useEffect(() => {
-    if (availablePos.length > 0) {
-      setSelectedPoId(availablePos[0].id);
-    } else {
-      setSelectedPoId("");
-    }
-  }, [manualPart, availablePos.length]);
+  }, [filteredParts, manualPart, allAvailablePos]);
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -3009,6 +3047,21 @@ function WeldingInboundView({ parts, onManualInbound, setDefectModal }: any) {
             </div>
           </div>
 
+          {allAvailablePos.length > 0 && (
+            <div className="space-y-4">
+              <label className="text-sm font-bold uppercase tracking-widest opacity-50">Chọn Lệnh PO (Tiến độ)</label>
+              <SearchableSelect 
+                options={allAvailablePos.map(po => ({
+                  id: po.id,
+                  label: `${po.id.startsWith('REPAIR') ? '🛠️ [BÙ] ' : ''}${po.id} - ${getProcessValue(parts.find((p: any) => p.id === po.partId)?.name || po.partId, parts.find((p: any) => p.id === po.partId), selectedStage, targetLocation)} (${po.producedQuantity}/${po.targetQuantity})`
+                }))}
+                value={selectedPoId}
+                onChange={handlePoChange}
+                placeholder="Tìm Lệnh PO..."
+              />
+            </div>
+          )}
+
           <div className="space-y-4">
             <label className="text-sm font-bold uppercase tracking-widest opacity-50">Chọn mã thành phẩm:</label>
             <SearchableSelect 
@@ -3017,27 +3070,10 @@ function WeldingInboundView({ parts, onManualInbound, setDefectModal }: any) {
                 label: `${getProcessValue(p.id, p, selectedStage, targetLocation)} - ${getProcessValue(p.name, p, selectedStage, targetLocation)}` 
               }))}
               value={manualPart}
-              onChange={setManualPart}
+              onChange={handlePartChange}
               placeholder="Tìm kiếm..."
             />
           </div>
-
-          {targetLocation === 'OUT' && availablePos.length > 0 && (
-            <div className="space-y-4">
-              <label className="text-sm font-bold uppercase tracking-widest opacity-50">Chọn Lệnh PO (Tiến độ)</label>
-              <select 
-                value={selectedPoId}
-                onChange={(e) => setSelectedPoId(e.target.value)}
-                className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none bg-white cursor-pointer"
-              >
-                {availablePos.map(po => (
-                  <option key={po.id} value={po.id}>
-                    {po.id.startsWith('REPAIR') ? '🛠️ [BÙ] ' : ''}{po.id} ({po.producedQuantity}/{po.targetQuantity})
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
 
           <div className="space-y-4">
             <div className="flex justify-between items-center">
@@ -3185,35 +3221,51 @@ function LaserInboundView({ parts, onManualInbound, setDefectModal }: any) {
 
   const selectedStage = 'LASER';
 
-  useEffect(() => {
-    if (parts.length > 0 && !manualPart) {
-      const laserParts = parts.filter((p: any) => targetLocation === 'IN' ? p.level === 3 : p.level === 2);
-      if (laserParts.length > 0) setManualPart(laserParts[0].id);
-    }
-  }, [parts, targetLocation]);
+  const allAvailablePos = useMemo(() => {
+    return storageService.getProductionOrders().filter(
+      p => p.stageId === selectedStage && p.status !== 'COMPLETED'
+    );
+  }, [selectedStage, storageService.getProductionOrders()]);
 
   const filteredParts = parts.filter((p: any) => {
+    if (selectedPoId && targetLocation === 'OUT') {
+      const selectedPo = allAvailablePos.find(po => po.id === selectedPoId);
+      if (selectedPo && p.id !== selectedPo.partId) return false;
+    } else if (targetLocation === 'OUT') {
+      const hasAvailablePo = allAvailablePos.some(po => po.partId === p.id);
+      if (!hasAvailablePo) return false;
+    }
+    
     if (targetLocation === 'IN') return p.level === 3;
     return p.level === 2;
   });
 
+  const availablePos = allAvailablePos.filter(p => p.partId === manualPart);
+
+  const handlePartChange = (partId: string) => {
+    setManualPart(partId);
+    const pos = allAvailablePos.filter(p => p.partId === partId);
+    setSelectedPoId(pos.length > 0 ? pos[0].id : "");
+  };
+
+  const handlePoChange = (poId: string) => {
+    setSelectedPoId(poId);
+    if (poId && targetLocation === 'OUT') {
+      const po = allAvailablePos.find(p => p.id === poId);
+      if (po && po.partId !== manualPart) {
+        setManualPart(po.partId);
+      }
+    }
+  };
+
   useEffect(() => {
     if (filteredParts.length > 0 && !filteredParts.find((p: any) => p.id === manualPart)) {
-      setManualPart(filteredParts[0].id);
+      const firstPartId = filteredParts[0].id;
+      setManualPart(firstPartId);
+      const pos = allAvailablePos.filter(p => p.partId === firstPartId);
+      setSelectedPoId(pos.length > 0 ? pos[0].id : "");
     }
-  }, [filteredParts, manualPart]);
-
-  const availablePos = storageService.getProductionOrders().filter(
-    p => p.partId === manualPart && p.stageId === selectedStage && p.status !== 'COMPLETED'
-  );
-
-  useEffect(() => {
-    if (availablePos.length > 0) {
-      setSelectedPoId(availablePos[0].id);
-    } else {
-      setSelectedPoId("");
-    }
-  }, [manualPart, availablePos.length]);
+  }, [filteredParts, manualPart, allAvailablePos]);
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -3297,6 +3349,21 @@ function LaserInboundView({ parts, onManualInbound, setDefectModal }: any) {
             </div>
           </div>
 
+          {targetLocation === 'OUT' && allAvailablePos.length > 0 && (
+            <div className="space-y-4">
+              <label className="text-sm font-bold uppercase tracking-widest opacity-50">Chọn Lệnh PO (Tiến độ)</label>
+              <SearchableSelect 
+                options={allAvailablePos.map(po => ({
+                  id: po.id,
+                  label: `${po.id.startsWith('REPAIR') ? '🛠️ [BÙ] ' : ''}${po.id} - ${getProcessValue(parts.find((p: any) => p.id === po.partId)?.name || po.partId, parts.find((p: any) => p.id === po.partId), selectedStage, targetLocation)} (${po.producedQuantity}/${po.targetQuantity})`
+                }))}
+                value={selectedPoId}
+                onChange={handlePoChange}
+                placeholder="Tìm Lệnh PO..."
+              />
+            </div>
+          )}
+
           <div className="space-y-4">
             <label className="text-sm font-bold uppercase tracking-widest opacity-50">Chọn {targetLocation === 'IN' ? 'mã tôn' : 'mã linh kiện'}:</label>
             <SearchableSelect 
@@ -3305,27 +3372,10 @@ function LaserInboundView({ parts, onManualInbound, setDefectModal }: any) {
                 label: `${getProcessValue(p.id, p, selectedStage, targetLocation)} - ${getProcessValue(p.name, p, selectedStage, targetLocation)}` 
               }))}
               value={manualPart}
-              onChange={setManualPart}
+              onChange={handlePartChange}
               placeholder="Tìm kiếm..."
             />
           </div>
-
-          {targetLocation === 'OUT' && availablePos.length > 0 && (
-            <div className="space-y-4">
-              <label className="text-sm font-bold uppercase tracking-widest opacity-50">Chọn Lệnh PO (Tiến độ)</label>
-              <select 
-                value={selectedPoId}
-                onChange={(e) => setSelectedPoId(e.target.value)}
-                className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none bg-white cursor-pointer"
-              >
-                {availablePos.map(po => (
-                  <option key={po.id} value={po.id}>
-                    {po.id.startsWith('REPAIR') ? '🛠️ [BÙ] ' : ''}{po.id} ({po.producedQuantity}/{po.targetQuantity})
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
 
           <div className="space-y-4">
             <div className="flex justify-between items-center">
@@ -3492,7 +3542,21 @@ function ManualInboundView({ parts, onManualInbound, setDefectModal }: any) {
     }
   };
 
+  const allAvailablePos = useMemo(() => {
+    return storageService.getProductionOrders().filter(
+      p => p.stageId === selectedStage && p.status !== 'COMPLETED'
+    );
+  }, [selectedStage, storageService.getProductionOrders()]);
+
   const filteredParts = parts.filter((p: any) => {
+    if (selectedPoId && targetLocation === 'OUT') {
+      const selectedPo = allAvailablePos.find(po => po.id === selectedPoId);
+      if (selectedPo && p.id !== selectedPo.partId) return false;
+    } else if (targetLocation === 'OUT') {
+      const hasAvailablePo = allAvailablePos.some(po => po.partId === p.id);
+      if (!hasAvailablePo) return false;
+    }
+
     if (selectedStage === 'LASER') {
       if (targetLocation === 'IN') return p.level === 3;
       if (targetLocation === 'OUT') return p.level === 2;
@@ -3509,23 +3573,32 @@ function ManualInboundView({ parts, onManualInbound, setDefectModal }: any) {
     return true;
   });
 
+  const availablePos = allAvailablePos.filter(p => p.partId === manualPart);
+
+  const handlePartChange = (partId: string) => {
+    setManualPart(partId);
+    const pos = allAvailablePos.filter(p => p.partId === partId);
+    setSelectedPoId(pos.length > 0 ? pos[0].id : "");
+  };
+
+  const handlePoChange = (poId: string) => {
+    setSelectedPoId(poId);
+    if (poId && targetLocation === 'OUT') {
+      const po = allAvailablePos.find(p => p.id === poId);
+      if (po && po.partId !== manualPart) {
+        setManualPart(po.partId);
+      }
+    }
+  };
+
   useEffect(() => {
     if (filteredParts.length > 0 && !filteredParts.find((p: any) => p.id === manualPart)) {
-      setManualPart(filteredParts[0].id);
+      const firstPartId = filteredParts[0].id;
+      setManualPart(firstPartId);
+      const pos = allAvailablePos.filter(p => p.partId === firstPartId);
+      setSelectedPoId(pos.length > 0 ? pos[0].id : "");
     }
-  }, [selectedStage, filteredParts, manualPart]);
-
-  const availablePos = storageService.getProductionOrders().filter(
-    p => p.partId === manualPart && p.stageId === selectedStage && p.status !== 'COMPLETED'
-  );
-
-  useEffect(() => {
-    if (availablePos.length > 0) {
-      setSelectedPoId(availablePos[0].id);
-    } else {
-      setSelectedPoId("");
-    }
-  }, [manualPart, selectedStage, availablePos.length]);
+  }, [selectedStage, filteredParts, manualPart, allAvailablePos]);
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -3649,6 +3722,21 @@ function ManualInboundView({ parts, onManualInbound, setDefectModal }: any) {
             </div>
           </div>
 
+          {allAvailablePos.length > 0 && (
+            <div className="space-y-4">
+              <label className="text-sm font-bold uppercase tracking-widest opacity-50">Chọn Lệnh PO (Tiến độ)</label>
+              <SearchableSelect 
+                options={allAvailablePos.map(po => ({
+                  id: po.id,
+                  label: `${po.id.startsWith('REPAIR') ? '🛠️ [BÙ] ' : ''}${po.id} - ${getProcessValue(parts.find((p: any) => p.id === po.partId)?.name || po.partId, parts.find((p: any) => p.id === po.partId), selectedStage, targetLocation)} (${po.producedQuantity}/${po.targetQuantity})`
+                }))}
+                value={selectedPoId}
+                onChange={handlePoChange}
+                placeholder="Tìm Lệnh PO..."
+              />
+            </div>
+          )}
+
           <div className="space-y-4">
             <label className="text-sm font-bold uppercase tracking-widest opacity-50">Chọn linh kiện:</label>
             <SearchableSelect 
@@ -3657,27 +3745,10 @@ function ManualInboundView({ parts, onManualInbound, setDefectModal }: any) {
                 label: `${getProcessValue(p.id, p, selectedStage, targetLocation)} - ${getProcessValue(p.name, p, selectedStage, targetLocation)}` 
               }))}
               value={manualPart}
-              onChange={setManualPart}
+              onChange={handlePartChange}
               placeholder="Tìm mã linh kiện..."
             />
           </div>
-
-          {availablePos.length > 0 && (
-            <div className="space-y-4">
-              <label className="text-sm font-bold uppercase tracking-widest opacity-50">Chọn Lệnh PO (Tiến độ)</label>
-              <select 
-                value={selectedPoId}
-                onChange={(e) => setSelectedPoId(e.target.value)}
-                className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none bg-white cursor-pointer"
-              >
-                {availablePos.map(po => (
-                  <option key={po.id} value={po.id}>
-                    {po.id.startsWith('REPAIR') ? '🛠️ [BÙ] ' : ''}{po.id} ({po.producedQuantity}/{po.targetQuantity})
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
 
           <div className="space-y-4">
             <div className="flex justify-between items-center">
@@ -5071,18 +5142,19 @@ function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () 
               nestingId: String(row['NestingID'] || row['Mã tổ hợp'] || row['Mã bàn'] || row['ID Tổ hợp'] || row['Mã tấm'] || row['Mã phôi'] || row['Mã bàn (Nesting ID)'] || '').trim(),
               partId: finalPartId,
               qtyPerSheet: parseFloat(row['QtyPerSheet'] || row['Số lượng linh kiện/tấm'] || row['Số lượng/tấm'] || row['SL/Tấm'] || row['Số lượng'] || row['SL'] || row['Số lượng / Tấm'] || '0'),
-              secondsPerUnit: parseFloat(row['Seconds'] || row['Giây'] || row['Thời gian'] || row['Định mức'] || row['Thời gian cắt/LK'] || row['Thời gian / LK (Giây)'] || '0')
+              secondsPerSheet: parseFloat(row['Tổng thời gian'] || row['Thời gian 1 bàn'] || row['Thời gian 1 tấm'] || row['Giây'] || row['Thời gian'] || row['Định mức'] || row['Thời gian cắt (Giây)'] || '0')
             };
           }).filter(n => n.nestingId && n.partId && n.qtyPerSheet > 0);
 
           if (rawImported.length === 0) {
-            alert('Không tìm thấy dữ liệu hợp lệ. Cần các cột: Mã bàn (Nesting ID), Linh kiện kết hợp, Số lượng / Tấm, Thời gian / LK (Giây)');
+            alert('Không tìm thấy dữ liệu hợp lệ. Cần các cột: Mã bàn (Nesting ID), Linh kiện kết hợp, Số lượng / Tấm, Tổng thời gian cắt 1 bàn (Giây)');
           } else {
-            // Group by NestingID to calculate total seconds per sheet
+            // Group by NestingID to find the max/defined seconds per sheet (since it could be written on only one row or duplicated)
             const nestingTotals = new Map<string, number>();
             rawImported.forEach(row => {
-              const current = nestingTotals.get(row.nestingId) || 0;
-              nestingTotals.set(row.nestingId, current + (row.secondsPerUnit * row.qtyPerSheet));
+              if (row.secondsPerSheet > 0) {
+                nestingTotals.set(row.nestingId, row.secondsPerSheet);
+              }
             });
 
             // Final mapping to LaserNesting type
@@ -5090,8 +5162,8 @@ function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () 
               nestingId: row.nestingId,
               partId: row.partId,
               qtyPerSheet: row.qtyPerSheet,
-              secondsPerUnit: row.secondsPerUnit,
-              secondsPerSheet: nestingTotals.get(row.nestingId) || 0
+              secondsPerUnit: 0, // No longer used for total time calculation
+              secondsPerSheet: nestingTotals.get(row.nestingId) || row.secondsPerSheet || 0
             }));
 
             storageService.saveLaserNesting(imported);
@@ -5220,8 +5292,7 @@ function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () 
                   <th className="p-8 pl-12 text-sm font-mono uppercase opacity-80">Mã bàn (Nesting ID)</th>
                   <th className="p-8 text-sm font-mono uppercase opacity-80">Linh kiện kết hợp</th>
                   <th className="p-8 text-sm font-mono uppercase opacity-80 text-center">Số lượng / Tấm</th>
-                  <th className="p-8 text-sm font-mono uppercase opacity-80 text-center">Thời gian / LK (Giây)</th>
-                  <th className="p-8 text-sm font-mono uppercase opacity-80 text-center bg-orange-50/50">Tổng s/Tấm</th>
+                  <th className="p-8 text-sm font-mono uppercase opacity-80 text-center bg-orange-50/50">Thời gian 1 bàn (Giây)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -5246,15 +5317,6 @@ function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () 
                           {items.map((it, i) => (
                             <span key={i} className="text-sm font-bold">
                               x{it.qtyPerSheet}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="p-8 text-center text-gray-500 font-mono">
-                        <div className="flex flex-col gap-1 items-center">
-                          {items.map((it, i) => (
-                            <span key={i} className="text-sm">
-                              {it.secondsPerUnit}s
                             </span>
                           ))}
                         </div>

@@ -1242,11 +1242,19 @@ export const storageService = {
           outChildPOs.push(p);
         });
         nestedGroupMap.forEach((groupPOs, nestingId) => {
-          let totalDur = 0;
+          let maxPlates = 0;
+          let secondsPerSheet = 0;
+          // Calculate max required plates for this nesting group
           groupPOs.forEach(p => {
             const nest = laserNesting.find(ln => ln.partId === p.partId && ln.nestingId === nestingId);
-            if (nest) totalDur += p.targetQuantity * nest.secondsPerUnit * 1000;
+            if (nest && nest.qtyPerSheet > 0) {
+              const plates = Math.ceil(p.targetQuantity / nest.qtyPerSheet);
+              if (plates > maxPlates) maxPlates = plates;
+              if (nest.secondsPerSheet) secondsPerSheet = nest.secondsPerSheet;
+            }
           });
+          
+          const totalDur = maxPlates * secondsPerSheet * 1000;
           const adjustedDur = totalDur / laserWorkers;
           const start = this.getNextWorkingTime(fFreeLaser, 'LASER', shiftConfigs);
           const end = this.calculateEndTime(start, adjustedDur, 'LASER', shiftConfigs);
