@@ -33,11 +33,12 @@ import {
   Clock,
   Save,
   Plus,
-  Users
+  Users,
+  FileSpreadsheet
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
-import { format } from 'date-fns';
+import { format, startOfDay } from 'date-fns';
 import { 
   BarChart, 
   Bar, 
@@ -1897,6 +1898,142 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
   );
 }
 
+const exportDailyProductionReport = (transactions: Transaction[], parts: Part[]) => {
+  const norms = storageService.getNorms();
+  const pos = storageService.getProductionOrders();
+  
+  const now = new Date();
+  const startOfToday = startOfDay(now).getTime();
+
+  // Filter transactions for STAGE_OUT in the current day
+  const todayTransactions = transactions.filter(t => 
+    t.type === 'STAGE_OUT' && t.timestamp >= startOfToday
+  );
+
+  if (todayTransactions.length === 0) {
+    alert('Không có dữ liệu sản xuất xuất kho trong ngày hôm nay.');
+    return;
+  }
+
+  // Time slot definitions
+  const TIME_SLOTS = [
+    { label: '7h-8h', start: 7, end: 8 },
+    { label: '8h-10h', start: 8, end: 10 },
+    { label: '10h-12h', start: 10, end: 12 },
+    { label: '13h-15h', start: 13, end: 15 },
+    { label: '15h-17h', start: 15, end: 17 },
+    { label: '17h-19h', start: 17, end: 19 },
+    { label: '19h-20h', start: 19, end: 20 },
+  ];
+
+  const getSlot = (timestamp: number) => {
+    const d = new Date(timestamp);
+    const h = d.getHours();
+    for (const slot of TIME_SLOTS) {
+      if (h >= slot.start && h < slot.end) return slot.label;
+    }
+    return 'Khác';
+  };
+
+  // Group by Part and Stage
+  const processData = new Map<string, {
+    partId: string;
+    stageId: StageId;
+    partName: string;
+    targetQty: number;
+    producedQty: number;
+    norms: number;
+    slots: Record<string, number>;
+  }>();
+
+  todayTransactions.forEach(t => {
+    const key = `${t.partId}_${t.stageId}`;
+    if (!processData.has(key)) {
+      const part = parts.find(p => p.id === t.partId);
+      const stageName = STAGES.find(s => s.id === t.stageId)?.name || t.stageId;
+      
+      const partPos = pos.filter(po => po.partId === t.partId && po.status === 'IN_PROGRESS' && po.stageId === t.stageId);
+      const targetQty = partPos.reduce((sum, po) => sum + po.targetQuantity, 0);
+
+      const norm = norms.find(n => n.partId === t.partId && n.stageId === t.stageId)?.secondsPerUnit || 0;
+
+      processData.set(key, {
+        partId: t.partId,
+        stageId: t.stageId,
+        partName: `${part?.name || t.partId} (${stageName})`,
+        targetQty: targetQty || 0,
+        producedQty: 0,
+        norms: norm,
+        slots: {}
+      });
+    }
+
+    const data = processData.get(key)!;
+    data.producedQty += t.quantity;
+    
+    const slot = getSlot(t.timestamp);
+    data.slots[slot] = (data.slots[slot] || 0) + t.quantity;
+  });
+
+  const rows = Array.from(processData.values()).map(data => {
+    const remaining = data.targetQty > 0 ? Math.max(0, data.targetQty - data.producedQty) : 0;
+    const completionRate = data.targetQty > 0 ? (data.producedQty / data.targetQty) : 1;
+    
+    const row: any = {
+      'Model': data.partName,
+      'KHSX Ngày': data.targetQty || data.producedQty,
+      'Thực Hiện': data.producedQty,
+      'Còn Lại': remaining,
+      'Tỉ Lệ Hoàn Thành': `${(completionRate * 100).toFixed(1)}%`,
+      'HSQĐ': data.norms > 0 ? data.norms : '',
+      'KHSX sau QĐ': data.targetQty,
+    };
+
+    let totalSlots = 0;
+    TIME_SLOTS.forEach(slot => {
+      row[slot.label] = data.slots[slot.label] || 0;
+      totalSlots += row[slot.label];
+    });
+
+    const other = data.slots['Khác'] || 0;
+    if (other > 0) {
+      row['Khác'] = other;
+      totalSlots += other;
+    }
+
+    row['Tổng sản lượng'] = data.producedQty;
+    row['Ghi chú'] = '';
+
+    return row;
+  });
+
+  const totalRow: any = {
+    'Model': 'TỔNG CỘNG',
+    'KHSX Ngày': rows.reduce((s, r) => s + (r['KHSX Ngày'] || 0), 0),
+    'Thực Hiện': rows.reduce((s, r) => s + (r['Thực Hiện'] || 0), 0),
+    'Còn Lại': rows.reduce((s, r) => s + (r['Còn Lại'] || 0), 0),
+    'Tỉ Lệ Hoàn Thành': '',
+    'HSQĐ': '',
+    'KHSX sau QĐ': rows.reduce((s, r) => s + (r['KHSX Ngày'] || 0), 0),
+  };
+  
+  TIME_SLOTS.forEach(slot => {
+    totalRow[slot.label] = rows.reduce((s, r) => s + (r[slot.label] || 0), 0);
+  });
+  if (rows.some(r => r['Khác'] !== undefined)) {
+    totalRow['Khác'] = rows.reduce((s, r) => s + (r['Khác'] || 0), 0);
+  }
+  totalRow['Tổng sản lượng'] = totalRow['Thực Hiện'];
+  totalRow['Ghi chú'] = '';
+
+  rows.push(totalRow);
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "BaoCaoNgay");
+  XLSX.writeFile(wb, `BaoCao_SanLuong_${format(new Date(), 'yyyyMMdd')}.xlsx`);
+};
+
 function DashboardView({ inventory, parts, transactions, refreshData, setDefectModal }: DashboardProps & { setDefectModal: any }) {
   const [selectedStageDetail, setSelectedStageDetail] = useState<StageId | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -1965,6 +2102,17 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
       exit={{ opacity: 0, y: -20 }}
       className="space-y-8"
     >
+      <div className="flex justify-between items-center mb-6">
+        <h3 className="text-xl font-bold uppercase text-gray-800">Tổng quan Sản xuất</h3>
+        <button
+          onClick={() => exportDailyProductionReport(transactions, parts)}
+          className="flex items-center gap-2 px-5 py-3 bg-green-600 text-white rounded-xl shadow-lg hover:bg-green-700 transition-colors font-bold uppercase tracking-wider"
+        >
+          <FileSpreadsheet size={20} />
+          Xuất báo cáo SX ngày
+        </button>
+      </div>
+
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {stageSummaries.map((summary, idx) => {
