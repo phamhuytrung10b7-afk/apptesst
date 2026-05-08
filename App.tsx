@@ -4314,28 +4314,72 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
 
         console.log('Raw BOM data:', data);
 
-        // Expected columns: ParentID (Level 3), ChildID (Level 2), ComponentWeight, ScrapWeight
-        const importedBOM: BOMDefinition[] = data.map(row => {
-          const parentId = String(row['ParentID'] || row['Mã cha'] || row['Level 3 ID'] || '').trim();
-          const childId = String(row['ChildID'] || row['Mã con'] || row['Level 2 ID'] || '').trim();
-          const compWeight = parseFloat(row['ComponentWeight'] || row['Khối lượng linh kiện'] || row['PartWeight'] || '0');
-          const scrapWeight = parseFloat(row['ScrapWeight'] || row['Khối lượng phế'] || row['Scrap'] || '0');
+        const bomMap = new Map<string, BOMDefinition>();
+        
+        data.forEach(row => {
+          let childId = '';
+          let parentId = '';
+          let weightVal: any = 0;
+
+          Object.keys(row).forEach(key => {
+            const k = key.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '').replace(/\n/g, '');
+            if (k.includes('malinhkiencon') || k === 'malinhkien' || k.includes('childid') || k.includes('macon')) {
+               childId = row[key];
+            } else if (k.includes('malinhkiencha') || k.includes('malinhkienton') || k.includes('parentid') || k.includes('macha')) {
+               parentId = row[key];
+            } else if (k.includes('khoiluong') || k.includes('componentweight') || k.includes('kg') || k.includes('weight')) {
+               weightVal = row[key];
+            }
+          });
+
+          // Fallbacks for direct access just in case
+          if (!childId) childId = row['Mã linh kiện con'] || row['Mã linh kiện'] || row['ChildID'] || row['Mã con'];
+          if (!parentId) parentId = row['Mã linh kiện cha'] || row['Mã linh kiện tôn'] || row['ParentID'] || row['Mã cha'];
+          if (!weightVal) weightVal = row['Khối lượng (Kg)'] ?? row['Khối lượng'] ?? row['ComponentWeight'] ?? row['Khối lượng linh kiện'];
+
+          childId = String(childId || '').trim();
+          parentId = String(parentId || '').trim();
           
-          return {
-            parentPartId: parentId,
-            childPartId: childId,
-            componentWeight: compWeight,
-            scrapWeight: scrapWeight
-          };
-        }).filter(b => b.parentPartId && b.childPartId && (b.componentWeight > 0 || b.scrapWeight > 0));
+          if (!childId) return;
+
+          let weight = 0;
+          if (typeof weightVal === 'string') {
+            const clean = weightVal.replace(/[()]/g, '').replace(/,/g, '.');
+            weight = parseFloat(clean) || 0;
+          } else if (typeof weightVal === 'number') {
+            weight = Math.abs(weightVal);
+          }
+          
+          if (!bomMap.has(childId)) {
+            bomMap.set(childId, {
+              parentPartId: '',
+              childPartId: childId,
+              componentWeight: 0,
+              scrapWeight: 0
+            });
+          }
+
+          const def = bomMap.get(childId)!;
+          
+          const upperParentId = parentId.toUpperCase();
+          if (upperParentId.includes('PL-') || upperParentId.includes('PHẾ') || upperParentId.includes('P-')) {
+            def.scrapWeight += weight;
+          } else {
+            if (parentId && !def.parentPartId) def.parentPartId = parentId; // Keep the first valid parent ID
+            def.componentWeight += weight;
+          }
+        });
+
+        const importedBOM = Array.from(bomMap.values()).filter(b => b.childPartId && (b.componentWeight > 0 || b.scrapWeight > 0));
 
         if (importedBOM.length === 0) {
-          alert('Không tìm thấy dữ liệu định mức hợp lệ. Vui lòng kiểm tra tiêu đề cột (ParentID, ChildID, ComponentWeight, ScrapWeight).');
+          alert('Không tìm thấy dữ liệu định mức hợp lệ. Vui lòng kiểm tra tiêu đề cột (Mã linh kiện, Mã linh kiện tôn, Khối lượng (Kg)).\n\nDữ liệu thô dòng 1:\n' + JSON.stringify(data[0] || {}));
           setIsImportingBOM(false);
           return;
         }
 
         storageService.saveBOM(importedBOM);
+        onPartsChange();
         alert(`Đã nhập thành công ${importedBOM.length} định mức sản xuất!`);
       } catch (err) {
         console.error('BOM Import Error:', err);
@@ -4727,6 +4771,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                           alert('Không tìm thấy dữ liệu hợp lệ. Cần các cột: ResultID, IngredientID, Quantity');
                         } else {
                           storageService.saveBOMV2(imported);
+                          onPartsChange();
                           alert(`Đã nhập thành công ${imported.length} định mức Hàn!`);
                         }
                       } catch (err) {
@@ -4817,6 +4862,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                           alert('Không tìm thấy dữ liệu hợp lệ. Cần các cột: ModelID, PartID, Quantity');
                         } else {
                           storageService.saveModelBOM(imported);
+                          onPartsChange();
                           alert(`Đã nhập thành công ${imported.length} định mức Model!`);
                         }
                       } catch (err) {
@@ -5190,7 +5236,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
             <div className="p-8 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
               <div className="flex flex-col">
                 <h2 className="font-bold text-2xl tracking-tight">Định mức sản xuất (KG)</h2>
-                <p className="text-xs text-gray-400">Cột yêu cầu: ParentID, ChildID, ComponentWeight, ScrapWeight</p>
+                <p className="text-xs text-gray-400">Cột yêu cầu: Mã linh kiện, Mã linh kiện tôn, Khối lượng (Kg)</p>
               </div>
               <label className={cn(
                 "flex items-center gap-3 px-6 py-3 bg-blue-600 text-white rounded-lg text-sm font-bold uppercase tracking-widest cursor-pointer hover:bg-blue-700 transition-all",
@@ -5211,8 +5257,8 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-gray-50/50 border-b border-gray-100">
-                    <th className="p-6 pl-10 text-xs font-mono uppercase opacity-50">Mã Cha (L3)</th>
-                    <th className="p-6 text-xs font-mono uppercase opacity-50">Mã Con (L2)</th>
+                    <th className="p-6 pl-10 text-xs font-mono uppercase opacity-50">Mã linh kiện tôn</th>
+                    <th className="p-6 text-xs font-mono uppercase opacity-50">Mã linh kiện</th>
                     <th className="p-6 text-xs font-mono uppercase opacity-50">KL Linh kiện (kg)</th>
                     <th className="p-6 text-xs font-mono uppercase opacity-50">KL Phế (kg)</th>
                     <th className="p-6 text-xs font-mono uppercase opacity-50">Tổng (kg)</th>
@@ -5224,8 +5270,8 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                     <tr key={idx} className="hover:bg-gray-50/30 transition-colors">
                       <td className="p-6 pl-10 font-mono text-base">{bom.parentPartId}</td>
                       <td className="p-6 font-mono text-base">{bom.childPartId}</td>
-                      <td className="p-6 font-mono text-base font-bold text-blue-600">{bom.componentWeight}</td>
-                      <td className="p-6 font-mono text-base font-bold text-orange-600">{bom.scrapWeight}</td>
+                      <td className="p-6 font-mono text-base font-bold text-blue-600">{bom.componentWeight.toFixed(4)}</td>
+                      <td className="p-6 font-mono text-base font-bold text-orange-600">{bom.scrapWeight.toFixed(4)}</td>
                       <td className="p-6 font-mono text-base font-bold">{(bom.componentWeight + bom.scrapWeight).toFixed(4)}</td>
                       <td className="p-6 pr-10 text-right">
                         <button 

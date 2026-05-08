@@ -1196,6 +1196,18 @@ export const storageService = {
 
     const laserNesting = this.getLaserNesting();
 
+    const existingPOs = pos.filter(p => ['PENDING', 'IN_PROGRESS'].includes(p.status) && p.expectedCompletionTime);
+    const getMaxExisting = (stageId: StageId) => {
+      const stagePOs = existingPOs.filter(p => p.stageId === stageId && p.expectedCompletionTime);
+      if (stagePOs.length === 0) return 0;
+      return Math.max(...stagePOs.map(p => p.expectedCompletionTime!));
+    };
+
+    const maxExistingLaserEnd = getMaxExisting('LASER');
+    const maxExistingBendingEnd = getMaxExisting('BENDING');
+    const maxExistingWeldingEnd = getMaxExisting('WELDING');
+    const maxExistingPaintingEnd = getMaxExisting('PAINTING');
+
     const runForwardPass = (globalStart: number) => {
       const outChildPOs: ProductionOrder[] = [];
       const partStageFinishTime = new Map<string, Map<StageId, number>>(); 
@@ -1212,7 +1224,7 @@ export const storageService = {
       };
 
       // 1. LASER
-      let fFreeLaser = globalStart;
+      let fFreeLaser = Math.max(globalStart, maxExistingLaserEnd);
       const laserConfig = shiftConfigs.find(c => c.stageId === 'LASER');
       const laserWorkers = laserConfig?.workerCount || 1;
       
@@ -1282,7 +1294,7 @@ export const storageService = {
       }
 
       // 2. BENDING
-      let fFreeBending = globalStart;
+      let fFreeBending = Math.max(globalStart, maxExistingBendingEnd);
       const bendConfig = shiftConfigs.find(c => c.stageId === 'BENDING');
       const bendWorkers = bendConfig?.workerCount || 1;
       bendingPOs.forEach(po => {
@@ -1300,7 +1312,7 @@ export const storageService = {
       });
 
       // 3. WELDING
-      let fFreeWelding = globalStart;
+      let fFreeWelding = Math.max(globalStart, maxExistingWeldingEnd);
       const weldConfig = shiftConfigs.find(c => c.stageId === 'WELDING');
       const weldWorkers = weldConfig?.workerCount || 1;
       weldingPOs.forEach(po => {
@@ -1330,7 +1342,7 @@ export const storageService = {
       });
 
       // 4. PAINTING
-      let fFreePainting = globalStart;
+      let fFreePainting = Math.max(globalStart, maxExistingPaintingEnd);
       const paintConfig = shiftConfigs.find(c => c.stageId === 'PAINTING');
       const paintWorkers = paintConfig?.workerCount || 1;
       paintingPOs.forEach(po => {
