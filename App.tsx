@@ -492,7 +492,7 @@ export default function App() {
                 })()}
                 <div className="flex justify-between items-center pt-1 border-t border-black">
                   <span className="uppercase text-[9px]">Hoàn thành thực tế:</span>
-                  <span className="font-mono font-black">{format(lastTransaction.timestamp, 'HH:mm:ss')}</span>
+                  <span className="font-mono font-black">{format(lastTransaction.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
                 </div>
               </div>
 
@@ -1830,7 +1830,7 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                   })()}
                   <div className="flex justify-between items-center pt-1 mt-1 border-t border-black">
                     <span className="uppercase text-[9px] text-black font-black">Hoàn thành thực tế:</span>
-                    <span className="font-mono font-black text-black">{format(selectedLabel.timestamp, 'HH:mm:ss')}</span>
+                    <span className="font-mono font-black text-black">{format(selectedLabel.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
                   </div>
                 </div>
 
@@ -3108,7 +3108,7 @@ function ProduceView({
                   })()}
                   <div className="flex justify-between items-center pt-1 border-t border-black mt-1 text-black">
                     <span className="uppercase font-black text-black text-[9px]">Hoàn thành thực tế:</span>
-                    <span className="font-mono font-black text-black">{format(lastTransaction.timestamp, 'HH:mm:ss')}</span>
+                    <span className="font-mono font-black text-black">{format(lastTransaction.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
                   </div>
                 </div>
 
