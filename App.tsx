@@ -448,7 +448,7 @@ export default function App() {
               </div>
 
               {/* PO Details Section (NEW) */}
-              <div className="w-full space-y-1 mb-4 text-[11px] font-black border-2 border-black p-2 rounded text-black">
+              <div className="mt-auto mb-0 w-full space-y-1 text-[11px] font-black border-2 border-black p-2 rounded text-black">
                 <div className="flex justify-between items-center">
                   <span className="uppercase">LOẠI PO:</span>
                   {(() => {
@@ -1786,7 +1786,7 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                 )}
 
                 {/* PO Details Section */}
-                <div className="w-full space-y-1 mb-6 text-[11px] font-black bg-transparent p-3 border-2 border-black rounded text-black">
+                <div className="mt-auto mb-0 w-full space-y-1 text-[11px] font-black bg-transparent p-3 border-2 border-black rounded text-black">
                   <div className="flex justify-between items-center">
                     <span className="uppercase text-black">LOẠI PO:</span>
                     {(() => {
@@ -3064,7 +3064,7 @@ function ProduceView({
                 </div>
 
                 {/* PO Details Section */}
-                <div className="w-full space-y-1 mb-6 text-[11px] font-black bg-transparent p-3 border-2 border-black rounded text-black">
+                <div className="mt-auto mb-0 w-full space-y-1 text-[11px] font-black bg-transparent p-3 border-2 border-black rounded text-black">
                   <div className="flex justify-between items-center text-black">
                     <span className="uppercase text-black">LOẠI PO:</span>
                     {(() => {
