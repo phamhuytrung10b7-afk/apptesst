@@ -397,13 +397,13 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <div className="w-full h-full bg-white text-black flex flex-col p-4 box-border">
-              <div className="w-full text-center pb-2">
-                <h1 className="font-black uppercase tracking-tight" style={{ fontSize: `${labelSettings.fontSize + 12}px` }}>PHIẾU ĐIỀU CHUYỂN</h1>
+            <div className="w-full h-full bg-white text-black flex flex-col p-2 box-border">
+              <div className="w-full text-center pb-1">
+                <h1 className="font-black uppercase tracking-tight" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>PHIẾU ĐIỀU CHUYỂN</h1>
               </div>
               <div className="flex-1 w-full border-2 border-black flex flex-col items-center p-2">
               {/* QR Code Section */}
-              <div className="mt-2 mb-4 border-2 border-black p-1">
+              <div className="mt-1 mb-2 border-2 border-black p-1">
                 <QRCodeSVG value={lastTransaction.qrData || ''} size={labelSettings.qrSize * 1.8} level="H" />
               </div>
 
@@ -3026,13 +3026,13 @@ function ProduceView({
                 </button>
               </div>
               
-              <div id="qr-label-display" className="w-[420px] bg-white p-6 flex flex-col box-border">
-                <div className="w-full text-center pb-4">
-                  <h1 className="font-black uppercase tracking-tight text-3xl text-black">PHIẾU ĐIỀU CHUYỂN</h1>
+              <div id="qr-label-display" className="w-[420px] bg-white p-4 flex flex-col box-border">
+                <div className="w-full text-center pb-2">
+                  <h1 className="font-black uppercase tracking-tight text-sm text-black">PHIẾU ĐIỀU CHUYỂN</h1>
                 </div>
                 <div className="w-full flex-1 border-2 border-black flex flex-col items-center p-4">
                 {/* QR Section */}
-                <div className="mt-2 mb-6 border-[3px] border-black p-1">
+                <div className="mt-1 mb-4 border-[3px] border-black p-1">
                   <QRCodeSVG value={lastTransaction.qrData || ''} size={240} level="H" />
                 </div>
 
