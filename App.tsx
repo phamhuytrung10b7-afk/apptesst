@@ -373,7 +373,7 @@ export default function App() {
                 </div>
                 <div className="flex flex-col items-center text-black">
                   <span className="text-[10px] font-black uppercase mb-1 text-black">Từ kho:</span>
-                  <span className="font-black uppercase text-center leading-none text-black" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
+                  <span className="font-black uppercase text-center leading-none text-black" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
                     {STAGES.find(s => s.id === lastTransaction.stageId)?.name} (NG)
                   </span>
                 </div>
@@ -428,7 +428,7 @@ export default function App() {
                 </div>
                 <div className="flex flex-col items-center">
                   <span className="text-[10px] font-black uppercase mb-1">Từ công đoạn:</span>
-                  <span className="font-black uppercase text-center" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
+                  <span className="font-black uppercase text-center" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
                     {STAGES.find(s => s.id === lastTransaction.stageId)?.name}
                   </span>
                 </div>
@@ -437,7 +437,7 @@ export default function App() {
               {/* Route / Destination */}
               <div className="w-full border-2 border-black rounded p-2 mb-3 text-center text-black">
                 <span className="text-[10px] font-black uppercase block mb-1">Đích tiếp theo:</span>
-                <div className="flex items-center justify-center gap-4 font-black italic" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
+                <div className="flex items-center justify-center gap-4 font-black italic" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
                   <span className="uppercase">{STAGES.find(s => s.id === lastTransaction.stageId)?.name}</span>
                   <span className="text-xl">→</span>
                   <span className="uppercase">
@@ -448,7 +448,7 @@ export default function App() {
               </div>
 
               {/* PO Details Section (NEW) */}
-              <div className="mt-auto mb-0 w-full space-y-1 text-[11px] font-black border-2 border-black p-2 rounded text-black">
+              <div className="mt-auto mb-2 w-full space-y-1 text-[11px] font-black border-2 border-black p-2 rounded text-black">
                 <div className="flex justify-between items-center">
                   <span className="uppercase">LOẠI PO:</span>
                   {(() => {
@@ -1786,7 +1786,7 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                 )}
 
                 {/* PO Details Section */}
-                <div className="mt-auto mb-0 w-full space-y-1 text-[11px] font-black bg-transparent p-3 border-2 border-black rounded text-black">
+                <div className="mt-auto mb-2 w-full space-y-1 text-[11px] font-black bg-transparent p-3 border-2 border-black rounded text-black">
                   <div className="flex justify-between items-center">
                     <span className="uppercase text-black">LOẠI PO:</span>
                     {(() => {
@@ -3064,7 +3064,7 @@ function ProduceView({
                 </div>
 
                 {/* PO Details Section */}
-                <div className="mt-auto mb-0 w-full space-y-1 text-[11px] font-black bg-transparent p-3 border-2 border-black rounded text-black">
+                <div className="mt-auto mb-2 w-full space-y-1 text-[11px] font-black bg-transparent p-3 border-2 border-black rounded text-black">
                   <div className="flex justify-between items-center text-black">
                     <span className="uppercase text-black">LOẠI PO:</span>
                     {(() => {
