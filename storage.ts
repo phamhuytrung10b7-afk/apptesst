@@ -1423,6 +1423,15 @@ export const storageService = {
     this.saveProductionOrders(filtered);
   },
 
+  updateSubPoQty(id: string, qty: number) {
+    const pos = this.getProductionOrders();
+    const poIndex = pos.findIndex(p => p.id === id);
+    if (poIndex !== -1) {
+      pos[poIndex].targetQuantity = qty;
+      this.saveProductionOrders(pos);
+    }
+  },
+
   resetAllData() {
     localStorage.removeItem(STORAGE_KEYS.INVENTORY);
     localStorage.removeItem(STORAGE_KEYS.TRANSACTIONS);

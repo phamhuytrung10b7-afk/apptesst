@@ -349,35 +349,35 @@ export default function App() {
               </div>
 
               {/* Part Name & ID */}
-              <div className="text-center w-full mb-3 relative z-10">
+              <div className="text-center w-full mb-3 relative z-10 text-black">
                 <h1 className="font-black uppercase leading-tight" style={{ fontSize: `${labelSettings.qrSize / 4.5}px` }}>
                   {parts.find(p => p.id === lastTransaction.partId)?.name || lastTransaction.partId}
                 </h1>
-                <p className="font-mono font-bold mt-1 opacity-70" style={{ fontSize: `${labelSettings.fontSize * 0.8}px` }}>
+                <p className="font-mono font-black mt-1 text-black" style={{ fontSize: `${labelSettings.fontSize * 0.8}px` }}>
                   Mã LK: {lastTransaction.partId}
                 </p>
               </div>
 
               {/* Quantity & Source Stage */}
-              <div className="grid grid-cols-2 w-full border-t-2 border-b-2 border-black py-4 mb-4 relative z-10">
+              <div className="grid grid-cols-2 w-full border-t-2 border-b-2 border-black py-4 mb-4 relative z-10 text-black">
                 <div className="flex flex-col items-center border-r-2 border-black">
-                  <span className="text-[10px] font-bold uppercase opacity-60 mb-1">Số lượng:</span>
-                  <span className="font-black" style={{ fontSize: `${labelSettings.fontSize + 16}px` }}>
+                  <span className="text-[10px] font-black uppercase mb-1 text-black">Số lượng:</span>
+                  <span className="font-black text-black" style={{ fontSize: `${labelSettings.fontSize + 16}px` }}>
                     {lastTransaction.quantity} {parts.find(p => p.id === lastTransaction.partId)?.unit}
                   </span>
                 </div>
-                <div className="flex flex-col items-center">
-                  <span className="text-[10px] font-bold uppercase opacity-60 mb-1">Từ kho:</span>
-                  <span className="font-black uppercase text-center leading-none" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
+                <div className="flex flex-col items-center text-black">
+                  <span className="text-[10px] font-black uppercase mb-1 text-black">Từ kho:</span>
+                  <span className="font-black uppercase text-center leading-none text-black" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
                     {STAGES.find(s => s.id === lastTransaction.stageId)?.name} (NG)
                   </span>
                 </div>
               </div>
 
               {/* Warnings */}
-              <div className="w-full border-2 border-black rounded-lg p-2 mb-3 text-center bg-gray-100/50">
-                <span className="text-sm font-black uppercase block">HÀNG KHÔNG ĐẠT (NG)</span>
-                <span className="text-[10px] font-bold block opacity-70">CẤM NHẬP KHO - CHỜ TIÊU HỦY</span>
+              <div className="w-full border-2 border-black rounded-lg p-2 mb-3 text-center bg-transparent text-black">
+                <span className="text-sm font-black uppercase block text-black">HÀNG KHÔNG ĐẠT (NG)</span>
+                <span className="text-[10px] font-black block text-black">CẤM NHẬP KHO - CHỜ TIÊU HỦY</span>
               </div>
 
               {/* Footer */}
@@ -403,21 +403,21 @@ export default function App() {
                 <h1 className="font-black uppercase leading-tight" style={{ fontSize: `${labelSettings.qrSize / 4.5}px` }}>
                   {getProcessValue(parts.find(p => p.id === lastTransaction.partId)?.name, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
                 </h1>
-                <p className="font-mono font-bold mt-1 opacity-70" style={{ fontSize: `${labelSettings.fontSize * 0.8}px` }}>
+                <p className="font-mono font-black mt-1 text-black" style={{ fontSize: `${labelSettings.fontSize * 0.8}px` }}>
                   Mã LK: {getProcessValue(lastTransaction.partId, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
                 </p>
               </div>
 
               {/* Quantity & Source Stage */}
-              <div className="grid grid-cols-2 w-full border-t-2 border-b-2 border-black py-3 mb-3">
+              <div className="grid grid-cols-2 w-full border-t-2 border-b-2 border-black py-3 mb-3 text-black">
                 <div className="flex flex-col items-center border-r-2 border-black">
-                  <span className="text-[10px] font-bold uppercase opacity-60 mb-1">Số lượng:</span>
+                  <span className="text-[10px] font-black uppercase mb-1">Số lượng:</span>
                   <span className="font-black" style={{ fontSize: `${labelSettings.fontSize + 12}px` }}>
                     {lastTransaction.quantity} {parts.find(p => p.id === lastTransaction.partId)?.unit}
                   </span>
                 </div>
                 <div className="flex flex-col items-center">
-                  <span className="text-[10px] font-bold uppercase opacity-60 mb-1">Từ công đoạn:</span>
+                  <span className="text-[10px] font-black uppercase mb-1">Từ công đoạn:</span>
                   <span className="font-black uppercase text-center" style={{ fontSize: `${labelSettings.fontSize + 4}px` }}>
                     {STAGES.find(s => s.id === lastTransaction.stageId)?.name}
                   </span>
@@ -425,8 +425,8 @@ export default function App() {
               </div>
 
               {/* Route / Destination */}
-              <div className="w-full border-2 border-black rounded p-2 mb-3 text-center">
-                <span className="text-[10px] font-bold uppercase opacity-60 block mb-1">Đích tiếp theo:</span>
+              <div className="w-full border-2 border-black rounded p-2 mb-3 text-center text-black">
+                <span className="text-[10px] font-black uppercase block mb-1">Đích tiếp theo:</span>
                 <div className="flex items-center justify-center gap-4 font-black italic" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
                   <span className="uppercase">{STAGES.find(s => s.id === lastTransaction.stageId)?.name}</span>
                   <span className="text-xl">→</span>
@@ -438,23 +438,23 @@ export default function App() {
               </div>
 
               {/* PO Details Section (NEW) */}
-              <div className="w-full space-y-1 mb-4 text-[11px] font-bold border border-black/20 p-2 rounded">
+              <div className="w-full space-y-1 mb-4 text-[11px] font-black border-2 border-black p-2 rounded text-black">
                 <div className="flex justify-between items-center">
-                  <span className="opacity-50 uppercase">LOẠI PO:</span>
+                  <span className="uppercase">LOẠI PO:</span>
                   {(() => {
                     const po = storageService.getProductionOrders().find(p => p.id === lastTransaction.poId);
                     return (
-                      <span className="text-[9px] uppercase">
+                      <span className="text-[9px] uppercase font-black">
                         {po?.masterPoId ? 'PO Con (Sub)' : 'PO Tổng (Master)'}
                       </span>
                     );
                   })()}
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="opacity-50 uppercase">MÃ PO:</span>
-                  <span className="font-mono">{lastTransaction.poId || 'N/A'}</span>
+                  <span className="uppercase">MÃ PO:</span>
+                  <span className="font-mono font-black">{lastTransaction.poId || 'N/A'}</span>
                 </div>
-                <div className="flex justify-between items-center text-[9px] text-gray-500 italic">
+                <div className="flex justify-between items-center text-[10px] italic font-black">
                   <span>Kế hoạch PO Con:</span>
                   <span>{lastTransaction.qrData?.split('|')?.[8] || storageService.getProductionOrders().find(p => p.id === lastTransaction.poId)?.targetQuantity || 0} linh kiện</span>
                 </div>
@@ -464,24 +464,24 @@ export default function App() {
                   return (
                     <>
                       {po?.plannedStartTime && (
-                        <div className="flex justify-between items-center pt-1 border-t border-black/5">
-                          <span className="opacity-50 uppercase">KH Bắt đầu PO:</span>
-                          <span className="font-mono">{format(po.plannedStartTime, 'dd/MM HH:mm')}</span>
+                        <div className="flex justify-between items-center pt-1 border-t border-black">
+                          <span className="uppercase">KH Bắt đầu PO:</span>
+                          <span className="font-mono font-black">{format(po.plannedStartTime, 'dd/MM HH:mm')}</span>
                         </div>
                       )}
                       {po?.expectedCompletionTime && (
                         <div className="flex justify-between items-center">
-                          <span className="opacity-50 uppercase">KH Kết thúc PO:</span>
-                          <span className="font-mono">{format(po.expectedCompletionTime, 'dd/MM HH:mm')}</span>
+                          <span className="uppercase">KH Kết thúc PO:</span>
+                          <span className="font-mono font-black">{format(po.expectedCompletionTime, 'dd/MM HH:mm')}</span>
                         </div>
                       )}
                       {masterId && (
                         <>
-                          <div className="flex justify-between items-center pt-1 border-t border-black/5">
-                            <span className="opacity-50 uppercase">PO TỔNG:</span>
-                            <span className="font-mono">{masterId}</span>
+                          <div className="flex justify-between items-center pt-1 border-t border-black">
+                            <span className="uppercase font-black text-black">PO TỔNG:</span>
+                            <span className="font-mono font-black text-black">{masterId}</span>
                           </div>
-                          <div className="flex justify-between items-center text-[9px] text-gray-500 italic">
+                          <div className="flex justify-between items-center text-[10px] italic font-black text-black">
                             <span>Kế hoạch PO Tổng:</span>
                             <span>{lastTransaction.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0} máy</span>
                           </div>
@@ -490,9 +490,9 @@ export default function App() {
                     </>
                   );
                 })()}
-                <div className="flex justify-between items-center pt-1 border-t border-black/5">
-                  <span className="opacity-50 uppercase text-[9px]">Hoàn thành thực tế:</span>
-                  <span className="font-mono">{format(lastTransaction.timestamp, 'HH:mm:ss')}</span>
+                <div className="flex justify-between items-center pt-1 border-t border-black">
+                  <span className="uppercase text-[9px]">Hoàn thành thực tế:</span>
+                  <span className="font-mono font-black">{format(lastTransaction.timestamp, 'HH:mm:ss')}</span>
                 </div>
               </div>
 
@@ -856,6 +856,7 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [estimatedStart, setEstimatedStart] = useState<number | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState<string | null>(null);
+  const [showEditModal, setShowEditModal] = useState<{ id: string, qty: number } | null>(null);
   const [password, setPassword] = useState("");
   const [expandedMasterPos, setExpandedMasterPos] = useState<Set<string>>(new Set());
 
@@ -883,6 +884,19 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
       newExpanded.add(masterPoId);
     }
     setExpandedMasterPos(newExpanded);
+  };
+
+  const handleUpdateSubPoQty = () => {
+    if (password === 'admin123') {
+      if (showEditModal) {
+        storageService.updateSubPoQty(showEditModal.id, showEditModal.qty);
+        setOrders(storageService.getProductionOrders());
+        setShowEditModal(null);
+        setPassword("");
+      }
+    } else {
+      alert('Mật khẩu không chính xác!');
+    }
   };
 
   const handleCreatePO = (e: React.FormEvent) => {
@@ -1247,7 +1261,18 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
                               {sub.status === 'COMPLETED' ? 'XONG' : 'ĐANG SX'}
                             </span>
                           </td>
-                          <td className="px-8 py-4"></td>
+                          <td className="px-8 py-4 text-center">
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShowEditModal({ id: sub.id, qty: sub.targetQuantity });
+                              }}
+                              className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all border border-transparent hover:border-blue-100"
+                              title="Điều chỉnh số lượng"
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                          </td>
                         </tr>
                       );
                     })}
@@ -1283,6 +1308,7 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
                 <label className="text-xs font-bold uppercase opacity-50">Nhập mật khẩu xác nhận</label>
                 <input 
                   type="password"
+                  autoComplete="off"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   className="w-full p-4 rounded-lg border border-gray-200 focus:border-red-500 outline-none text-lg"
@@ -1303,6 +1329,64 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
                   className="flex-1 py-4 bg-red-600 text-white rounded-lg font-bold text-sm uppercase hover:bg-red-700 transition-all shadow-lg shadow-red-200"
                 >
                   Xác nhận xóa
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit PO Quantity Modal */}
+      <AnimatePresence>
+        {showEditModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl space-y-6"
+            >
+              <div className="flex items-center gap-4 text-blue-600">
+                <Edit2 size={32} />
+                <h3 className="text-xl font-bold">Sửa số lượng PO Con</h3>
+              </div>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase opacity-50">Số lượng mới</label>
+                  <input 
+                    type="number"
+                    min="1"
+                    value={showEditModal.qty}
+                    onChange={e => setShowEditModal({...showEditModal, qty: parseInt(e.target.value) || 0})}
+                    className="w-full p-4 rounded-lg border border-gray-200 focus:border-blue-500 outline-none text-lg font-bold"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase opacity-50">Mật khẩu xác nhận (Admin)</label>
+                  <input 
+                    type="password"
+                    autoComplete="off"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    className="w-full p-4 rounded-lg border border-gray-200 focus:border-blue-500 outline-none text-lg"
+                    placeholder="Nhập mật khẩu..."
+                    onKeyDown={(e) => e.key === 'Enter' && handleUpdateSubPoQty()}
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button 
+                  onClick={() => { setShowEditModal(null); setPassword(''); }}
+                  className="flex-1 py-4 bg-gray-100 rounded-lg font-bold text-sm uppercase hover:bg-gray-200 transition-all"
+                >
+                  Hủy
+                </button>
+                <button 
+                  onClick={handleUpdateSubPoQty}
+                  disabled={showEditModal.qty <= 0 || !password}
+                  className="flex-1 py-4 bg-blue-600 text-white rounded-lg font-bold text-sm uppercase hover:bg-blue-700 transition-all shadow-lg disabled:opacity-50"
+                >
+                  Cập nhật
                 </button>
               </div>
             </motion.div>
@@ -1645,13 +1729,13 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                 </div>
 
                 {/* Part Info */}
-                <div className="w-full text-center mb-6 relative z-10">
+                <div className="w-full text-center mb-6 relative z-10 text-black">
                   <h2 className="text-4xl font-black uppercase tracking-tight leading-none mb-2">
                     {selectedLabel.type === 'DISPOSAL' 
                       ? (parts.find(p => p.id === selectedLabel.partId)?.name || selectedLabel.partId)
                       : getProcessValue(parts.find(p => p.id === selectedLabel.partId)?.name, parts.find(p => p.id === selectedLabel.partId), selectedLabel.stageId, 'OUT')}
                   </h2>
-                  <p className="font-mono text-sm font-bold opacity-60">
+                  <p className="font-mono text-sm font-black text-black">
                     Mã LK: {selectedLabel.type === 'DISPOSAL' 
                       ? selectedLabel.partId 
                       : getProcessValue(selectedLabel.partId, parts.find(p => p.id === selectedLabel.partId), selectedLabel.stageId, 'OUT')}
@@ -1659,13 +1743,13 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                 </div>
 
                 {/* Main Stats */}
-                <div className="w-full grid grid-cols-2 border-t-[3px] border-black py-4 relative z-10">
+                <div className="w-full grid grid-cols-2 border-t-[3px] border-black py-4 relative z-10 text-black">
                   <div className="text-center border-r-[3px] border-black px-2 flex flex-col justify-center">
-                    <span className="text-[10px] font-bold uppercase opacity-60 mb-1">Số lượng:</span>
+                    <span className="text-[10px] font-black uppercase mb-1">Số lượng:</span>
                     <span className="text-3xl font-black">{selectedLabel.quantity} {parts.find(p => p.id === selectedLabel.partId)?.unit}</span>
                   </div>
                   <div className="text-center px-2 flex flex-col justify-center">
-                    <span className="text-[10px] font-bold uppercase opacity-60 mb-1">
+                    <span className="text-[10px] font-black uppercase mb-1 text-black">
                       {selectedLabel.type === 'DISPOSAL' ? 'Kho xuất:' : 'Từ công đoạn:'}
                     </span>
                     <span className="text-2xl font-black uppercase leading-tight">
@@ -1676,15 +1760,15 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
 
                 {/* Destination Box / Warning */}
                 {selectedLabel.type === 'DISPOSAL' ? (
-                  <div className="w-full border-[3px] border-black rounded-lg p-3 my-4 text-center bg-gray-50 relative z-10">
-                    <span className="text-sm font-black uppercase block tracking-tighter text-red-600">HÀNG LỖI CẤM NHẬP KHO</span>
+                  <div className="w-full border-[3px] border-black rounded-lg p-3 my-4 text-center bg-transparent relative z-10 text-black">
+                    <span className="text-sm font-black uppercase block tracking-tighter text-black">HÀNG LỖI CẤM NHẬP KHO</span>
                   </div>
                 ) : (
-                  <div className="w-full border-[3px] border-black rounded-lg p-4 my-4 text-center">
-                    <span className="text-[10px] font-bold uppercase opacity-60 block mb-2">Đích tiếp theo:</span>
+                  <div className="w-full border-[3px] border-black rounded-lg p-4 my-4 text-center text-black">
+                    <span className="text-[10px] font-black uppercase block mb-2 text-black">Đích tiếp theo:</span>
                     <div className="flex items-center justify-center gap-4 font-black text-xl italic group">
                       <span>{STAGES.find(s => s.id === selectedLabel.stageId)?.name}</span>
-                      <ArrowRight size={24} strokeWidth={3} className="text-[#F27D26]" />
+                      <ArrowRight size={24} strokeWidth={3} className="text-black" />
                       <span>{STAGES.find(s => s.id === (selectedLabel.targetStageId || selectedLabel.qrData?.split('|')?.[5]))?.name || 
                              ((selectedLabel.targetStageId || selectedLabel.qrData?.split('|')?.[5]) === 'DCLR' ? 'Lắp ráp (DCLR)' : 'HOÀN THÀNH')}</span>
                     </div>
@@ -1692,26 +1776,23 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                 )}
 
                 {/* PO Details Section */}
-                <div className="w-full space-y-1 mb-6 text-[11px] font-bold bg-gray-50 p-3 border border-black/10 rounded">
+                <div className="w-full space-y-1 mb-6 text-[11px] font-black bg-transparent p-3 border-2 border-black rounded text-black">
                   <div className="flex justify-between items-center">
-                    <span className="opacity-50">LOẠI PO:</span>
+                    <span className="uppercase text-black">LOẠI PO:</span>
                     {(() => {
                       const po = storageService.getProductionOrders().find(p => p.id === selectedLabel.poId);
                       return (
-                        <span className={cn(
-                          "px-2 py-0.5 rounded text-[9px] uppercase",
-                          po?.masterPoId ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"
-                        )}>
+                        <span className="px-2 py-0.5 rounded text-[9px] uppercase font-black text-black">
                           {po?.masterPoId ? 'PO Con (Sub)' : 'PO Tổng (Master)'}
                         </span>
                       );
                     })()}
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className="opacity-50 uppercase">Mã PO:</span>
-                    <span className="font-mono text-[12px]">{selectedLabel.poId || 'N/A'}</span>
+                  <div className="flex justify-between items-center text-black">
+                    <span className="uppercase text-black">Mã PO:</span>
+                    <span className="font-mono text-[12px] font-black">{selectedLabel.poId || 'N/A'}</span>
                   </div>
-                  <div className="flex justify-between items-center text-[10px] text-gray-500 italic">
+                  <div className="flex justify-between items-center text-[10px] italic font-black text-black">
                     <span>Kế hoạch PO Con:</span>
                     <span>{selectedLabel.qrData?.split('|')?.[8] || storageService.getProductionOrders().find(p => p.id === selectedLabel.poId)?.targetQuantity || 0} linh kiện</span>
                   </div>
@@ -1721,24 +1802,24 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                     return (
                       <>
                         {po?.plannedStartTime && (
-                          <div className="flex justify-between items-center pt-1 border-t border-black/5">
-                            <span className="opacity-50 uppercase">KH Bắt đầu PO:</span>
-                            <span className="font-mono">{format(po.plannedStartTime, 'dd/MM HH:mm')}</span>
+                          <div className="flex justify-between items-center pt-1 border-t border-black">
+                            <span className="uppercase text-black font-black">KH Bắt đầu PO:</span>
+                            <span className="font-mono font-black">{format(po.plannedStartTime, 'dd/MM HH:mm')}</span>
                           </div>
                         )}
                         {po?.expectedCompletionTime && (
                           <div className="flex justify-between items-center">
-                            <span className="opacity-50 uppercase">KH Kết thúc PO:</span>
-                            <span className="font-mono">{format(po.expectedCompletionTime, 'dd/MM HH:mm')}</span>
+                            <span className="uppercase text-black font-black">KH Kết thúc PO:</span>
+                            <span className="font-mono font-black">{format(po.expectedCompletionTime, 'dd/MM HH:mm')}</span>
                           </div>
                         )}
                         {masterId && (
                           <>
-                            <div className="flex justify-between items-center pt-1 border-t border-black/5">
-                              <span className="opacity-50 uppercase">Thuộc PO Tổng:</span>
-                              <span className="font-mono text-[12px] text-red-600">{masterId}</span>
+                            <div className="flex justify-between items-center pt-1 border-t border-black">
+                              <span className="uppercase text-black font-black">Thuộc PO Tổng:</span>
+                              <span className="font-mono text-[12px] font-black text-black">{masterId}</span>
                             </div>
-                            <div className="flex justify-between items-center text-[10px] text-gray-500 italic">
+                            <div className="flex justify-between items-center text-[10px] italic font-black text-black">
                               <span>Kế hoạch PO Tổng:</span>
                               <span>{selectedLabel.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0} máy</span>
                             </div>
@@ -1747,18 +1828,18 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                       </>
                     );
                   })()}
-                  <div className="flex justify-between items-center pt-1 border-t border-black/5 mt-1">
-                    <span className="opacity-50 uppercase text-[9px]">Hoàn thành thực tế:</span>
-                    <span className="font-mono">{format(selectedLabel.timestamp, 'HH:mm:ss')}</span>
+                  <div className="flex justify-between items-center pt-1 mt-1 border-t border-black">
+                    <span className="uppercase text-[9px] text-black font-black">Hoàn thành thực tế:</span>
+                    <span className="font-mono font-black text-black">{format(selectedLabel.timestamp, 'HH:mm:ss')}</span>
                   </div>
                 </div>
 
-                <div className="w-full border-t-[3px] border-black pt-4 flex justify-between items-end text-left">
+                <div className="w-full border-t-[3px] border-black pt-4 flex justify-between items-end text-left text-black">
                   <div className="flex flex-col text-[11px] font-mono leading-none">
-                    <span className="font-black mb-1">ID: {selectedLabel.id}</span>
-                    <span className="opacity-60">Thời gian: {format(selectedLabel.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
+                    <span className="font-black mb-1 text-black">ID: {selectedLabel.id}</span>
+                    <span className="font-black text-black">Thời gian: {format(selectedLabel.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
                   </div>
-                  <span className="text-[11px] font-black tracking-tighter italic opacity-40 text-right">WIP TRACKING</span>
+                  <span className="text-[11px] font-black tracking-tighter italic text-black">WIP TRACKING</span>
                 </div>
               </div>
 
@@ -2937,62 +3018,59 @@ function ProduceView({
                 </div>
 
                 {/* Part Info */}
-                <div className="w-full text-center mb-6">
-                  <h2 className="text-4xl font-black uppercase tracking-tight leading-none mb-2">
+                <div className="w-full text-center mb-6 text-black">
+                  <h2 className="text-4xl font-black uppercase tracking-tight leading-none mb-2 text-black">
                     {getProcessValue(parts.find(p => p.id === lastTransaction.partId)?.name, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
                   </h2>
-                  <p className="font-mono text-sm font-bold opacity-60">
+                  <p className="font-mono text-sm font-black text-black">
                     Mã LK: {getProcessValue(lastTransaction.partId, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
-                    {lastTransaction.originalPartId && <span className="block text-[10px] italic mt-1">(Gốc: {lastTransaction.originalPartId})</span>}
+                    {lastTransaction.originalPartId && <span className="block text-[10px] italic mt-1 font-black text-black">(Gốc: {lastTransaction.originalPartId})</span>}
                   </p>
                 </div>
 
                 {/* Main Stats */}
-                <div className="w-full grid grid-cols-2 border-t-[3px] border-black py-4">
+                <div className="w-full grid grid-cols-2 border-t-[3px] border-black py-4 text-black">
                   <div className="text-center border-r-[3px] border-black px-2 flex flex-col justify-center">
-                    <span className="text-[10px] font-bold uppercase opacity-60 mb-1">Số lượng:</span>
+                    <span className="text-[10px] font-black uppercase mb-1">Số lượng:</span>
                     <span className="text-3xl font-black">{lastTransaction.quantity} {parts.find(p => p.id === lastTransaction.partId)?.unit}</span>
                   </div>
                   <div className="text-center px-2 flex flex-col justify-center">
-                    <span className="text-[10px] font-bold uppercase opacity-60 mb-1">Từ công đoạn:</span>
-                    <span className="text-2xl font-black uppercase leading-tight">
+                    <span className="text-[10px] font-black uppercase mb-1 text-black">Từ công đoạn:</span>
+                    <span className="text-2xl font-black uppercase leading-tight text-black">
                       {STAGES.find(s => s.id === lastTransaction.stageId)?.name}
                     </span>
                   </div>
                 </div>
 
                 {/* Destination Box */}
-                <div className="w-full border-[3px] border-black rounded-lg p-4 my-4 text-center">
-                  <span className="text-[10px] font-bold uppercase opacity-60 block mb-2">Đích tiếp theo:</span>
+                <div className="w-full border-[3px] border-black rounded-lg p-4 my-4 text-center text-black">
+                  <span className="text-[10px] font-black uppercase block mb-2 text-black">Đích tiếp theo:</span>
                   <div className="flex items-center justify-center gap-4 font-black text-xl italic group">
                     <span>{STAGES.find(s => s.id === lastTransaction.stageId)?.name}</span>
-                    <ArrowRight size={24} strokeWidth={3} className="text-[#F27D26]" />
+                    <ArrowRight size={24} strokeWidth={3} className="text-black" />
                     <span>{STAGES.find(s => s.id === (lastTransaction.targetStageId || lastTransaction.qrData?.split('|')?.[5]))?.name || 
                            ((lastTransaction.targetStageId || lastTransaction.qrData?.split('|')?.[5]) === 'DCLR' ? 'Lắp ráp (DCLR)' : 'HOÀN THÀNH')}</span>
                   </div>
                 </div>
 
                 {/* PO Details Section */}
-                <div className="w-full space-y-1 mb-6 text-[11px] font-bold bg-gray-50 p-3 border border-black/10 rounded">
-                  <div className="flex justify-between items-center">
-                    <span className="opacity-50">LOẠI PO:</span>
+                <div className="w-full space-y-1 mb-6 text-[11px] font-black bg-transparent p-3 border-2 border-black rounded text-black">
+                  <div className="flex justify-between items-center text-black">
+                    <span className="uppercase text-black">LOẠI PO:</span>
                     {(() => {
                       const po = storageService.getProductionOrders().find(p => p.id === lastTransaction.poId);
                       return (
-                        <span className={cn(
-                          "px-2 py-0.5 rounded text-[9px] uppercase",
-                          po?.masterPoId ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"
-                        )}>
+                        <span className="px-2 py-0.5 rounded text-[9px] uppercase font-black text-black">
                           {po?.masterPoId ? 'PO Con (Sub)' : 'PO Tổng (Master)'}
                         </span>
                       );
                     })()}
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className="opacity-50 uppercase">Mã PO:</span>
-                    <span className="font-mono text-[12px]">{lastTransaction.poId || 'N/A'}</span>
+                  <div className="flex justify-between items-center text-black">
+                    <span className="uppercase text-black">Mã PO:</span>
+                    <span className="font-mono text-[12px] font-black text-black">{lastTransaction.poId || 'N/A'}</span>
                   </div>
-                  <div className="flex justify-between items-center text-[10px] text-gray-500 italic">
+                  <div className="flex justify-between items-center text-[10px] italic font-black text-black">
                     <span>Kế hoạch PO Con:</span>
                     <span>{lastTransaction.qrData?.split('|')?.[8] || storageService.getProductionOrders().find(p => p.id === lastTransaction.poId)?.targetQuantity || 0} linh kiện</span>
                   </div>
@@ -3002,24 +3080,24 @@ function ProduceView({
                     return (
                       <>
                         {po?.plannedStartTime && (
-                          <div className="flex justify-between items-center pt-1 border-t border-black/5">
-                            <span className="opacity-50 uppercase">KH Bắt đầu PO:</span>
-                            <span className="font-mono">{format(po.plannedStartTime, 'dd/MM HH:mm')}</span>
+                          <div className="flex justify-between items-center pt-1 border-t border-black text-black">
+                            <span className="uppercase text-black font-black">KH Bắt đầu PO:</span>
+                            <span className="font-mono font-black text-black">{format(po.plannedStartTime, 'dd/MM HH:mm')}</span>
                           </div>
                         )}
                         {po?.expectedCompletionTime && (
-                          <div className="flex justify-between items-center">
-                            <span className="opacity-50 uppercase">KH Kết thúc PO:</span>
-                            <span className="font-mono">{format(po.expectedCompletionTime, 'dd/MM HH:mm')}</span>
+                          <div className="flex justify-between items-center text-black">
+                            <span className="uppercase text-black font-black">KH Kết thúc PO:</span>
+                            <span className="font-mono font-black text-black">{format(po.expectedCompletionTime, 'dd/MM HH:mm')}</span>
                           </div>
                         )}
                         {masterId && (
                           <>
-                            <div className="flex justify-between items-center pt-1 border-t border-black/5">
-                              <span className="opacity-50 uppercase text-red-600">PO TỔNG:</span>
-                              <span className="font-mono text-[12px] text-red-600">{masterId}</span>
+                            <div className="flex justify-between items-center pt-1 border-t border-black text-black">
+                              <span className="uppercase font-black text-black">PO TỔNG:</span>
+                              <span className="font-mono text-[12px] font-black text-black">{masterId}</span>
                             </div>
-                            <div className="flex justify-between items-center text-[10px] text-gray-500 italic">
+                            <div className="flex justify-between items-center text-[10px] italic text-black font-black">
                               <span>Kế hoạch PO Tổng:</span>
                               <span>{lastTransaction.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0} máy</span>
                             </div>
@@ -3028,18 +3106,18 @@ function ProduceView({
                       </>
                     );
                   })()}
-                  <div className="flex justify-between items-center pt-1 border-t border-black/5 mt-1">
-                    <span className="opacity-50 uppercase">Hoàn thành thực tế:</span>
-                    <span className="font-mono">{format(lastTransaction.timestamp, 'HH:mm:ss')}</span>
+                  <div className="flex justify-between items-center pt-1 border-t border-black mt-1 text-black">
+                    <span className="uppercase font-black text-black text-[9px]">Hoàn thành thực tế:</span>
+                    <span className="font-mono font-black text-black">{format(lastTransaction.timestamp, 'HH:mm:ss')}</span>
                   </div>
                 </div>
 
-                <div className="w-full border-t-[3px] border-black pt-4 flex justify-between items-end">
-                  <div className="flex flex-col text-[11px] font-mono leading-none">
-                    <span className="font-black mb-1">ID: {lastTransaction.id}</span>
-                    <span className="opacity-60">Thời gian: {format(lastTransaction.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
+                <div className="w-full border-t-[3px] border-black pt-4 flex justify-between items-end text-black">
+                  <div className="flex flex-col text-[11px] font-mono leading-none text-black">
+                    <span className="font-black mb-1 text-black">ID: {lastTransaction.id}</span>
+                    <span className="font-black text-black">Thời gian: {format(lastTransaction.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
                   </div>
-                  <span className="text-[11px] font-black tracking-tighter italic opacity-40">WIP TRACKING</span>
+                  <span className="text-[11px] font-black tracking-tighter italic text-black">WIP TRACKING</span>
                 </div>
               </div>
 
