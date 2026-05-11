@@ -350,10 +350,10 @@ export default function App() {
 
               {/* Part Name & ID */}
               <div className="text-center w-full mb-3 relative z-10 text-black">
-                <h1 className="font-black uppercase leading-tight" style={{ fontSize: `${labelSettings.qrSize / 3}px` }}>
+                <h1 className="font-black uppercase leading-tight" style={{ fontSize: `${labelSettings.fontSize + 16}px` }}>
                   {parts.find(p => p.id === lastTransaction.partId)?.name || lastTransaction.partId}
                 </h1>
-                <p className="font-mono font-black mt-1 text-black" style={{ fontSize: `${labelSettings.fontSize * 0.75}px` }}>
+                <p className="font-mono font-black mt-1 text-black" style={{ fontSize: `${labelSettings.fontSize - 2}px` }}>
                   Mã LK: {lastTransaction.partId}
                 </p>
               </div>
@@ -381,7 +381,7 @@ export default function App() {
               </div>
 
               {/* Footer */}
-              <div className="mt-auto w-full flex justify-between items-end font-mono border-t border-black pt-2 pb-1" style={{ fontSize: `${labelSettings.fontSize - 6}px` }}>
+              <div className="mt-auto w-full justify-between items-end font-mono border-t border-black pt-2 pb-1 hidden" style={{ fontSize: `${labelSettings.fontSize - 6}px` }}>
                 <div className="flex flex-col leading-tight">
                   <span className="font-bold">TX ID: {lastTransaction.id}</span>
                   <span>Thời gian: {format(lastTransaction.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
@@ -400,10 +400,10 @@ export default function App() {
 
               {/* Part Name & ID */}
               <div className="text-center w-full mb-3">
-                <h1 className="font-black uppercase leading-tight" style={{ fontSize: `${labelSettings.qrSize / 3}px` }}>
+                <h1 className="font-black uppercase leading-tight" style={{ fontSize: `${labelSettings.fontSize + 16}px` }}>
                   {getProcessValue(parts.find(p => p.id === lastTransaction.partId)?.name, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
                 </h1>
-                <p className="font-mono font-black mt-1 text-black" style={{ fontSize: `${labelSettings.fontSize * 0.75}px` }}>
+                <p className="font-mono font-black mt-1 text-black" style={{ fontSize: `${labelSettings.fontSize - 2}px` }}>
                   Mã LK: {getProcessValue(lastTransaction.partId, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
                 </p>
               </div>
@@ -497,7 +497,7 @@ export default function App() {
               </div>
 
               {/* Footer: ID & Time */}
-              <div className="mt-auto w-full flex justify-between items-end font-mono border-t border-black pt-2" style={{ fontSize: `${labelSettings.fontSize - 6}px` }}>
+              <div className="mt-auto w-full justify-between items-end font-mono border-t border-black pt-2 hidden" style={{ fontSize: `${labelSettings.fontSize - 6}px` }}>
                 <div className="flex flex-col leading-tight">
                   <span className="font-bold">ID: {lastTransaction.id}</span>
                   <span>Thời gian: {format(lastTransaction.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
@@ -1834,7 +1834,7 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                   </div>
                 </div>
 
-                <div className="w-full border-t-[3px] border-black pt-4 flex justify-between items-end text-left text-black">
+                <div className="w-full border-t-[3px] border-black pt-4 justify-between items-end text-left text-black hidden">
                   <div className="flex flex-col text-[11px] font-mono leading-none">
                     <span className="font-black mb-1 text-black">ID: {selectedLabel.id}</span>
                     <span className="font-black text-black">Thời gian: {format(selectedLabel.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
@@ -3112,7 +3112,7 @@ function ProduceView({
                   </div>
                 </div>
 
-                <div className="w-full border-t-[3px] border-black pt-4 flex justify-between items-end text-black">
+                <div className="w-full border-t-[3px] border-black pt-4 justify-between items-end text-black hidden">
                   <div className="flex flex-col text-[11px] font-mono leading-none text-black">
                     <span className="font-black mb-1 text-black">ID: {lastTransaction.id}</span>
                     <span className="font-black text-black">Thời gian: {format(lastTransaction.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
