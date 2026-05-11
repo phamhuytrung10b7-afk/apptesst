@@ -350,10 +350,10 @@ export default function App() {
 
               {/* Part Name & ID */}
               <div className="text-center w-full mb-3 relative z-10 text-black">
-                <h1 className="font-black uppercase leading-tight" style={{ fontSize: `${labelSettings.qrSize / 4.5}px` }}>
+                <h1 className="font-black uppercase leading-tight" style={{ fontSize: `${labelSettings.qrSize / 3}px` }}>
                   {parts.find(p => p.id === lastTransaction.partId)?.name || lastTransaction.partId}
                 </h1>
-                <p className="font-mono font-black mt-1 text-black" style={{ fontSize: `${labelSettings.fontSize * 0.8}px` }}>
+                <p className="font-mono font-black mt-1 text-black" style={{ fontSize: `${labelSettings.fontSize * 0.75}px` }}>
                   Mã LK: {lastTransaction.partId}
                 </p>
               </div>
@@ -362,13 +362,13 @@ export default function App() {
               <div className="grid grid-cols-2 w-full border-t-2 border-b-2 border-black py-4 mb-4 relative z-10 text-black">
                 <div className="flex flex-col items-center border-r-2 border-black">
                   <span className="text-[10px] font-black uppercase mb-1 text-black">Số lượng:</span>
-                  <span className="font-black text-black" style={{ fontSize: `${labelSettings.fontSize + 16}px` }}>
+                  <span className="font-black text-black" style={{ fontSize: `${labelSettings.fontSize + 10}px` }}>
                     {lastTransaction.quantity} {parts.find(p => p.id === lastTransaction.partId)?.unit}
                   </span>
                 </div>
                 <div className="flex flex-col items-center text-black">
                   <span className="text-[10px] font-black uppercase mb-1 text-black">Từ kho:</span>
-                  <span className="font-black uppercase text-center leading-none text-black" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
+                  <span className="font-black uppercase text-center leading-none text-black" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
                     {STAGES.find(s => s.id === lastTransaction.stageId)?.name} (NG)
                   </span>
                 </div>
@@ -400,10 +400,10 @@ export default function App() {
 
               {/* Part Name & ID */}
               <div className="text-center w-full mb-3">
-                <h1 className="font-black uppercase leading-tight" style={{ fontSize: `${labelSettings.qrSize / 4.5}px` }}>
+                <h1 className="font-black uppercase leading-tight" style={{ fontSize: `${labelSettings.qrSize / 3}px` }}>
                   {getProcessValue(parts.find(p => p.id === lastTransaction.partId)?.name, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
                 </h1>
-                <p className="font-mono font-black mt-1 text-black" style={{ fontSize: `${labelSettings.fontSize * 0.8}px` }}>
+                <p className="font-mono font-black mt-1 text-black" style={{ fontSize: `${labelSettings.fontSize * 0.75}px` }}>
                   Mã LK: {getProcessValue(lastTransaction.partId, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
                 </p>
               </div>
@@ -412,13 +412,13 @@ export default function App() {
               <div className="grid grid-cols-2 w-full border-t-2 border-b-2 border-black py-3 mb-3 text-black">
                 <div className="flex flex-col items-center border-r-2 border-black">
                   <span className="text-[10px] font-black uppercase mb-1">Số lượng:</span>
-                  <span className="font-black" style={{ fontSize: `${labelSettings.fontSize + 12}px` }}>
+                  <span className="font-black" style={{ fontSize: `${labelSettings.fontSize + 10}px` }}>
                     {lastTransaction.quantity} {parts.find(p => p.id === lastTransaction.partId)?.unit}
                   </span>
                 </div>
                 <div className="flex flex-col items-center">
                   <span className="text-[10px] font-black uppercase mb-1">Từ công đoạn:</span>
-                  <span className="font-black uppercase text-center" style={{ fontSize: `${labelSettings.fontSize + 4}px` }}>
+                  <span className="font-black uppercase text-center" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
                     {STAGES.find(s => s.id === lastTransaction.stageId)?.name}
                   </span>
                 </div>
