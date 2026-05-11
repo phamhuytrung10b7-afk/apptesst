@@ -349,13 +349,18 @@ export default function App() {
               </div>
 
               {/* Part Name & ID */}
-              <div className="text-center w-full mb-3 relative z-10 text-black">
-                <h1 className="font-black uppercase leading-tight" style={{ fontSize: `${labelSettings.fontSize + 16}px` }}>
+              <div className="text-center w-full mb-3 relative z-10 text-black px-2">
+                <h1 className="font-black uppercase leading-tight text-balance break-words" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
                   {parts.find(p => p.id === lastTransaction.partId)?.name || lastTransaction.partId}
                 </h1>
-                <p className="font-mono font-black mt-1 text-black" style={{ fontSize: `${labelSettings.fontSize - 2}px` }}>
+                <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize - 2}px` }}>
                   Mã LK: {lastTransaction.partId}
                 </p>
+                {lastTransaction.originalPartId && (
+                  <p className="font-mono italic font-black mt-0.5 text-black break-words" style={{ fontSize: `${labelSettings.fontSize - 4}px` }}>
+                    (Gốc: {lastTransaction.originalPartId})
+                  </p>
+                )}
               </div>
 
               {/* Quantity & Source Stage */}
@@ -399,13 +404,18 @@ export default function App() {
               </div>
 
               {/* Part Name & ID */}
-              <div className="text-center w-full mb-3">
-                <h1 className="font-black uppercase leading-tight" style={{ fontSize: `${labelSettings.fontSize + 16}px` }}>
+              <div className="text-center w-full mb-3 px-2">
+                <h1 className="font-black uppercase leading-tight text-balance break-words" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
                   {getProcessValue(parts.find(p => p.id === lastTransaction.partId)?.name, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
                 </h1>
-                <p className="font-mono font-black mt-1 text-black" style={{ fontSize: `${labelSettings.fontSize - 2}px` }}>
+                <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize - 2}px` }}>
                   Mã LK: {getProcessValue(lastTransaction.partId, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
                 </p>
+                {lastTransaction.originalPartId && (
+                  <p className="font-mono italic font-black text-black mt-0.5 break-words" style={{ fontSize: `${labelSettings.fontSize - 4}px` }}>
+                    (Gốc: {lastTransaction.originalPartId})
+                  </p>
+                )}
               </div>
 
               {/* Quantity & Source Stage */}
