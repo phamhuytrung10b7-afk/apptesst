@@ -397,9 +397,13 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <div className="w-full h-full bg-white text-black flex flex-col items-center p-4 box-border border-2 border-black">
+            <div className="w-full h-full bg-white text-black flex flex-col p-4 box-border">
+              <div className="w-full text-center pb-2">
+                <h1 className="font-black uppercase tracking-tight" style={{ fontSize: `${labelSettings.fontSize + 12}px` }}>PHIẾU ĐIỀU CHUYỂN</h1>
+              </div>
+              <div className="flex-1 w-full border-2 border-black flex flex-col items-center p-2">
               {/* QR Code Section */}
-              <div className="mb-4 border-2 border-black p-1">
+              <div className="mt-2 mb-4 border-2 border-black p-1">
                 <QRCodeSVG value={lastTransaction.qrData || ''} size={labelSettings.qrSize * 1.8} level="H" />
               </div>
 
@@ -515,6 +519,7 @@ export default function App() {
                 <div className="font-black italic">
                   WIP TRACKING
                 </div>
+              </div>
               </div>
             </div>
           )
@@ -3021,9 +3026,13 @@ function ProduceView({
                 </button>
               </div>
               
-              <div id="qr-label-display" className="w-[420px] bg-white border-2 border-black p-6 flex flex-col items-center">
+              <div id="qr-label-display" className="w-[420px] bg-white p-6 flex flex-col box-border">
+                <div className="w-full text-center pb-4">
+                  <h1 className="font-black uppercase tracking-tight text-3xl text-black">PHIẾU ĐIỀU CHUYỂN</h1>
+                </div>
+                <div className="w-full flex-1 border-2 border-black flex flex-col items-center p-4">
                 {/* QR Section */}
-                <div className="mb-6 border-[3px] border-black p-1">
+                <div className="mt-2 mb-6 border-[3px] border-black p-1">
                   <QRCodeSVG value={lastTransaction.qrData || ''} size={240} level="H" />
                 </div>
 
@@ -3128,6 +3137,7 @@ function ProduceView({
                     <span className="font-black text-black">Thời gian: {format(lastTransaction.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
                   </div>
                   <span className="text-[11px] font-black tracking-tighter italic text-black">WIP TRACKING</span>
+                </div>
                 </div>
               </div>
 
@@ -5125,6 +5135,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                           const source = String(row['Linh kiện nguồn (L2)'] || row['SourceID'] || row['Mã nguồn'] || row['Mã L2'] || '').trim();
                           const target = String(row['Linh kiện đích (L1)'] || row['TargetID'] || row['Mã đích'] || row['Mã L1'] || '').trim();
                           let stageStr = String(row['Công đoạn áp dụng'] || row['StageID'] || row['Công đoạn'] || 'PAINTING').trim().toUpperCase();
+                          const applicableModel = row['Model áp dụng'] ? String(row['Model áp dụng']).trim() : undefined;
                           
                           // Map Vietnamese stage names to IDs
                           let stageId: StageId = 'PAINTING';
@@ -5142,7 +5153,8 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                           return {
                             sourcePartId: source,
                             targetPartId: target,
-                            targetStageId: stageId
+                            targetStageId: stageId,
+                            applicableModel: applicableModel
                           };
                         }).filter(b => b.sourcePartId && b.targetPartId);
 
@@ -5171,6 +5183,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200">
                     <th className="p-6 text-xs font-bold uppercase opacity-50">Linh kiện nguồn (L2)</th>
+                    <th className="p-6 text-xs font-bold uppercase opacity-50">Model áp dụng</th>
                     <th className="p-6 text-xs font-bold uppercase opacity-50 text-center">
                       <ArrowRight size={16} className="mx-auto" />
                     </th>
@@ -5182,7 +5195,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                 <tbody>
                   {storageService.getTransformations().length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="p-20 text-center text-gray-400 italic">Chưa có quy tắc chuyển đổi nào.</td>
+                      <td colSpan={6} className="p-20 text-center text-gray-400 italic">Chưa có quy tắc chuyển đổi nào.</td>
                     </tr>
                   ) : (
                     storageService.getTransformations().map((t, i) => (
@@ -5190,6 +5203,13 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                         <td className="p-6">
                            <div className="font-bold">{parts.find(p => p.id === t.sourcePartId)?.name || t.sourcePartId}</div>
                            <div className="text-xs font-mono opacity-50">{t.sourcePartId}</div>
+                        </td>
+                        <td className="p-6 font-mono text-sm text-center">
+                          {t.applicableModel ? (
+                            <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded line-clamp-1">{t.applicableModel}</span>
+                          ) : (
+                            <span className="text-gray-400 italic">Tất cả</span>
+                          )}
                         </td>
                         <td className="p-6 text-center text-blue-600">
                            <ArrowRight size={20} className="mx-auto" />

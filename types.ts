@@ -106,6 +106,7 @@ export interface PartTransformation {
   sourcePartId: string;
   targetPartId: string;
   targetStageId: StageId;
+  applicableModel?: string;
 }
 
 export const STAGES: { id: StageId; name: string; nextStageId?: StageId }[] = [

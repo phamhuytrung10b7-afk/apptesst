@@ -252,11 +252,26 @@ export const storageService = {
     }
   },
 
-  getEffectivePartId(partId: string, stageId: StageId): string {
+  getEffectivePartId(partId: string, stageId: StageId, poId?: string): string {
     const cleanId = partId.split(' - ')[0].trim().toUpperCase();
     const transformations = this.getTransformations();
-    const transformation = transformations.find(t => t.sourcePartId === cleanId && t.targetStageId === stageId);
-    return transformation ? transformation.targetPartId : cleanId;
+    
+    let validTransformations = transformations.filter(t => t.sourcePartId === cleanId && t.targetStageId === stageId);
+    if (validTransformations.length === 0) return cleanId;
+
+    if (poId) {
+      const parentPoId = this.getProductionOrders().find(p => p.id === poId)?.masterPoId || poId;
+      const modelPo = this.getProductionOrders().find(p => p.id === parentPoId);
+      if (modelPo) {
+        const modelId = modelPo.partId;
+        const matchedModelT = validTransformations.find(t => t.applicableModel && t.applicableModel === modelId);
+        if (matchedModelT) return matchedModelT.targetPartId;
+      }
+    }
+
+    // fallback to generic transformation if available
+    const genericTransformation = validTransformations.find(t => !t.applicableModel || t.applicableModel.trim() === '');
+    return genericTransformation ? genericTransformation.targetPartId : cleanId;
   },
 
   updateInventory(partId: string, stageId: StageId, location: 'IN' | 'OUT' | 'DEFECT', delta: number) {
@@ -304,7 +319,7 @@ export const storageService = {
     this.saveInventory(filtered);
   },
 
-  applyBOMDeduction(partId: string, stageId: StageId, quantity: number) {
+  applyBOMDeduction(partId: string, stageId: StageId, quantity: number, poId?: string) {
     const parts = this.getParts();
     // Strip suffixes added by display logic (e.g., " - CD", " - H") to ensure BOM lookups match the original part ID
     const cleanId = partId.split(' - ')[0];
@@ -349,7 +364,7 @@ export const storageService = {
         const inventory = this.getInventory();
         for (const ing of ingredients) {
           const needed = quantity * ing.quantity;
-          const effectiveIngId = this.getEffectivePartId(ing.ingredientPartId, 'WELDING');
+          const effectiveIngId = this.getEffectivePartId(ing.ingredientPartId, 'WELDING', poId);
           const stock = inventory.find(i => i.partId === effectiveIngId && i.stageId === 'WELDING' && i.location === 'IN');
           if (!stock || stock.quantity < needed) {
             const ingPart = parts.find(p => p.id === effectiveIngId);
@@ -357,7 +372,7 @@ export const storageService = {
           }
         }
         for (const ing of ingredients) {
-          const effectiveIngId = this.getEffectivePartId(ing.ingredientPartId, 'WELDING');
+          const effectiveIngId = this.getEffectivePartId(ing.ingredientPartId, 'WELDING', poId);
           this.updateInventory(effectiveIngId, 'WELDING', 'IN', -(quantity * ing.quantity));
         }
       }
@@ -376,7 +391,7 @@ export const storageService = {
         const inventory = this.getInventory();
         for (const ing of skipWeldedIngredients) {
           const needed = quantity * ing.quantity;
-          const effectiveIngId = this.getEffectivePartId(ing.ingredientPartId, 'PAINTING');
+          const effectiveIngId = this.getEffectivePartId(ing.ingredientPartId, 'PAINTING', poId);
           const stock = inventory.find(i => i.partId === effectiveIngId && i.stageId === 'PAINTING' && i.location === 'IN');
           if (!stock || stock.quantity < needed) {
             const ingPart = parts.find(p => p.id === effectiveIngId);
@@ -384,7 +399,7 @@ export const storageService = {
           }
         }
         for (const ing of skipWeldedIngredients) {
-          const effectiveIngId = this.getEffectivePartId(ing.ingredientPartId, 'PAINTING');
+          const effectiveIngId = this.getEffectivePartId(ing.ingredientPartId, 'PAINTING', poId);
           this.updateInventory(effectiveIngId, 'PAINTING', 'IN', -(quantity * ing.quantity));
         }
       }
@@ -410,9 +425,19 @@ export const storageService = {
 
   recordStageOut(partId: string, stageId: StageId, quantity: number, sourceLocation: 'IN' | 'OUT' = 'IN', targetStageId?: StageId, poId?: string) {
     const cleanId = partId.split(' - ')[0];
+    const pos = this.getProductionOrders();
+    const poIndex = poId 
+      ? pos.findIndex(p => p.id === poId)
+      : pos.findIndex(p => p.partId === cleanId && p.stageId === stageId && p.status !== 'COMPLETED');
+      
+    let linkedPoId = poId;
+    if (poIndex !== -1) {
+      linkedPoId = pos[poIndex].id;
+    }
+
     // Validation: Check if source location has enough quantity
     const inventory = this.getInventory();
-    const effectiveId = this.getEffectivePartId(cleanId, stageId);
+    const effectiveId = this.getEffectivePartId(cleanId, stageId, linkedPoId);
     const stock = inventory.find(
       (item) => item.partId === effectiveId && item.stageId === stageId && item.location === sourceLocation
     );
@@ -422,16 +447,8 @@ export const storageService = {
       throw new Error(`Lỗi: Số lượng xuất (${quantity}) lớn hơn tồn kho ${part?.name || effectiveId} tại ${STAGES.find(s => s.id === stageId)?.name}_${sourceLocation} (${stock?.quantity || 0})`);
     }
 
-    let linkedPoId = poId;
-
     // 0. Update Production Order progress if producing (IN -> OUT)
     if (sourceLocation === 'IN') {
-      const pos = this.getProductionOrders();
-      // Find the specific PO or the first pending/in-progress one
-      const poIndex = poId 
-        ? pos.findIndex(p => p.id === poId)
-        : pos.findIndex(p => p.partId === cleanId && p.stageId === stageId && p.status !== 'COMPLETED');
-      
       if (poIndex === -1) {
         throw new Error(`Lỗi: Không tìm thấy lệnh PO sản xuất hợp lệ cho linh kiện ${cleanId} tại công đoạn ${STAGES.find(s => s.id === stageId)?.name}. Vui lòng tạo Lệnh sản xuất trước khi thực hiện.`);
       }
@@ -514,7 +531,7 @@ export const storageService = {
       // Move IN -> OUT (Finish production)
       // Apply BOM deduction before updating inventory
       // We use cleanId for BOM lookup as the BOM schema uses the original IDs
-      this.applyBOMDeduction(cleanId, stageId, quantity);
+      this.applyBOMDeduction(cleanId, stageId, quantity, poId);
       
       this.updateInventory(effectiveId, stageId, 'IN', -quantity);
       this.updateInventory(effectiveId, stageId, 'OUT', quantity);
@@ -527,7 +544,6 @@ export const storageService = {
     const transactions = this.getTransactions();
     const parts = this.getParts();
     // Get master PO ID and target quantities if exists
-    const pos = this.getProductionOrders();
     const po = pos.find(p => p.id === linkedPoId);
     const masterPoId = po?.masterPoId || '';
     const subPoTargetQty = po?.targetQuantity || 0;
@@ -631,7 +647,7 @@ export const storageService = {
     const finalTargetLocation = 'IN';
     
     // Part Transformation Logic: Only check for transformation at the moment of entry (IN)
-    const finalPartId = this.getEffectivePartId(partId, currentStageId);
+    const finalPartId = this.getEffectivePartId(partId, currentStageId, linkedPoId);
     const isTransformed = finalPartId !== partId.trim().toUpperCase();
 
     this.updateInventory(finalPartId, currentStageId, finalTargetLocation, quantity);
@@ -674,9 +690,11 @@ export const storageService = {
       throw new Error(`Lỗi: Không tìm thấy lệnh PO sản xuất hợp lệ cho linh kiện ${cleanId} tại công đoạn ${STAGES.find(s => s.id === stageId)?.name}. Chức năng nhập kho thủ công cũng yêu cầu phải có PO.`);
     }
 
+    const currentPoId = poIndex !== -1 ? pos[poIndex].id : poId;
+
     // Apply BOM logic if entering into OUT (Production result)
     if (location === 'OUT') {
-      this.applyBOMDeduction(cleanId, stageId, quantity);
+      this.applyBOMDeduction(cleanId, stageId, quantity, currentPoId);
 
       // Update PO progress
       if (poIndex !== -1) {
@@ -711,7 +729,7 @@ export const storageService = {
 
     // Part Transformation Logic
     const finalPartId = (location === 'IN') 
-      ? this.getEffectivePartId(cleanId, stageId)
+      ? this.getEffectivePartId(cleanId, stageId, currentPoId)
       : cleanId;
       
     const isTransformed = (location === 'IN' && finalPartId !== cleanId);
@@ -750,7 +768,7 @@ export const storageService = {
     
     // 1. Validation: Ensure we have enough stock in IN to mark as defect
     const inventory = this.getInventory();
-    const effectiveId = this.getEffectivePartId(cleanId, stageId);
+    const effectiveId = this.getEffectivePartId(cleanId, stageId, poId);
     const stock = inventory.find(
       (item) => item.partId === effectiveId && item.stageId === stageId && item.location === 'IN'
     );
