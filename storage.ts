@@ -1430,32 +1430,13 @@ export const storageService = {
       return { outChildPOs, maxEnd, minStart: actualMinStart };
     };
 
-    // Binary search for exact optimal start time
-    let low = baseEndTime - 100 * 24 * 60 * 60 * 1000;
-    let high = baseEndTime;
-    let bestChildPOs: ProductionOrder[] = [];
-    let bestStart = low;
-    let bestEnd = low;
-
-    for (let i = 0; i < 40; i++) {
-        const mid = low + Math.floor((high - low) / 2);
-        const { outChildPOs, maxEnd, minStart } = runForwardPass(mid);
-        if (maxEnd <= baseEndTime) {
-            bestChildPOs = outChildPOs;
-            bestStart = minStart;
-            bestEnd = maxEnd;
-            low = mid + 1;
-        } else {
-            high = mid - 1;
-        }
-    }
-
-    if (bestChildPOs.length === 0) {
-      const fb = runForwardPass(baseEndTime - 24 * 60 * 60 * 1000);
-      bestChildPOs = fb.outChildPOs;
-      bestStart = fb.minStart;
-      bestEnd = fb.maxEnd;
-    }
+    // Use Forward Scheduling starting from now (queuing)
+    // This satisfies the "nối đuôi nhau" request by always starting as soon as machines are free.
+    const { outChildPOs, maxEnd, minStart } = runForwardPass(timestamp);
+    
+    const bestChildPOs = outChildPOs;
+    const bestStart = minStart;
+    const bestEnd = maxEnd;
 
     const masterPo: ProductionOrder = {
       id: masterPoId,
