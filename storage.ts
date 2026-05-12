@@ -1250,7 +1250,8 @@ export const storageService = {
       // 1. LASER
       let fFreeLaser = Math.max(globalStart, maxExistingLaserEnd);
       const laserConfig = shiftConfigs.find(c => c.stageId === 'LASER');
-      const laserWorkers = laserConfig?.workerCount || 1;
+      const overrideLaser = laserConfig?.workerOverrides?.find(o => o.modelId === modelId);
+      const laserWorkers = overrideLaser ? overrideLaser.workerCount : (laserConfig?.workerCount || 1);
       
       if (laserNesting.length > 0) {
         const nestedGroupMap = new Map<string, ProductionOrder[]>();
@@ -1320,9 +1321,12 @@ export const storageService = {
       // 2. BENDING
       let fFreeBending = Math.max(globalStart, maxExistingBendingEnd);
       const bendConfig = shiftConfigs.find(c => c.stageId === 'BENDING');
-      const bendWorkers = bendConfig?.workerCount || 1;
       bendingPOs.forEach(po => {
         const p = {...po};
+        const modelId = pos.find(x => x.id === p.masterPoId)?.partId || p.partId;
+        const override = bendConfig?.workerOverrides?.find(o => o.modelId === modelId);
+        const bendWorkers = override ? override.workerCount : (bendConfig?.workerCount || 1);
+
         const laserEnd = getFinishTime(p.partId, 'LASER');
         const start = this.getNextWorkingTime(Math.max(fFreeBending, laserEnd), 'BENDING', shiftConfigs);
         p.plannedStartTime = start;
@@ -1338,9 +1342,12 @@ export const storageService = {
       // 3. WELDING
       let fFreeWelding = Math.max(globalStart, maxExistingWeldingEnd);
       const weldConfig = shiftConfigs.find(c => c.stageId === 'WELDING');
-      const weldWorkers = weldConfig?.workerCount || 1;
       weldingPOs.forEach(po => {
         const p = {...po};
+        const modelId = pos.find(x => x.id === p.masterPoId)?.partId || p.partId;
+        const override = weldConfig?.workerOverrides?.find(o => o.modelId === modelId);
+        const weldWorkers = override ? override.workerCount : (weldConfig?.workerCount || 1);
+
         const children = level1Children.get(p.partId) || [];
         const componentsReadyTime = children.length === 0 ? globalStart : Math.max(...children.map(cid => {
           const wEnd = partStageFinishTime.get(cid)?.get('WELDING');
@@ -1368,9 +1375,12 @@ export const storageService = {
       // 4. PAINTING
       let fFreePainting = Math.max(globalStart, maxExistingPaintingEnd);
       const paintConfig = shiftConfigs.find(c => c.stageId === 'PAINTING');
-      const paintWorkers = paintConfig?.workerCount || 1;
       paintingPOs.forEach(po => {
         const p = {...po};
+        const poModelId = pos.find(x => x.id === p.masterPoId)?.partId || p.partId;
+        const override = paintConfig?.workerOverrides?.find(o => o.modelId === poModelId);
+        const paintWorkers = override ? override.workerCount : (paintConfig?.workerCount || 1);
+
         let weldEnd = partStageFinishTime.get(p.partId)?.get('WELDING');
         let bendEnd = partStageFinishTime.get(p.partId)?.get('BENDING');
         let laserEnd = partStageFinishTime.get(p.partId)?.get('LASER');

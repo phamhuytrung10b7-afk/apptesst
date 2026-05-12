@@ -94,9 +94,15 @@ export interface BreakTime {
   end: string;   // HH:mm
 }
 
+export interface WorkerOverride {
+  modelId: string;
+  workerCount: number;
+}
+
 export interface ShiftConfig {
   stageId: StageId;
   workerCount: number; // Number of people or parallel resources
+  workerOverrides?: WorkerOverride[];
   shifts: {
     start: string; // HH:mm
     end: string;   // HH:mm

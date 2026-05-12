@@ -26,6 +26,7 @@ import {
   Monitor,
   Menu,
   FileUp,
+  Upload,
   Layers,
   Flame,
   FileText,
@@ -5817,7 +5818,7 @@ function WorkingHoursView() {
 
   const handleSave = () => {
     storageService.saveShiftConfigs(configs);
-    alert('Đã lưu cài đặt ca làm việc & nghỉ ngơi!');
+    alert('Đã lưu cài đặt ca làm việc & nghỉ ngơi! \nHệ thống sẽ tự động áp dụng nguồn lực ngoại lệ khi tính toán kế hoạch sản xuất cho PO mới.');
   };
 
   const handleReset = () => {
@@ -5894,6 +5895,69 @@ function WorkingHoursView() {
     }));
   };
 
+  const addOverride = (stageId: StageId) => {
+    setConfigs(prev => prev.map(c => {
+      if (c.stageId === stageId) {
+        return { ...c, workerOverrides: [...(c.workerOverrides || []), { modelId: 'Gói khung tủ', workerCount: 2 }] };
+      }
+      return c;
+    }));
+  };
+
+  const updateOverride = (stageId: StageId, idx: number, key: 'modelId'|'workerCount', val: string|number) => {
+    setConfigs(prev => prev.map(c => {
+      if (c.stageId === stageId) {
+        const newOverrides = [...(c.workerOverrides || [])];
+        newOverrides[idx] = { ...newOverrides[idx], [key]: val };
+        return { ...c, workerOverrides: newOverrides };
+      }
+      return c;
+    }));
+  };
+
+  const removeOverride = (stageId: StageId, idx: number) => {
+    setConfigs(prev => prev.map(c => {
+      if (c.stageId === stageId) {
+        return { ...c, workerOverrides: (c.workerOverrides || []).filter((_, i) => i !== idx) };
+      }
+      return c;
+    }));
+  };
+
+  const handleImportOverrides = (e: React.ChangeEvent<HTMLInputElement>, stageId: StageId) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const bstr = evt.target?.result;
+      const wb = XLSX.read(bstr, { type: 'binary' });
+      const wsname = wb.SheetNames[0];
+      const ws = wb.Sheets[wsname];
+      const data = XLSX.utils.sheet_to_json(ws) as any[];
+
+      const imported = data.map(row => ({
+        modelId: String(row['Tên linh kiện'] || row['Model'] || row['Mã linh kiện'] || row['ModelId'] || '').trim(),
+        workerCount: parseInt(row['Định mức ngoại lệ'] || row['Số lượng nhân sự'] || row['WorkerCount'] || '1')
+      })).filter(o => o.modelId && o.workerCount > 0);
+
+      if (imported.length > 0) {
+        setConfigs(prev => prev.map(c => {
+          if (c.stageId === stageId) {
+            // Merge or replace? Replacing is cleaner for bulk updates
+            return { ...c, workerOverrides: imported };
+          }
+          return c;
+        }));
+        alert(`Đã nhập thành công ${imported.length} ngoại lệ định mức cho công đoạn ${stageId}!`);
+      } else {
+        alert('Không tìm thấy dữ hiệu hợp lệ. Cần các cột: Tên linh kiện, Định mức ngoại lệ');
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = ''; // Reset input
+  };
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
@@ -5943,25 +6007,84 @@ function WorkingHoursView() {
               
               <div className="p-8 space-y-8">
                 {/* Worker Count */}
-                <div className="flex items-center justify-between bg-blue-50 p-4 rounded-xl border border-blue-100">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-white rounded-lg shadow-sm">
-                      <Users size={20} className="text-blue-600" />
+                <div className="flex flex-col gap-3 bg-blue-50 p-4 rounded-xl border border-blue-100">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-white rounded-lg shadow-sm">
+                        <Users size={20} className="text-blue-600" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-gray-700">Số lượng nhân sự / nguồn lực</h4>
+                        <p className="text-xs text-gray-500">Mặc định cho công đoạn này</p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="text-sm font-bold text-gray-700">Số lượng nhân sự / nguồn lực</h4>
-                      <p className="text-xs text-gray-500">Giúp tăng tốc độ hoàn thành công đoạn</p>
+                    <div className="flex items-center gap-3">
+                      <input 
+                        type="number" 
+                        min="1"
+                        value={config.workerCount || 1}
+                        onChange={(e) => updateWorkerCount(stage.id, parseInt(e.target.value))}
+                        className="w-20 bg-white border border-gray-200 rounded-lg p-2 font-mono text-center font-bold text-blue-600 focus:border-blue-500 outline-none"
+                      />
+                      <span className="text-xs font-bold text-gray-400">NGƯỜI</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <input 
-                      type="number" 
-                      min="1"
-                      value={config.workerCount || 1}
-                      onChange={(e) => updateWorkerCount(stage.id, parseInt(e.target.value))}
-                      className="w-20 bg-white border border-gray-200 rounded-lg p-2 font-mono text-center font-bold text-blue-600 focus:border-blue-500 outline-none"
-                    />
-                    <span className="text-xs font-bold text-gray-400">NGƯỜI</span>
+
+                  {/* Overrides Table */}
+                  <div className="mt-2 border-t border-blue-200 pt-3">
+                    <div className="flex justify-between items-center mb-2">
+                      <h5 className="text-xs font-bold text-blue-700 uppercase">Ngoại lệ theo Model</h5>
+                      <div className="flex gap-2">
+                        <label className="text-xs font-bold bg-white text-blue-600 px-2 py-1 rounded shadow-sm hover:bg-blue-100 transition-colors cursor-pointer border border-blue-200">
+                          <Upload size={12} className="inline mr-1" />
+                          Nhập Excel
+                          <input 
+                            type="file" 
+                            accept=".xlsx, .xls"
+                            className="hidden"
+                            onChange={(e) => handleImportOverrides(e, stage.id)}
+                          />
+                        </label>
+                        <button 
+                          onClick={() => addOverride(stage.id)}
+                          className="text-xs font-bold bg-white text-blue-600 px-2 py-1 rounded shadow-sm hover:bg-blue-100 transition-colors border border-blue-200"
+                        >
+                          + Thêm thủ công
+                        </button>
+                      </div>
+                    </div>
+                    {config.workerOverrides && config.workerOverrides.length > 0 ? (
+                      <div className="space-y-2">
+                        {config.workerOverrides.map((ov, oIdx) => (
+                          <div key={oIdx} className="flex items-center gap-2 bg-white p-2 rounded-lg shadow-sm border border-blue-100">
+                            <input 
+                              type="text"
+                              value={ov.modelId}
+                              onChange={e => updateOverride(stage.id, oIdx, 'modelId', e.target.value)}
+                              placeholder="Tên model (VD: Gói khung tủ)"
+                              className="flex-1 bg-transparent border-none text-sm outline-none px-2 font-bold text-gray-700"
+                            />
+                            <div className="flex items-center gap-2">
+                              <input 
+                                type="number"
+                                min="1"
+                                value={ov.workerCount}
+                                onChange={e => updateOverride(stage.id, oIdx, 'workerCount', parseInt(e.target.value))}
+                                className="w-16 bg-gray-50 border border-gray-200 rounded p-1 font-mono text-center text-sm focus:border-blue-500 outline-none"
+                              />
+                              <button 
+                                onClick={() => removeOverride(stage.id, oIdx)}
+                                className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-blue-500/70 italic">Chưa có cài đặt ngoại lệ.</p>
+                    )}
                   </div>
                 </div>
 
