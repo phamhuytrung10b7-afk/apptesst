@@ -86,6 +86,7 @@ export interface LaserNesting {
   qtyPerSheet: number;
   secondsPerUnit: number; // Time for this individual part
   secondsPerSheet: number; // Total time for the full sheet
+  applicableModel?: string;
 }
 
 export interface BreakTime {

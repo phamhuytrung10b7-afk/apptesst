@@ -5452,18 +5452,25 @@ function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () 
               nestingId: String(row['NestingID'] || row['Mã tổ hợp'] || row['Mã bàn'] || row['ID Tổ hợp'] || row['Mã tấm'] || row['Mã phôi'] || row['Mã bàn (Nesting ID)'] || '').trim(),
               partId: finalPartId,
               qtyPerSheet: parseFloat(row['QtyPerSheet'] || row['Số lượng linh kiện/tấm'] || row['Số lượng/tấm'] || row['SL/Tấm'] || row['Số lượng'] || row['SL'] || row['Số lượng / Tấm'] || '0'),
-              secondsPerSheet: parseFloat(row['Tổng thời gian'] || row['Thời gian 1 bàn'] || row['Thời gian 1 tấm'] || row['Giây'] || row['Thời gian'] || row['Định mức'] || row['Thời gian cắt (Giây)'] || '0')
+              secondsPerSheet: parseFloat(row['Tổng thời gian'] || row['Thời gian 1 bàn'] || row['Thời gian 1 tấm'] || row['Giây'] || row['Thời gian'] || row['Định mức'] || row['Thời gian cắt (Giây)'] || '0'),
+              applicableModel: row['Model áp dụng'] || row['Model'] || row['ApplicableModel'] ? String(row['Model áp dụng'] || row['Model'] || row['ApplicableModel']).trim() : undefined
             };
           }).filter(n => n.nestingId && n.partId && n.qtyPerSheet > 0);
 
           if (rawImported.length === 0) {
-            alert('Không tìm thấy dữ liệu hợp lệ. Cần các cột: Mã bàn (Nesting ID), Linh kiện kết hợp, Số lượng / Tấm, Tổng thời gian cắt 1 bàn (Giây)');
+            alert('Không tìm thấy dữ liệu hợp lệ. Cần các cột: Mã bàn (Nesting ID), Linh kiện kết hợp, Số lượng / Tấm, Thời gian 1 tấm, Model áp dụng');
           } else {
             // Group by NestingID to find the max/defined seconds per sheet (since it could be written on only one row or duplicated)
             const nestingTotals = new Map<string, number>();
+            // Also map models if multiple rows have it
+            const nestingModels = new Map<string, string>();
+            
             rawImported.forEach(row => {
               if (row.secondsPerSheet > 0) {
                 nestingTotals.set(row.nestingId, row.secondsPerSheet);
+              }
+              if (row.applicableModel) {
+                nestingModels.set(row.nestingId, row.applicableModel);
               }
             });
 
@@ -5473,7 +5480,8 @@ function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () 
               partId: row.partId,
               qtyPerSheet: row.qtyPerSheet,
               secondsPerUnit: 0, // No longer used for total time calculation
-              secondsPerSheet: nestingTotals.get(row.nestingId) || row.secondsPerSheet || 0
+              secondsPerSheet: nestingTotals.get(row.nestingId) || row.secondsPerSheet || 0,
+              applicableModel: row.applicableModel || nestingModels.get(row.nestingId)
             }));
 
             storageService.saveLaserNesting(imported);
@@ -5600,6 +5608,7 @@ function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () 
               <thead>
                 <tr className="bg-gray-50/50 border-b border-gray-100">
                   <th className="p-8 pl-12 text-sm font-mono uppercase opacity-80">Mã bàn (Nesting ID)</th>
+                  <th className="p-8 text-sm font-mono uppercase opacity-80">Model áp dụng</th>
                   <th className="p-8 text-sm font-mono uppercase opacity-80">Linh kiện kết hợp</th>
                   <th className="p-8 text-sm font-mono uppercase opacity-80 text-center">Số lượng / Tấm</th>
                   <th className="p-8 text-sm font-mono uppercase opacity-80 text-center bg-orange-50/50">Thời gian 1 bàn (Giây)</th>
@@ -5609,10 +5618,18 @@ function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () 
                 {Array.from(new Set(nesting.map(n => n.nestingId))).map((nestId, idx) => {
                   const items = nesting.filter(n => n.nestingId === nestId);
                   const totalSeconds = items[0]?.secondsPerSheet || 0;
+                  const maxModel = items[0]?.applicableModel;
 
                   return (
                     <tr key={idx} className="hover:bg-gray-50/30 transition-colors">
                       <td className="p-8 pl-12 font-mono text-lg font-bold text-orange-600">{nestId}</td>
+                      <td className="p-8 font-mono text-sm opacity-80 whitespace-nowrap">
+                        {maxModel ? (
+                          <span className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full font-bold">{maxModel}</span>
+                        ) : (
+                          <span className="opacity-40 italic">Tất cả Model</span>
+                        )}
+                      </td>
                       <td className="p-8">
                         <div className="flex flex-wrap gap-2">
                           {items.map((it, i) => (
@@ -5640,7 +5657,7 @@ function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () 
                 })}
                 {nesting.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="p-24 text-center text-gray-400 italic">
+                    <td colSpan={5} className="p-24 text-center text-gray-400 italic">
                       <div className="flex flex-col items-center">
                         <Layers size={64} className="opacity-10 mb-6" />
                         <p className="text-xl">Chưa có định mức tổ hợp linh kiện Laser.</p>

@@ -1257,7 +1257,7 @@ export const storageService = {
         const individualLaserPOs: ProductionOrder[] = [];
         laserPOs.forEach(po => {
           const p = {...po};
-          const nest = laserNesting.find(ln => ln.partId === po.partId);
+          const nest = laserNesting.find(ln => ln.partId === po.partId && (!ln.applicableModel || ln.applicableModel === modelId));
           if (nest) {
             const group = nestedGroupMap.get(nest.nestingId) || [];
             group.push(p);
@@ -1282,7 +1282,7 @@ export const storageService = {
           let secondsPerSheet = 0;
           // Calculate max required plates for this nesting group
           groupPOs.forEach(p => {
-            const nest = laserNesting.find(ln => ln.partId === p.partId && ln.nestingId === nestingId);
+            const nest = laserNesting.find(ln => ln.partId === p.partId && ln.nestingId === nestingId && (!ln.applicableModel || ln.applicableModel === modelId));
             if (nest && nest.qtyPerSheet > 0) {
               const plates = Math.ceil(p.targetQuantity / nest.qtyPerSheet);
               if (plates > maxPlates) maxPlates = plates;
