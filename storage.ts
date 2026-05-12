@@ -1250,8 +1250,6 @@ export const storageService = {
       // 1. LASER
       let fFreeLaser = Math.max(globalStart, maxExistingLaserEnd);
       const laserConfig = shiftConfigs.find(c => c.stageId === 'LASER');
-      const overrideLaser = laserConfig?.workerOverrides?.find(o => o.modelId === modelId);
-      const laserWorkers = overrideLaser ? overrideLaser.workerCount : (laserConfig?.workerCount || 1);
       
       if (laserNesting.length > 0) {
         const nestedGroupMap = new Map<string, ProductionOrder[]>();
@@ -1271,7 +1269,13 @@ export const storageService = {
           const start = this.getNextWorkingTime(fFreeLaser, 'LASER', shiftConfigs);
           p.plannedStartTime = start;
           const norm = norms.find(n => n.partId === p.partId && n.stageId === 'LASER');
-          const duration = norm ? (p.targetQuantity * norm.secondsPerUnit * 1000) / laserWorkers : 0;
+          
+          // Worker override for individual laser PO
+          const partName = partsList.find(pl => pl.id === p.partId)?.name;
+          const override = laserConfig?.workerOverrides?.find(o => o.modelId === p.partId || o.modelId === partName || o.modelId === modelId);
+          const currentLaserWorkers = override ? override.workerCount : (laserConfig?.workerCount || 1);
+
+          const duration = norm ? (p.targetQuantity * norm.secondsPerUnit * 1000) / currentLaserWorkers : 0;
           const end = this.calculateEndTime(start, duration, 'LASER', shiftConfigs);
           p.expectedCompletionTime = end;
           fFreeLaser = end;
@@ -1281,6 +1285,12 @@ export const storageService = {
         nestedGroupMap.forEach((groupPOs, nestingId) => {
           let maxPlates = 0;
           let secondsPerSheet = 0;
+          
+          // Find the best worker count for the nesting group
+          let groupMaxWorkers = laserConfig?.workerCount || 1;
+          const batchModelOverride = laserConfig?.workerOverrides?.find(o => o.modelId === modelId);
+          if (batchModelOverride) groupMaxWorkers = batchModelOverride.workerCount;
+
           // Calculate max required plates for this nesting group
           groupPOs.forEach(p => {
             const nest = laserNesting.find(ln => ln.partId === p.partId && ln.nestingId === nestingId && (!ln.applicableModel || ln.applicableModel === modelId));
@@ -1289,10 +1299,17 @@ export const storageService = {
               if (plates > maxPlates) maxPlates = plates;
               if (nest.secondsPerSheet) secondsPerSheet = nest.secondsPerSheet;
             }
+
+            // Check if this specific part in the group has an override
+            const partName = partsList.find(pl => pl.id === p.partId)?.name;
+            const pOverride = laserConfig?.workerOverrides?.find(o => o.modelId === p.partId || o.modelId === partName);
+            if (pOverride && pOverride.workerCount > groupMaxWorkers) {
+              groupMaxWorkers = pOverride.workerCount;
+            }
           });
           
           const totalDur = maxPlates * secondsPerSheet * 1000;
-          const adjustedDur = totalDur / laserWorkers;
+          const adjustedDur = totalDur / groupMaxWorkers;
           const start = this.getNextWorkingTime(fFreeLaser, 'LASER', shiftConfigs);
           const end = this.calculateEndTime(start, adjustedDur, 'LASER', shiftConfigs);
           groupPOs.forEach(p => {
@@ -1309,7 +1326,12 @@ export const storageService = {
           const start = this.getNextWorkingTime(fFreeLaser, 'LASER', shiftConfigs);
           p.plannedStartTime = start;
           const norm = norms.find(n => n.partId === p.partId && n.stageId === 'LASER');
-          const duration = norm ? (p.targetQuantity * norm.secondsPerUnit * 1000) / laserWorkers : 0;
+
+          const partName = partsList.find(pl => pl.id === p.partId)?.name;
+          const override = laserConfig?.workerOverrides?.find(o => o.modelId === p.partId || o.modelId === partName || o.modelId === modelId);
+          const currentLaserWorkers = override ? override.workerCount : (laserConfig?.workerCount || 1);
+
+          const duration = norm ? (p.targetQuantity * norm.secondsPerUnit * 1000) / currentLaserWorkers : 0;
           const end = this.calculateEndTime(start, duration, 'LASER', shiftConfigs);
           p.expectedCompletionTime = end;
           fFreeLaser = end;
@@ -1323,8 +1345,8 @@ export const storageService = {
       const bendConfig = shiftConfigs.find(c => c.stageId === 'BENDING');
       bendingPOs.forEach(po => {
         const p = {...po};
-        const modelId = pos.find(x => x.id === p.masterPoId)?.partId || p.partId;
-        const override = bendConfig?.workerOverrides?.find(o => o.modelId === modelId);
+        const partName = partsList.find(pl => pl.id === p.partId)?.name;
+        const override = bendConfig?.workerOverrides?.find(o => o.modelId === p.partId || o.modelId === partName || o.modelId === modelId);
         const bendWorkers = override ? override.workerCount : (bendConfig?.workerCount || 1);
 
         const laserEnd = getFinishTime(p.partId, 'LASER');
@@ -1344,8 +1366,8 @@ export const storageService = {
       const weldConfig = shiftConfigs.find(c => c.stageId === 'WELDING');
       weldingPOs.forEach(po => {
         const p = {...po};
-        const modelId = pos.find(x => x.id === p.masterPoId)?.partId || p.partId;
-        const override = weldConfig?.workerOverrides?.find(o => o.modelId === modelId);
+        const partName = partsList.find(pl => pl.id === p.partId)?.name;
+        const override = weldConfig?.workerOverrides?.find(o => o.modelId === p.partId || o.modelId === partName || o.modelId === modelId);
         const weldWorkers = override ? override.workerCount : (weldConfig?.workerCount || 1);
 
         const children = level1Children.get(p.partId) || [];
@@ -1377,8 +1399,8 @@ export const storageService = {
       const paintConfig = shiftConfigs.find(c => c.stageId === 'PAINTING');
       paintingPOs.forEach(po => {
         const p = {...po};
-        const poModelId = pos.find(x => x.id === p.masterPoId)?.partId || p.partId;
-        const override = paintConfig?.workerOverrides?.find(o => o.modelId === poModelId);
+        const partName = partsList.find(pl => pl.id === p.partId)?.name;
+        const override = paintConfig?.workerOverrides?.find(o => o.modelId === p.partId || o.modelId === partName || o.modelId === modelId);
         const paintWorkers = override ? override.workerCount : (paintConfig?.workerCount || 1);
 
         let weldEnd = partStageFinishTime.get(p.partId)?.get('WELDING');
