@@ -49,6 +49,7 @@ export interface BOMDefinitionV2 {
   resultPartId: string;
   ingredientPartId: string;
   quantity: number; // Amount of ingredient per unit of result
+  applicableModel?: string;
 }
 
 export interface ModelBOMDefinition {

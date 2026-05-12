@@ -4857,12 +4857,12 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                         const ws = wb.Sheets[wsname];
                         const data = XLSX.utils.sheet_to_json(ws) as any[];
                         
-                        // Expected columns: ResultID, IngredientID, Quantity, SkipBending
+                        // Expected columns: ResultID, IngredientID, Quantity, SkipBending, ApplicableModel
                         const imported: BOMDefinitionV2[] = data.map(row => ({
                           resultPartId: String(row['ResultID'] || row['Mã thành phẩm'] || row['Mã cha'] || '').trim(),
                           ingredientPartId: String(row['IngredientID'] || row['Mã linh kiện'] || row['Mã con'] || '').trim(),
                           quantity: parseFloat(row['Quantity'] || row['Số lượng'] || '1'),
-                          skipBending: row['SkipBending'] === 'Y' || row['SkipBending'] === true || row['Bỏ qua chấn'] === 'X'
+                          applicableModel: row['Model áp dụng'] || row['Model'] || row['ApplicableModel'] ? String(row['Model áp dụng'] || row['Model'] || row['ApplicableModel']).trim() : undefined,
                         })).filter(b => b.resultPartId && b.ingredientPartId && b.quantity > 0);
 
                         if (imported.length === 0) {
@@ -4889,6 +4889,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="p-6 text-xs font-bold uppercase opacity-50">Model áp dụng</th>
                     <th className="p-6 text-xs font-bold uppercase opacity-50">Thành phẩm (Level 1)</th>
                     <th className="p-6 text-xs font-bold uppercase opacity-50">Linh kiện thành phần (Level 2)</th>
                     <th className="p-6 text-xs font-bold uppercase opacity-50 text-center">Số lượng/1 đơn vị</th>
@@ -4897,11 +4898,18 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                 <tbody>
                   {storageService.getBOMV2().length === 0 ? (
                     <tr>
-                      <td colSpan={3} className="p-20 text-center text-gray-400 italic">Chưa có dữ liệu định mức Hàn. Vui lòng nhập từ Excel.</td>
+                      <td colSpan={4} className="p-20 text-center text-gray-400 italic">Chưa có dữ liệu định mức Hàn. Vui lòng nhập từ Excel.</td>
                     </tr>
                   ) : (
                     storageService.getBOMV2().map((b, i) => (
                       <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                        <td className="p-6 font-mono text-sm opacity-80 whitespace-nowrap">
+                          {b.applicableModel ? (
+                            <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full font-bold">{b.applicableModel}</span>
+                          ) : (
+                            <span className="opacity-40 italic">Tất cả Model</span>
+                          )}
+                        </td>
                         <td className="p-6">
                           <div className="font-bold">{getProcessValue(parts.find(p => p.id === b.resultPartId)?.name, parts.find(p => p.id === b.resultPartId), 'WELDING', 'OUT')}</div>
                           <div className="text-xs font-mono opacity-50">{getProcessValue(b.resultPartId, parts.find(p => p.id === b.resultPartId), 'WELDING', 'OUT')}</div>

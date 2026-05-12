@@ -323,6 +323,12 @@ export const storageService = {
     const parts = this.getParts();
     // Strip suffixes added by display logic (e.g., " - CD", " - H") to ensure BOM lookups match the original part ID
     const cleanId = partId.split(' - ')[0];
+
+    let currentModelId: string | undefined;
+    if (poId) {
+      const parentPoId = this.getProductionOrders().find(p => p.id === poId)?.masterPoId || poId;
+      currentModelId = this.getProductionOrders().find(p => p.id === parentPoId)?.partId;
+    }
     
     // Laser stage specific logic (BOM V1):
     // Deduct Level 3 parts from Laser IN based on BOM when Level 2 is produced
@@ -354,7 +360,7 @@ export const storageService = {
     if (stageId === 'WELDING') {
       const bomV2 = this.getBOMV2();
       // Only deduct ingredients that DON'T skip welding
-      const allIngredients = bomV2.filter(b => b.resultPartId === cleanId);
+      const allIngredients = bomV2.filter(b => b.resultPartId === cleanId && (!b.applicableModel || b.applicableModel === currentModelId));
       const ingredients = allIngredients.filter(ing => {
         const p = parts.find(part => part.id === ing.ingredientPartId);
         return !p?.skipWelding;
@@ -381,7 +387,7 @@ export const storageService = {
     // Painting stage deduction for ingredients that skipped welding
     if (stageId === 'PAINTING') {
       const bomV2 = this.getBOMV2();
-      const allIngredients = bomV2.filter(b => b.resultPartId === cleanId);
+      const allIngredients = bomV2.filter(b => b.resultPartId === cleanId && (!b.applicableModel || b.applicableModel === currentModelId));
       const skipWeldedIngredients = allIngredients.filter(ing => {
         const p = parts.find(part => part.id === ing.ingredientPartId);
         return p?.skipWelding;
@@ -1149,7 +1155,7 @@ export const storageService = {
       for (const ing of v1Idx) {
         traverseBOM(ing.partId, currentQty * ing.quantity, level + 1, (level === 0) ? null : (level === 1 ? currentId : parentId));
       }
-      const v2Idx = bomV2.filter(b => b.resultPartId === currentId);
+      const v2Idx = bomV2.filter(b => b.resultPartId === currentId && (!b.applicableModel || b.applicableModel === modelId));
       for (const ing of v2Idx) {
         const nextParentId = (level === 1) ? currentId : (level >= 2 ? parentId : null);
         traverseBOM(ing.ingredientPartId, currentQty * ing.quantity, level + 1, nextParentId);
@@ -1190,7 +1196,7 @@ export const storageService = {
 
     requiredParts.forEach((info, partId) => {
       const { minLevel: level } = info;
-      const hasIngredients = bomV2.some(b => b.resultPartId === partId);
+      const hasIngredients = bomV2.some(b => b.resultPartId === partId && (!b.applicableModel || b.applicableModel === modelId));
       if (!hasIngredients) {
         addPoToList(partId, info, 'LASER', laserPOs);
         addPoToList(partId, info, 'BENDING', bendingPOs);
