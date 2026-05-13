@@ -1430,13 +1430,37 @@ export const storageService = {
       return { outChildPOs, maxEnd, minStart: actualMinStart };
     };
 
-    // Use Forward Scheduling starting from now (queuing)
-    // This satisfies the "nối đuôi nhau" request by always starting as soon as machines are free.
-    const { outChildPOs, maxEnd, minStart } = runForwardPass(timestamp);
-    
-    const bestChildPOs = outChildPOs;
-    const bestStart = minStart;
-    const bestEnd = maxEnd;
+    // Backward scheduling logic: find the latest globalStart that meets the target date
+    // while respecting the machine queuing (maxExisting...End)
+    let low = timestamp;
+    let high = targetCompletionTime && targetCompletionTime > timestamp ? targetCompletionTime : timestamp;
+    let bestChildPOs: ProductionOrder[] = [];
+    let bestStart = low;
+    let bestEnd = low;
+
+    if (high > low) {
+        // Binary search for the latest start time that finishes by the deadline
+        for (let i = 0; i < 30; i++) {
+            const mid = low + Math.floor((high - low) / 2);
+            const { outChildPOs, maxEnd, minStart } = runForwardPass(mid);
+            if (maxEnd <= targetCompletionTime!) {
+                bestChildPOs = outChildPOs;
+                bestStart = minStart;
+                bestEnd = maxEnd;
+                low = mid + 1; // Try starting later
+            } else {
+                high = mid - 1; // Too late, must start earlier
+            }
+        }
+    }
+
+    // Fallback or if no target date: Use Forward Scheduling starting from now (queuing)
+    if (bestChildPOs.length === 0) {
+        const { outChildPOs, maxEnd, minStart } = runForwardPass(timestamp);
+        bestChildPOs = outChildPOs;
+        bestStart = minStart;
+        bestEnd = maxEnd;
+    }
 
     const masterPo: ProductionOrder = {
       id: masterPoId,
