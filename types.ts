@@ -12,6 +12,7 @@ export interface Part {
   level?: number;
   skipBending?: boolean;
   skipWelding?: boolean;
+  skipPainting?: boolean;
 }
 
 export interface InventoryItem {

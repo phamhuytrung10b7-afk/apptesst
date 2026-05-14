@@ -2724,7 +2724,7 @@ function ProduceView({
     if (selectedStage === 'WELDING') {
       return (sourceLocation === 'IN' ? p.level === 2 : p.level === 1) && !p.skipWelding;
     }
-    if (selectedStage === 'PAINTING') return p.level === 1;
+    if (selectedStage === 'PAINTING') return p.level === 1 && !p.skipPainting;
     return true;
   });
 
@@ -2766,15 +2766,14 @@ function ProduceView({
       if (idx <= currentIdx) return false;
       if (s.id === 'BENDING' && part?.skipBending) return false;
       if (s.id === 'WELDING' && part?.skipWelding) return false;
+      if (s.id === 'PAINTING' && part?.skipPainting) return false;
       return true;
     });
 
     if (nextAvailableStage) {
       setTargetStageId(nextAvailableStage.id);
-    } else if (selectedStage === 'PAINTING') {
-      setTargetStageId('DCLR');
     } else {
-      setTargetStageId('' as StageId);
+      setTargetStageId('DCLR');
     }
     
     // Auto-switch to OUT for stages with automatic BOM deduction
@@ -2889,7 +2888,7 @@ function ProduceView({
             />
           </div>
 
-          {sourceLocation === 'OUT' && selectedStage !== 'PAINTING' && (
+          {sourceLocation === 'OUT' && targetStageId !== 'DCLR' && (
             <div className="space-y-4">
               <label className="text-sm font-bold uppercase tracking-widest opacity-50">4. Công đoạn đích (Nhập kho IN)</label>
               <select 
@@ -2907,6 +2906,7 @@ function ProduceView({
                   // Filter out skipped stages based on part configuration
                   if (s.id === 'BENDING' && part?.skipBending) return false;
                   if (s.id === 'WELDING' && part?.skipWelding) return false;
+                  if (s.id === 'PAINTING' && part?.skipPainting) return false;
 
                   return true;
                 }).map(stage => (
@@ -2916,7 +2916,7 @@ function ProduceView({
             </div>
           )}
 
-          {sourceLocation === 'OUT' && selectedStage === 'PAINTING' && (
+          {sourceLocation === 'OUT' && targetStageId === 'DCLR' && (
             <div className="space-y-4">
               <label className="text-sm font-bold uppercase tracking-widest opacity-50">4. Công đoạn đích (Nhập kho IN)</label>
               <div className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg bg-gray-50 text-gray-500">
@@ -3816,7 +3816,7 @@ function ManualInboundView({ parts, onManualInbound, setDefectModal }: any) {
       if (targetLocation === 'IN') return p.level === 2;
       if (targetLocation === 'OUT') return p.level === 1;
     }
-    if (selectedStage === 'PAINTING') return p.level === 1;
+    if (selectedStage === 'PAINTING') return p.level === 1 && !p.skipPainting;
     return true;
   });
 
@@ -4516,6 +4516,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
         const unitIdx = headers.findIndex(h => h === 'unit' || h === 'đvt');
         const skipBendIdx = headers.findIndex(h => h === 'skipbending' || h === 'bỏ qua chấn' || h === 'miễn chấn' || h === 'skip bend');
         const skipWeldIdx = headers.findIndex(h => h === 'skipwelding' || h === 'bỏ qua hàn' || h === 'miễn hàn' || h === 'skip weld');
+        const skipPaintIdx = headers.findIndex(h => h === 'skippainting' || h === 'bỏ qua sơn' || h === 'miễn sơn' || h === 'skip paint');
 
         if (itemIdx === -1 || descIdx === -1) {
           alert('Không tìm thấy cột Item hoặc Description trong file Excel.');
@@ -4545,7 +4546,8 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
             unit: String(unitIdx !== -1 ? row[unitIdx] : 'Cái').trim(),
             level: level,
             skipBending: skipBendIdx !== -1 ? isTruthful(row[skipBendIdx]) : false,
-            skipWelding: skipWeldIdx !== -1 ? isTruthful(row[skipWeldIdx]) : false
+            skipWelding: skipWeldIdx !== -1 ? isTruthful(row[skipWeldIdx]) : false,
+            skipPainting: skipPaintIdx !== -1 ? isTruthful(row[skipPaintIdx]) : false
           };
         }).filter(p => p.id && p.name);
 
@@ -4604,7 +4606,8 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
       ...part,
       level: part.level || 1,
       skipBending: !!part.skipBending,
-      skipWelding: !!part.skipWelding
+      skipWelding: !!part.skipWelding,
+      skipPainting: !!part.skipPainting
     });
     setEditingId(part.id);
   };
@@ -4676,7 +4679,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
           </div>
           <div className="space-y-4">
             <label className="text-xs font-bold uppercase opacity-50">Cấu hình Quy trình</label>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
                 <input 
                   type="checkbox" 
@@ -4694,6 +4697,15 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                   className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
                 <span className="text-sm font-medium">Bỏ qua Hàn</span>
+              </label>
+              <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
+                <input 
+                  type="checkbox" 
+                  checked={!!newPart.skipPainting} 
+                  onChange={e => setNewPart({...newPart, skipPainting: e.target.checked})}
+                  className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm font-medium">Bỏ qua Sơn</span>
               </label>
             </div>
           </div>
@@ -5312,12 +5324,14 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                         <div className="flex gap-2 mt-1">
                           {part.skipBending && <span className="px-1.5 py-0.5 bg-red-50 text-red-600 text-[9px] font-bold rounded border border-red-100">MIỄN CHẤN</span>}
                           {part.skipWelding && <span className="px-1.5 py-0.5 bg-orange-50 text-orange-600 text-[9px] font-bold rounded border border-orange-100">MIỄN HÀN</span>}
+                          {part.skipPainting && <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[9px] font-bold rounded border border-gray-200">MIỄN SƠN</span>}
                         </div>
                       </td>
                       <td className="p-6">
                         <div className="flex flex-col gap-1 text-[10px] uppercase font-bold text-gray-400">
                           <span className={cn(part.skipBending ? "line-through opacity-30" : "text-blue-600")}>Chấn</span>
                           <span className={cn(part.skipWelding ? "line-through opacity-30" : "text-blue-600")}>Hàn</span>
+                          <span className={cn(part.skipPainting ? "line-through opacity-30" : "text-blue-600")}>Sơn</span>
                         </div>
                       </td>
                       <td className="p-6 text-base text-gray-500">{part.unit}</td>

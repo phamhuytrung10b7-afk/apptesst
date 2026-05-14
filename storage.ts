@@ -424,9 +424,10 @@ export const storageService = {
       const nextStage = STAGES[i];
       if (nextStage.id === 'BENDING' && part.skipBending) continue;
       if (nextStage.id === 'WELDING' && part.skipWelding) continue;
+      if (nextStage.id === 'PAINTING' && part.skipPainting) continue;
       return nextStage.id;
     }
-    return null;
+    return 'DCLR';
   },
 
   recordStageOut(partId: string, stageId: StageId, quantity: number, sourceLocation: 'IN' | 'OUT' = 'IN', targetStageId?: StageId, poId?: string) {
