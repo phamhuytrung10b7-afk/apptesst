@@ -2716,7 +2716,7 @@ function ProduceView({
     }
 
     if (selectedStage === 'LASER') {
-      return sourceLocation === 'IN' ? p.level === 3 : p.level === 2;
+      return (sourceLocation === 'IN' ? p.level === 3 : p.level === 2) && !p.skipLaser;
     }
     if (selectedStage === 'BENDING') {
       return p.level === 2 && !p.skipBending;
@@ -2764,6 +2764,7 @@ function ProduceView({
     // Find the next non-skipped stage
     const nextAvailableStage = STAGES.find((s, idx) => {
       if (idx <= currentIdx) return false;
+      if (s.id === 'LASER' && part?.skipLaser) return false;
       if (s.id === 'BENDING' && part?.skipBending) return false;
       if (s.id === 'WELDING' && part?.skipWelding) return false;
       if (s.id === 'PAINTING' && part?.skipPainting) return false;
@@ -2904,6 +2905,7 @@ function ProduceView({
                   if (idx <= currentIdx) return false;
 
                   // Filter out skipped stages based on part configuration
+                  if (s.id === 'LASER' && part?.skipLaser) return false;
                   if (s.id === 'BENDING' && part?.skipBending) return false;
                   if (s.id === 'WELDING' && part?.skipWelding) return false;
                   if (s.id === 'PAINTING' && part?.skipPainting) return false;
@@ -3805,6 +3807,7 @@ function ManualInboundView({ parts, onManualInbound, setDefectModal }: any) {
     }
 
     if (selectedStage === 'LASER') {
+      if (p.skipLaser) return false;
       if (targetLocation === 'IN') return p.level === 3;
       if (targetLocation === 'OUT') return p.level === 2;
     }
@@ -4375,7 +4378,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
   onLabelSettingsChange: (s: any) => void,
   key?: string 
 }) {
-  const [newPart, setNewPart] = useState<Part>({ id: '', name: '', unit: 'Cái', level: 1, skipBending: false, skipWelding: false });
+  const [newPart, setNewPart] = useState<Part>({ id: '', name: '', unit: 'Cái', level: 1, skipLaser: false, skipBending: false, skipWelding: false, skipPainting: false });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [isImportingBOM, setIsImportingBOM] = useState(false);
@@ -4514,6 +4517,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
         const itemIdx = headers.findIndex(h => h === 'item' || h === 'mã linh kiện' || h === 'id');
         const descIdx = headers.findIndex(h => h === 'description' || h === 'tên linh kiện' || h === 'name');
         const unitIdx = headers.findIndex(h => h === 'unit' || h === 'đvt');
+        const skipLaserIdx = headers.findIndex(h => h === 'skiplaser' || h === 'bỏ qua laser' || h === 'miễn laser' || h === 'skip laser');
         const skipBendIdx = headers.findIndex(h => h === 'skipbending' || h === 'bỏ qua chấn' || h === 'miễn chấn' || h === 'skip bend');
         const skipWeldIdx = headers.findIndex(h => h === 'skipwelding' || h === 'bỏ qua hàn' || h === 'miễn hàn' || h === 'skip weld');
         const skipPaintIdx = headers.findIndex(h => h === 'skippainting' || h === 'bỏ qua sơn' || h === 'miễn sơn' || h === 'skip paint');
@@ -4545,6 +4549,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
             name: String(row[descIdx] || '').trim(),
             unit: String(unitIdx !== -1 ? row[unitIdx] : 'Cái').trim(),
             level: level,
+            skipLaser: skipLaserIdx !== -1 ? isTruthful(row[skipLaserIdx]) : false,
             skipBending: skipBendIdx !== -1 ? isTruthful(row[skipBendIdx]) : false,
             skipWelding: skipWeldIdx !== -1 ? isTruthful(row[skipWeldIdx]) : false,
             skipPainting: skipPaintIdx !== -1 ? isTruthful(row[skipPaintIdx]) : false
@@ -4605,6 +4610,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
     setNewPart({
       ...part,
       level: part.level || 1,
+      skipLaser: !!part.skipLaser,
       skipBending: !!part.skipBending,
       skipWelding: !!part.skipWelding,
       skipPainting: !!part.skipPainting
@@ -4679,7 +4685,16 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
           </div>
           <div className="space-y-4">
             <label className="text-xs font-bold uppercase opacity-50">Cấu hình Quy trình</label>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-4 gap-4">
+              <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
+                <input 
+                  type="checkbox" 
+                  checked={!!newPart.skipLaser} 
+                  onChange={e => setNewPart({...newPart, skipLaser: e.target.checked})}
+                  className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm font-medium">Bỏ qua Laser</span>
+              </label>
               <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
                 <input 
                   type="checkbox" 
@@ -5322,6 +5337,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                       <td className="p-6">
                         <div className="text-base font-medium">{part.name}</div>
                         <div className="flex gap-2 mt-1">
+                          {part.skipLaser && <span className="px-1.5 py-0.5 bg-yellow-50 text-yellow-600 text-[9px] font-bold rounded border border-yellow-100">MIỄN LASER</span>}
                           {part.skipBending && <span className="px-1.5 py-0.5 bg-red-50 text-red-600 text-[9px] font-bold rounded border border-red-100">MIỄN CHẤN</span>}
                           {part.skipWelding && <span className="px-1.5 py-0.5 bg-orange-50 text-orange-600 text-[9px] font-bold rounded border border-orange-100">MIỄN HÀN</span>}
                           {part.skipPainting && <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[9px] font-bold rounded border border-gray-200">MIỄN SƠN</span>}
@@ -5329,6 +5345,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                       </td>
                       <td className="p-6">
                         <div className="flex flex-col gap-1 text-[10px] uppercase font-bold text-gray-400">
+                          <span className={cn(part.skipLaser ? "line-through opacity-30" : "text-blue-600")}>Laser</span>
                           <span className={cn(part.skipBending ? "line-through opacity-30" : "text-blue-600")}>Chấn</span>
                           <span className={cn(part.skipWelding ? "line-through opacity-30" : "text-blue-600")}>Hàn</span>
                           <span className={cn(part.skipPainting ? "line-through opacity-30" : "text-blue-600")}>Sơn</span>

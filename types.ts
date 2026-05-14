@@ -10,6 +10,7 @@ export interface Part {
   name: string;
   unit: string;
   level?: number;
+  skipLaser?: boolean;
   skipBending?: boolean;
   skipWelding?: boolean;
   skipPainting?: boolean;

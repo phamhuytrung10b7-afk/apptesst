@@ -422,6 +422,7 @@ export const storageService = {
 
     for (let i = currentStageIndex + 1; i < STAGES.length; i++) {
       const nextStage = STAGES[i];
+      if (nextStage.id === 'LASER' && part.skipLaser) continue;
       if (nextStage.id === 'BENDING' && part.skipBending) continue;
       if (nextStage.id === 'WELDING' && part.skipWelding) continue;
       if (nextStage.id === 'PAINTING' && part.skipPainting) continue;
@@ -1176,6 +1177,7 @@ export const storageService = {
       if (STAGE_ORDER.indexOf(stageId) >= targetStageIdx) return;
       const { qty, minLevel: level } = info;
       const part = partsList.find(p => p.id === partId);
+      if (stageId === 'LASER' && part?.skipLaser) return;
       if (stageId === 'BENDING' && part?.skipBending) return;
       if (stageId === 'WELDING' && part?.skipWelding) return;
       if (stageId === 'PAINTING' && (part?.skipPainting || level > 1)) return;
