@@ -19,6 +19,8 @@ const STORAGE_KEYS = {
   LASER_NESTING: 'wip_laser_nesting',
   SHIFT_CONFIGS: 'wip_shift_configs',
   TRANSFORMATIONS: 'wip_transformations',
+  GLAZING_CONFIGS: 'wip_glazing_configs',
+  GLAZING_OUT_CONFIGS: 'wip_glazing_out_configs',
 };
 
 // In-memory cache to reduce localStorage hits
@@ -170,6 +172,30 @@ export const storageService = {
   saveTransformations(transformations: PartTransformation[]) {
     localStorage.setItem(STORAGE_KEYS.TRANSFORMATIONS, JSON.stringify(transformations));
     cache[STORAGE_KEYS.TRANSFORMATIONS] = transformations;
+  },
+
+  getGlazingConfigs(): import('./types').GlazingConfig[] {
+    return getCached(STORAGE_KEYS.GLAZING_CONFIGS, () => {
+      const data = localStorage.getItem(STORAGE_KEYS.GLAZING_CONFIGS);
+      return data ? JSON.parse(data) : [];
+    });
+  },
+
+  saveGlazingConfigs(configs: import('./types').GlazingConfig[]) {
+    localStorage.setItem(STORAGE_KEYS.GLAZING_CONFIGS, JSON.stringify(configs));
+    cache[STORAGE_KEYS.GLAZING_CONFIGS] = configs;
+  },
+
+  getGlazingOutConfigs(): import('./types').GlazingOutConfig[] {
+    return getCached(STORAGE_KEYS.GLAZING_OUT_CONFIGS, () => {
+      const data = localStorage.getItem(STORAGE_KEYS.GLAZING_OUT_CONFIGS);
+      return data ? JSON.parse(data) : [];
+    });
+  },
+
+  saveGlazingOutConfigs(configs: import('./types').GlazingOutConfig[]) {
+    localStorage.setItem(STORAGE_KEYS.GLAZING_OUT_CONFIGS, JSON.stringify(configs));
+    cache[STORAGE_KEYS.GLAZING_OUT_CONFIGS] = configs;
   },
 
   getInventory(): InventoryItem[] {
@@ -456,8 +482,10 @@ export const storageService = {
     }
 
     // 0. Update Production Order progress if producing (IN -> OUT)
+    const isGlazingOutPseudoPart = stageId === 'GLAZING' && cleanId.startsWith('GLZ-OUT-');
+
     if (sourceLocation === 'IN') {
-      if (poIndex === -1) {
+      if (poIndex === -1 && !isGlazingOutPseudoPart) {
         throw new Error(`Lỗi: Không tìm thấy lệnh PO sản xuất hợp lệ cho linh kiện ${cleanId} tại công đoạn ${STAGES.find(s => s.id === stageId)?.name}. Vui lòng tạo Lệnh sản xuất trước khi thực hiện.`);
       }
 
@@ -493,9 +521,9 @@ export const storageService = {
     } else if (sourceLocation === 'OUT') {
       // EXPORTING: Update exportedQuantity
       const pos = this.getProductionOrders();
-      const poIndex = poId ? pos.findIndex(p => p.id === poId) : -1;
+      const poIndex = poId ? pos.findIndex(p => p.id === poId) : pos.findIndex(p => p.partId === cleanId && p.stageId === stageId && p.status !== 'COMPLETED');
       
-      if (poIndex === -1) {
+      if (poIndex === -1 && !isGlazingOutPseudoPart) {
         throw new Error(`Lỗi: Không tìm thấy lệnh PO sản xuất hợp lệ để thực hiện xuất kho QR cho linh kiện ${cleanId}.`);
       }
 
@@ -689,12 +717,13 @@ export const storageService = {
 
     // Check for required PO
     const isLaserMaterialInbound = stageId === 'LASER' && location === 'IN';
+    const isGlazing = stageId === 'GLAZING';
     const pos = this.getProductionOrders();
     const poIndex = poId 
       ? pos.findIndex(p => p.id === poId)
       : pos.findIndex(p => p.partId === cleanId && p.stageId === stageId && p.status !== 'COMPLETED');
     
-    if (poIndex === -1 && !isLaserMaterialInbound) {
+    if (poIndex === -1 && !isLaserMaterialInbound && !isGlazing) {
       throw new Error(`Lỗi: Không tìm thấy lệnh PO sản xuất hợp lệ cho linh kiện ${cleanId} tại công đoạn ${STAGES.find(s => s.id === stageId)?.name}. Chức năng nhập kho thủ công cũng yêu cầu phải có PO.`);
     }
 

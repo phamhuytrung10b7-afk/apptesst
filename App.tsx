@@ -35,7 +35,8 @@ import {
   Save,
   Plus,
   Users,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Square
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -87,7 +88,7 @@ function getProcessValue(value: string | undefined, part: Part | undefined, stag
   return `${value} - ${suffix}`;
 }
 
-type View = 'dashboard' | 'produce' | 'inbound' | 'laser_inbound' | 'welding_inbound' | 'manual_inbound' | 'history' | 'settings' | 'labels' | 'po' | 'norms' | 'working_hours' | 'defects';
+type View = 'dashboard' | 'produce' | 'inbound' | 'laser_inbound' | 'welding_inbound' | 'manual_inbound' | 'history' | 'settings' | 'labels' | 'po' | 'norms' | 'working_hours' | 'defects' | 'glazing';
 
 function SearchableSelect({ 
   options, 
@@ -575,6 +576,13 @@ export default function App() {
             collapsed={!isSidebarOpen}
           />
           <SidebarLink 
+            active={currentView === 'glazing'} 
+            onClick={() => setCurrentView('glazing')}
+            icon={<Square size={24} />}
+            label="Công đoạn Dán Kính"
+            collapsed={!isSidebarOpen}
+          />
+          <SidebarLink 
             active={currentView === 'labels'} 
             onClick={() => setCurrentView('labels')}
             icon={<QrCode size={24} />}
@@ -725,6 +733,15 @@ export default function App() {
                   parts={parts}
                   onManualInbound={handleManualInbound}
                   setDefectModal={setDefectModal}
+                />
+              )}
+              {currentView === 'glazing' && (
+                <GlazingView 
+                  key="glazing"
+                  parts={parts}
+                  onManualInbound={handleManualInbound}
+                  setDefectModal={setDefectModal}
+                  refreshData={refreshData}
                 />
               )}
               {currentView === 'manual_inbound' && (
@@ -2136,7 +2153,7 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
   const [searchTerm, setSearchTerm] = useState('');
 
   const chartData = useMemo(() => {
-    return STAGES.map(stage => {
+    return STAGES.filter(s => s.id !== 'GLAZING' && s.id !== 'DCLR').map(stage => {
       const stageItems = inventory.filter(item => item.stageId === stage.id);
       const inQty = stageItems
         .filter(item => item.location === 'IN')
@@ -2212,7 +2229,7 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stageSummaries.map((summary, idx) => {
+        {stageSummaries.filter(s => s.id !== 'GLAZING' && s.id !== 'DCLR').map((summary, idx) => {
           const isActive = selectedStageDetail === summary.id;
 
           return (
@@ -2706,27 +2723,52 @@ function ProduceView({
   }, [selectedStage, sourceLocation, storageService.getProductionOrders()]); // Depend on getter
 
   // Filter parts based on stage, BOM level, and selected PO
-  const filteredParts = parts.filter((p: any) => {
-    if (selectedPoId) {
-      const selectedPo = allAvailablePos.find(po => po.id === selectedPoId);
-      if (selectedPo && p.id !== selectedPo.partId) return false;
-    } else {
-      const hasAvailablePo = allAvailablePos.some(po => po.partId === p.id);
-      if (!hasAvailablePo) return false;
+  const filteredParts = React.useMemo(() => {
+    let baseParts = parts;
+
+    // Inject pseudo parts if we are looking at Glazing OUT
+    if (selectedStage === 'GLAZING' && sourceLocation === 'OUT') {
+      const outConfigs = storageService.getGlazingOutConfigs().filter(c => !c.finalPartName.toUpperCase().includes('DCLR'));
+      const pseudoParts = outConfigs.map(c => ({
+        id: `GLZ-OUT-${c.finalPartName}`,
+        name: c.finalPartName,
+        level: 1,
+        skipLaser: false, skipBending: false, skipWelding: false, skipPainting: false
+      }));
+      baseParts = pseudoParts; // ONLY use pseudo parts for Glazing OUT
+    } else if (selectedStage === 'GLAZING') {
+      // For GLAZING IN, just return empty because we don't 'produce' IN using this view normally
+      return [];
     }
 
-    if (selectedStage === 'LASER') {
-      return (sourceLocation === 'IN' ? p.level === 3 : p.level === 2) && !p.skipLaser;
-    }
-    if (selectedStage === 'BENDING') {
-      return p.level === 2 && !p.skipBending;
-    }
-    if (selectedStage === 'WELDING') {
-      return (sourceLocation === 'IN' ? p.level === 2 : p.level === 1) && !p.skipWelding;
-    }
-    if (selectedStage === 'PAINTING') return p.level === 1 && !p.skipPainting;
-    return true;
-  });
+    return baseParts.filter((p: any) => {
+      // Glazing OUT special case: just show them all
+      if (selectedStage === 'GLAZING' && sourceLocation === 'OUT') {
+        return true;
+      }
+
+      if (selectedPoId) {
+        const selectedPo = allAvailablePos.find(po => po.id === selectedPoId);
+        if (selectedPo && p.id !== selectedPo.partId) return false;
+      } else {
+        const hasAvailablePo = allAvailablePos.some(po => po.partId === p.id);
+        if (!hasAvailablePo && selectedStage !== 'GLAZING') return false; 
+      }
+
+      if (selectedStage === 'LASER') {
+        return (sourceLocation === 'IN' ? p.level === 3 : p.level === 2) && !p.skipLaser;
+      }
+      if (selectedStage === 'BENDING') {
+        return p.level === 2 && !p.skipBending;
+      }
+      if (selectedStage === 'WELDING') {
+        return (sourceLocation === 'IN' ? p.level === 2 : p.level === 1) && !p.skipWelding;
+      }
+      if (selectedStage === 'PAINTING') return p.level === 1 && !p.skipPainting;
+      
+      return true;
+    });
+  }, [parts, selectedStage, sourceLocation, selectedPoId, allAvailablePos]);
 
   const availablePos = allAvailablePos.filter(p => p.partId === selectedPart);
 
@@ -2778,7 +2820,7 @@ function ProduceView({
     }
     
     // Auto-switch to OUT for stages with automatic BOM deduction
-    if (selectedStage === 'LASER' || selectedStage === 'WELDING') {
+    if (selectedStage === 'LASER' || selectedStage === 'WELDING' || selectedStage === 'GLAZING') {
       setSourceLocation('OUT');
     }
   }, [selectedStage, selectedPart, sourceLocation, parts]);
@@ -2827,7 +2869,7 @@ function ProduceView({
                 onChange={(e) => setSelectedStage(e.target.value)}
                 className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none bg-white cursor-pointer"
               >
-                {STAGES.map(stage => (
+                {STAGES.filter(stage => stage.id !== 'DCLR').map(stage => (
                   <option key={stage.id} value={stage.id}>{stage.name}</option>
                 ))}
               </select>
@@ -2901,6 +2943,8 @@ function ProduceView({
                   const currentIdx = STAGES.findIndex(st => st.id === selectedStage);
                   const part = parts.find((p: any) => p.id === selectedPart);
                   
+                  if (s.id === 'DCLR') return false; // Hide DCLR choice explicitly here
+
                   // Only show stages after the current one
                   if (idx <= currentIdx) return false;
 
@@ -2915,15 +2959,6 @@ function ProduceView({
                   <option key={stage.id} value={stage.id}>{stage.name}</option>
                 ))}
               </select>
-            </div>
-          )}
-
-          {sourceLocation === 'OUT' && targetStageId === 'DCLR' && (
-            <div className="space-y-4">
-              <label className="text-sm font-bold uppercase tracking-widest opacity-50">4. Công đoạn đích (Nhập kho IN)</label>
-              <div className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg bg-gray-50 text-gray-500">
-                DCLR (Mặc định)
-              </div>
             </div>
           )}
 
@@ -3940,7 +3975,7 @@ function ManualInboundView({ parts, onManualInbound, setDefectModal }: any) {
                 onChange={(e) => setSelectedStage(e.target.value as StageId)}
                 className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none bg-white cursor-pointer"
               >
-                {STAGES.map(stage => (
+                {STAGES.filter(stage => stage.id !== 'DCLR').map(stage => (
                   <option key={stage.id} value={stage.id}>{stage.name}</option>
                 ))}
               </select>
@@ -4135,6 +4170,468 @@ function ManualInboundView({ parts, onManualInbound, setDefectModal }: any) {
             </div>
           )}
         </AnimatePresence>
+      </div>
+    </motion.div>
+  );
+}
+
+function GlazingView({ parts, onManualInbound, setDefectModal, refreshData }: any) {
+  const [activeTab, setActiveTab] = useState<'INVENTORY' | 'INBOUND' | 'OUTBOUND' | 'CONFIG'>('INVENTORY');
+  const [configs, setConfigs] = useState<import('./types').GlazingConfig[]>([]);
+  const [outConfigs, setOutConfigs] = useState<import('./types').GlazingOutConfig[]>([]);
+  const [inventory, setInventory] = useState<import('./types').InventoryItem[]>([]);
+  
+  useEffect(() => {
+    const loadedConfigs = storageService.getGlazingConfigs();
+    const loadedOutConfigs = storageService.getGlazingOutConfigs();
+    
+    // Auto deduplicate any legacy duplicates in localStorage
+    const uniqueConfigs: import('./types').GlazingConfig[] = [];
+    const seen = new Set<string>();
+    loadedConfigs.forEach(c => {
+      if (!seen.has(c.partId)) {
+        seen.add(c.partId);
+        uniqueConfigs.push(c);
+      }
+    });
+
+    if (uniqueConfigs.length !== loadedConfigs.length) {
+      storageService.saveGlazingConfigs(uniqueConfigs);
+    }
+
+    setConfigs(uniqueConfigs);
+    setOutConfigs(loadedOutConfigs.filter(c => !c.finalPartName.toUpperCase().includes('DCLR')));
+    setInventory(storageService.getInventory().filter((i: any) => i.stageId === 'GLAZING'));
+  }, []);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+        
+        if (data.length < 2) return alert('File Excel không có dữ liệu');
+
+        const headers = data[0].map(h => String(h).toLowerCase().trim());
+        const nameIdx = headers.findIndex(h => h.includes('tên'));
+        const codeIdx = headers.findIndex(h => h.includes('mã'));
+        const sourceIdx = headers.findIndex(h => h.includes('công đoạn tiếp nhận') || h.includes('từ kho'));
+
+        if (nameIdx === -1 || codeIdx === -1 || sourceIdx === -1) {
+          return alert('Không tìm thấy cột Tên, Mã, hoặc Nguồn trong file Excel.');
+        }
+
+        const newConfigs: import('./types').GlazingConfig[] = [];
+        const seenPartIds = new Set<string>();
+
+        for (let i = 1; i < data.length; i++) {
+          const row = data[i];
+          if (!row[codeIdx]) continue;
+          
+          const partIdStr = String(row[codeIdx]).trim();
+          if (!partIdStr || seenPartIds.has(partIdStr)) continue;
+          seenPartIds.add(partIdStr);
+
+          let sourceStr = String(row[sourceIdx] || '').toUpperCase();
+          let sId: StageId = 'BENDING';
+          if (sourceStr.includes('CHẤN') || sourceStr.includes('DẬP')) sId = 'BENDING';
+          else if (sourceStr.includes('SƠN') || sourceStr.includes('PAINT')) sId = 'PAINTING';
+          else if (sourceStr.includes('LASER')) sId = 'LASER';
+          else if (sourceStr.includes('HÀN')) sId = 'WELDING';
+
+          newConfigs.push({
+            partName: String(row[nameIdx]).trim(),
+            partId: partIdStr,
+            sourceStageId: sId
+          });
+        }
+
+        storageService.saveGlazingConfigs(newConfigs);
+        setConfigs(newConfigs);
+        alert(`Đã nạp ${newConfigs.length} cấu hình Dán Kính.`);
+      } catch (err) {
+        alert('Lỗi đọc file: ' + err);
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleOutFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+        if (data.length < 2) return alert('File Excel không có dữ liệu');
+
+        const headers = data[0].map(h => String(h).toLowerCase().trim());
+        const finalNameIdx = headers.findIndex(h => h.includes('thành phẩm') && !h.includes('con'));
+        const subNameIdx = headers.findIndex(h => h.includes('tên') && h.includes('con'));
+        const subCodeIdx = headers.findIndex(h => h.includes('mã') && h.includes('con'));
+
+        if (finalNameIdx === -1 || subNameIdx === -1 || subCodeIdx === -1) {
+          return alert('Không tìm thấy cột Tên thành phẩm, Tên thành phẩm con hoặc Mã thành phẩm con.');
+        }
+
+        const outConfigMap = new Map<string, { partId: string, partName: string }[]>();
+
+        for (let i = 1; i < data.length; i++) {
+          const row = data[i];
+          const finalName = String(row[finalNameIdx] || '').trim();
+          const subName = String(row[subNameIdx] || '').trim();
+          const subCode = String(row[subCodeIdx] || '').trim();
+
+          if (!finalName || !subCode) continue;
+
+          const existingList = outConfigMap.get(finalName) || [];
+          existingList.push({ partId: subCode, partName: subName });
+          outConfigMap.set(finalName, existingList);
+        }
+
+        const newOutConfigs: import('./types').GlazingOutConfig[] = [];
+        outConfigMap.forEach((subParts, finalPartName) => {
+          // Hide DCLR specific final part names as per request
+          if (!finalPartName.toUpperCase().includes('DCLR')) {
+            newOutConfigs.push({ finalPartName, subParts });
+          }
+        });
+
+        storageService.saveGlazingOutConfigs(newOutConfigs);
+        setOutConfigs(newOutConfigs);
+        alert(`Đã nạp ${newOutConfigs.length} cấu hình gói Dán Kính OUT.`);
+      } catch (err) {
+        alert('Lỗi đọc file OUT: ' + err);
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const [inboundQty, setInboundQty] = useState<Record<string, string>>({});
+  const handleReceive = (config: import('./types').GlazingConfig) => {
+    const qty = parseFloat(inboundQty[config.partId]);
+    if (!qty || qty <= 0) return alert('Vui lòng nhập số lượng hợp lệ');
+    
+    const sourceInv = storageService.getInventory().find((i: any) => i.partId === config.partId && i.stageId === config.sourceStageId && i.location === 'OUT');
+    if (!sourceInv || sourceInv.quantity < qty) {
+      return alert(`Không đủ tồn kho OUT tại ${STAGES.find(s => s.id === config.sourceStageId)?.name || config.sourceStageId}. Kho hiện có: ${sourceInv?.quantity || 0}`);
+    }
+
+    try {
+      storageService.recordStageOut(config.partId, config.sourceStageId, qty, 'OUT', 'GLAZING');
+      storageService.recordManualInbound(config.partId, 'GLAZING', 'IN', qty);
+      setInboundQty({...inboundQty, [config.partId]: ''});
+      setInventory(storageService.getInventory().filter((i: any) => i.stageId === 'GLAZING'));
+      refreshData();
+      alert('Nhập kho thành công!');
+    } catch(err) {
+      alert(err instanceof Error ? err.message : 'Lỗi nhập kho');
+    }
+  };
+
+  const [outboundQty, setOutboundQty] = useState<Record<string, string>>({});
+  const handleTransferOut = (finalPartName: string) => {
+    const qty = parseFloat(outboundQty[finalPartName]);
+    if (!qty || qty <= 0) return alert('Vui lòng nhập số lượng hợp lệ');
+    
+    const config = outConfigs.find(c => c.finalPartName === finalPartName);
+    if (!config) return alert('Không tìm thấy cấu hình cho ' + finalPartName);
+    
+    // Aggregate subparts in case there are duplicates in the config
+    const requiredQtys: Record<string, number> = {};
+    for (const sp of config.subParts) {
+      if (!requiredQtys[sp.partId]) requiredQtys[sp.partId] = 0;
+      requiredQtys[sp.partId] += 1;
+    }
+
+    // Validate all subparts have enough qty
+    for (const partId of Object.keys(requiredQtys)) {
+      const required = requiredQtys[partId] * qty;
+      const inv = inventory.find(i => i.partId === partId && i.location === 'IN');
+      if (!inv || inv.quantity < required) {
+        return alert(`Không đủ tồn kho IN cho linh kiện mã ${partId}. Cần: ${required}, Có: ${inv?.quantity || 0}`);
+      }
+    }
+
+    try {
+      // Deduct subparts from IN
+      for (const partId of Object.keys(requiredQtys)) {
+        const required = requiredQtys[partId] * qty;
+        const inv = inventory.find(i => i.partId === partId && i.location === 'IN')!;
+        storageService.setInventoryQuantity(partId, 'GLAZING', 'IN', inv.quantity - required);
+      }
+
+      // We use finalPartName as the "partId" for the final compiled object in inventory OUT
+      const pseudoPartId = `GLZ-OUT-${finalPartName}`;
+      const outInv = storageService.getInventory().find((i: any) => i.partId === pseudoPartId && i.stageId === 'GLAZING' && i.location === 'OUT');
+      storageService.setInventoryQuantity(pseudoPartId, 'GLAZING', 'OUT', (outInv?.quantity || 0) + qty);
+      
+      setOutboundQty({...outboundQty, [finalPartName]: ''});
+      setInventory(storageService.getInventory().filter((i: any) => i.stageId === 'GLAZING'));
+      refreshData();
+      alert('Đóng gói & Chuyển sang OUT thành công!');
+    } catch(err) {
+      alert('Lỗi xuất kho');
+    }
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+      <div className="flex gap-4 border-b border-gray-200">
+        {(['INVENTORY', 'INBOUND', 'OUTBOUND', 'CONFIG'] as const).map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={cn(
+              "px-6 py-4 font-bold text-sm uppercase tracking-widest border-b-4 transition-all duration-200",
+              activeTab === tab ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-900 focus:outline-none"
+            )}
+          >
+            {tab === 'INVENTORY' ? 'Tồn kho' : tab === 'INBOUND' ? 'Nhập IN' : tab === 'OUTBOUND' ? 'Xuất OUT' : 'Cấu hình'}
+          </button>
+        ))}
+      </div>
+
+      <div className="bg-white p-6 rounded-2xl shadow-xl border border-gray-100 min-h-[500px]">
+        {activeTab === 'CONFIG' && (
+          <div className="grid grid-cols-2 gap-8">
+            <div className="space-y-6">
+              <h3 className="text-xl font-bold uppercase text-blue-800">Cấu hình linh kiện (Kho IN)</h3>
+              <div className="p-6 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 text-center">
+                <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} className="hidden" id="glazing-upload" />
+                <label htmlFor="glazing-upload" className="cursor-pointer flex flex-col items-center justify-center gap-4">
+                  <FileSpreadsheet size={48} className="text-blue-500 opacity-50" />
+                  <div>
+                    <div className="font-bold text-blue-600 text-lg">Click tải lên Excel (IN)</div>
+                    <div className="text-sm text-gray-500 mt-2">Cột yêu cầu: Tên linh kiện | Mã linh kiện | Công đoạn tiếp nhận</div>
+                  </div>
+                </label>
+              </div>
+
+              {configs.length > 0 && (
+                <table className="w-full text-left bg-white text-sm">
+                  <thead><tr className="bg-gray-100 text-gray-500 uppercase"><th className="p-3">Mã</th><th className="p-3">Nguồn</th></tr></thead>
+                  <tbody>
+                    {configs.map((c) => (
+                      <tr key={c.partId} className="border-b"><td className="p-3 font-mono text-xs">{c.partId}</td><td className="p-3 font-bold">{STAGES.find(s => s.id === c.sourceStageId)?.name || c.sourceStageId}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="space-y-6">
+              <h3 className="text-xl font-bold uppercase text-orange-800">Cấu hình Gói Thành Phẩm (Kho OUT)</h3>
+              <div className="p-6 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 text-center">
+                <input type="file" accept=".xlsx,.xls" onChange={handleOutFileUpload} className="hidden" id="glazing-upload-out" />
+                <label htmlFor="glazing-upload-out" className="cursor-pointer flex flex-col items-center justify-center gap-4">
+                  <FileSpreadsheet size={48} className="text-orange-500 opacity-50" />
+                  <div>
+                    <div className="font-bold text-orange-600 text-lg">Click tải lên Excel (OUT)</div>
+                    <div className="text-sm text-gray-500 mt-2">Tên linh kiện thành phẩm | Tên linh kiện thành phẩm con | Mã...</div>
+                  </div>
+                </label>
+              </div>
+
+              {outConfigs.length > 0 && (
+                <div className="space-y-4">
+                  {outConfigs.map(c => (
+                    <div key={c.finalPartName} className="border border-gray-200 rounded-lg overflow-hidden">
+                      <div className="bg-orange-50 font-bold p-3 border-b border-gray-200">
+                        {c.finalPartName}
+                      </div>
+                      <div className="p-3 bg-white space-y-2">
+                        {c.subParts.map((sp, idx) => (
+                          <div key={`${sp.partId}-${idx}`} className="flex justify-between text-sm border-b border-gray-100 last:border-0 pb-2 last:pb-0">
+                            <span className="text-gray-600">{sp.partName}</span>
+                            <span className="font-mono text-xs opacity-70">{sp.partId}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'INVENTORY' && (
+          <div>
+            <h3 className="text-xl font-bold uppercase mb-6">Tồn kho Dán Kính</h3>
+            <div className="grid grid-cols-2 gap-8">
+              <div>
+                <h4 className="font-bold bg-gray-900 text-white p-3 rounded-t-xl text-center uppercase tracking-widest">KHO IN</h4>
+                <div className="border border-gray-200 border-t-0 p-4 rounded-b-xl min-h-[300px]">
+                  {inventory.filter(i => i.location === 'IN' && i.quantity > 0).map(i => (
+                    <div key={i.partId} className="flex justify-between items-center py-3 border-b border-gray-100 last:border-0">
+                      <div>
+                        <div className="font-bold">{parts.find((p: any) => p.id === i.partId)?.name || i.partId}</div>
+                        <div className="font-mono text-xs opacity-50">{i.partId}</div>
+                      </div>
+                      <div className="font-bold text-lg">{i.quantity}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <h4 className="font-bold bg-[#F27D26] text-white p-3 rounded-t-xl text-center uppercase tracking-widest">KHO OUT</h4>
+                <div className="border border-gray-200 border-t-0 p-4 rounded-b-xl min-h-[300px]">
+                  {inventory.filter(i => i.location === 'OUT' && i.quantity > 0).map(i => {
+                    const isPseudo = i.partId.startsWith('GLZ-OUT-');
+                    const displayName = isPseudo ? i.partId.replace('GLZ-OUT-', '') : (parts.find((p: any) => p.id === i.partId)?.name || i.partId);
+                    
+                    return (
+                      <div key={i.partId} className="flex justify-between items-center py-3 border-b border-gray-100 last:border-0">
+                        <div>
+                          <div className="font-bold text-orange-900">{displayName}</div>
+                          {isPseudo ? (
+                            <div className="font-mono text-[10px] uppercase font-bold text-orange-500 mt-1 bg-orange-50 px-1.5 py-0.5 rounded inline-block">Thành phẩm</div>
+                          ) : (
+                            <div className="font-mono text-xs opacity-50">{i.partId}</div>
+                          )}
+                        </div>
+                        <div className="font-bold text-lg text-orange-600">{i.quantity}</div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'INBOUND' && (
+          <div>
+            <h3 className="text-xl font-bold uppercase mb-6 bg-blue-50 text-blue-800 p-4 rounded-xl border border-blue-100">Tiếp nhận từ công đoạn khác</h3>
+            <table className="w-full text-left text-sm mt-4">
+              <thead><tr className="bg-gray-100 text-gray-500 uppercase text-xs tracking-wider"><th className="p-4">Linh kiện</th><th className="p-4 w-40 text-center">Slg tại OUT nguồn</th><th className="p-4 w-64">Thao tác</th></tr></thead>
+              <tbody>
+                {configs.map(c => {
+                  const sourceQty = storageService.getInventory().find((i: any) => i.partId === c.partId && i.stageId === c.sourceStageId && i.location === 'OUT')?.quantity || 0;
+                  return (
+                    <tr key={c.partId} className="border-b">
+                      <td className="p-4 border-r">
+                        <div className="font-bold text-base">{c.partName}</div>
+                        <div className="font-mono text-xs opacity-50">{c.partId}</div>
+                        <div className="inline-block mt-2 px-2 py-1 bg-gray-100 rounded text-xs font-bold text-gray-600 border border-gray-200">
+                          Từ: {STAGES.find(s => s.id === c.sourceStageId)?.name || c.sourceStageId}
+                        </div>
+                      </td>
+                      <td className="p-4 border-r text-center">
+                        <div className="font-bold text-xl">{sourceQty}</div>
+                      </td>
+                      <td className="p-4">
+                        <div className="flex bg-gray-50 rounded-xl overflow-hidden border border-gray-200 p-1">
+                          <input 
+                            type="number"
+                            value={inboundQty[c.partId] || ''}
+                            onChange={e => setInboundQty({...inboundQty, [c.partId]: e.target.value})}
+                            placeholder="SL"
+                            min="1"
+                            max={sourceQty}
+                            className="bg-transparent border-none p-3 w-20 outline-none text-center font-bold"
+                          />
+                          <button 
+                            onClick={() => handleReceive(c)}
+                            disabled={sourceQty === 0}
+                            className={cn("flex-1 p-3 font-bold uppercase text-white transition-all", sourceQty > 0 ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-300")}
+                          >Nhập</button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {activeTab === 'OUTBOUND' && (
+          <div>
+            <h3 className="text-xl font-bold uppercase mb-6 bg-orange-50 text-orange-800 p-4 rounded-xl border border-orange-100">Chuyển sang kho OUT (Đóng gói thành phẩm)</h3>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
+              {outConfigs.map(c => {
+                const requiredQtys: Record<string, number> = {};
+                for (const sp of c.subParts) {
+                  if (!requiredQtys[sp.partId]) requiredQtys[sp.partId] = 0;
+                  requiredQtys[sp.partId] += 1;
+                }
+
+                // For each unique subpart, check max possible assemblies
+                let maxPossible = Infinity;
+                for (const partId of Object.keys(requiredQtys)) {
+                  const reqPerItem = requiredQtys[partId];
+                  const invQt = inventory.find(i => i.partId === partId && i.location === 'IN')?.quantity || 0;
+                  const possible = Math.floor(invQt / reqPerItem);
+                  if (possible < maxPossible) maxPossible = possible;
+                }
+                if (maxPossible === Infinity) maxPossible = 0;
+
+                return (
+                  <div key={c.finalPartName} className="border border-gray-200 rounded-xl overflow-hidden shadow-sm bg-white">
+                    <div className="bg-gray-50 border-b border-gray-200 p-4">
+                      <div className="font-bold text-lg text-gray-900">{c.finalPartName}</div>
+                      <div className="text-sm font-medium text-orange-600 mt-1">Có thể đóng gói: {maxPossible}</div>
+                    </div>
+                    <div className="p-4 space-y-3">
+                      <div className="text-xs font-bold uppercase text-gray-400 mb-2">Linh kiện yêu cầu (từ kho IN)</div>
+                      {c.subParts.map((sp, idx) => {
+                        const invQt = inventory.find(i => i.partId === sp.partId && i.location === 'IN')?.quantity || 0;
+                        return (
+                          <div key={`${sp.partId}-${idx}`} className="flex justify-between items-center text-sm">
+                            <div>
+                              <div className="font-medium text-gray-700">{sp.partName}</div>
+                              <div className="font-mono text-xs text-gray-400">{sp.partId}</div>
+                            </div>
+                            <div className={cn("font-bold", invQt > 0 ? "text-green-600" : "text-red-500")}>
+                              Kho IN: {invQt}
+                            </div>
+                          </div>
+                        )
+                      })}
+                      <div className="pt-4 mt-2 border-t border-gray-100">
+                        <div className="flex bg-gray-50 rounded-xl overflow-hidden border border-gray-200 p-1">
+                          <input 
+                            type="number"
+                            value={outboundQty[c.finalPartName] || ''}
+                            onChange={e => setOutboundQty({...outboundQty, [c.finalPartName]: e.target.value})}
+                            placeholder="SL"
+                            min="1"
+                            max={maxPossible || 1}
+                            className="bg-transparent border-none p-3 w-20 outline-none text-center font-bold"
+                            disabled={maxPossible === 0}
+                          />
+                          <button 
+                            onClick={() => handleTransferOut(c.finalPartName)}
+                            disabled={maxPossible === 0}
+                            className={cn("flex-1 p-3 font-bold uppercase text-white transition-all", maxPossible > 0 ? "bg-orange-600 hover:bg-orange-700" : "bg-gray-300")}
+                          >XUẤT OUT</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+              {outConfigs.length === 0 && (
+                <div className="col-span-2 text-center text-gray-500 py-12">
+                  Chưa có cấu hình Gói Thành Phẩm OUT. Vui lòng tải lên ở tab Cấu hình.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </motion.div>
   );

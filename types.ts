@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type StageId = 'LASER' | 'BENDING' | 'WELDING' | 'PAINTING' | 'DCLR';
+export type StageId = 'LASER' | 'BENDING' | 'WELDING' | 'PAINTING' | 'DCLR' | 'GLAZING';
 
 export interface Part {
   id: string;
@@ -119,11 +119,27 @@ export interface PartTransformation {
   applicableModel?: string;
 }
 
+export interface GlazingConfig {
+  partName: string;
+  partId: string;
+  sourceStageId: StageId;
+}
+
+export interface GlazingOutConfig {
+  finalPartName: string;
+  subParts: {
+    partId: string;
+    partName: string;
+  }[];
+}
+
 export const STAGES: { id: StageId; name: string; nextStageId?: StageId }[] = [
   { id: 'LASER', name: 'Cắt Laser', nextStageId: 'BENDING' },
   { id: 'BENDING', name: 'Chấn/Dập', nextStageId: 'WELDING' },
   { id: 'WELDING', name: 'Hàn', nextStageId: 'PAINTING' },
-  { id: 'PAINTING', name: 'Sơn', nextStageId: 'DCLR' },
+  { id: 'PAINTING', name: 'Sơn', nextStageId: 'GLAZING' },
+  { id: 'GLAZING', name: 'Dán Kính', nextStageId: 'DCLR' },
+  { id: 'DCLR', name: 'Lắp ráp (DCLR)' },
 ];
 
 export const DEFECT_REASONS = [
