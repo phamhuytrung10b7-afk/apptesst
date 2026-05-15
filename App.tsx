@@ -287,9 +287,12 @@ export default function App() {
       storageService.setTransactionPrinted(label.id, true);
       refreshData();
     }
+  };
+
+  const handlePrintConfirm = () => {
     setTimeout(() => {
       window.print();
-    }, 500);
+    }, 100);
   };
 
   const copyToClipboard = (text: string) => {
@@ -414,10 +417,10 @@ export default function App() {
               {/* Part Name & ID */}
               <div className="text-center w-full mb-3 px-2">
                 <h1 className="font-black uppercase leading-tight text-balance break-words" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
-                  {getProcessValue(parts.find(p => p.id === lastTransaction.partId)?.name, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
+                  {(lastTransaction as any).partName || getProcessValue(parts.find(p => p.id === lastTransaction.partId)?.name, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
                 </h1>
                 <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize - 2}px` }}>
-                  Mã LK: {getProcessValue(lastTransaction.partId, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
+                  Mã LK: {lastTransaction.id?.startsWith('QUICK-') ? lastTransaction.partId : getProcessValue(lastTransaction.partId, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
                 </p>
                 {lastTransaction.originalPartId && (
                   <p className="font-mono italic font-black text-black mt-0.5 break-words" style={{ fontSize: `${labelSettings.fontSize - 4}px` }}>
@@ -805,6 +808,75 @@ export default function App() {
           </div>
         </footer>
       </div>
+
+      {/* Visible Global Print Modal */}
+      {lastTransaction && currentView !== 'produce' && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[150] flex items-center justify-center p-4 no-print overflow-y-auto">
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white rounded-3xl p-8 max-w-[500px] w-full shadow-2xl relative flex flex-col items-center"
+          >
+            <button 
+              onClick={() => setLastTransaction(null)}
+              className="absolute right-6 top-6 text-gray-400 hover:text-black transition-colors"
+            >
+              <X size={32} />
+            </button>
+
+            <div className="text-center mb-8">
+              <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <Printer size={32} />
+              </div>
+              <h2 className="text-2xl font-black uppercase tracking-tight">Xác nhận in nhãn phẩm</h2>
+              <p className="text-gray-500 font-medium italic mt-1">Vui lòng kiểm tra thông tin trước khi in</p>
+            </div>
+
+            <div className="w-full bg-gray-100 p-2 rounded-2xl mb-8 border-2 border-gray-200">
+               <div className="bg-white p-6 rounded-xl shadow-inner flex flex-col items-center border border-gray-100">
+                  <QRCodeSVG value={lastTransaction.qrData || ''} size={180} level="H" />
+                  <div className="mt-4 text-center text-black">
+                    <div className="font-black text-xl uppercase leading-tight text-black">
+                      {(lastTransaction as any).partName || parts.find(p => p.id === lastTransaction.partId)?.name || lastTransaction.partId}
+                    </div>
+                    <div className="font-mono text-sm font-bold text-gray-500 mt-1 uppercase">
+                      Mã: {lastTransaction.partId}
+                    </div>
+                  </div>
+                  <div className="w-full mt-6 grid grid-cols-2 gap-4 border-t border-gray-100 pt-6">
+                    <div className="text-center">
+                      <div className="text-[10px] font-black text-gray-400 uppercase">Số lượng</div>
+                      <div className="text-2xl font-black text-blue-600">{lastTransaction.quantity}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-[10px] font-black text-gray-400 uppercase text-black">Công đoạn</div>
+                      <div className="text-sm font-black uppercase text-black">
+                        {STAGES.find(s => s.id === lastTransaction.stageId)?.name}
+                      </div>
+                    </div>
+                  </div>
+               </div>
+            </div>
+
+            <div className="flex gap-4 w-full">
+              <button 
+                onClick={() => {
+                  handlePrintConfirm();
+                }}
+                className="flex-1 bg-blue-600 text-white py-5 rounded-2xl font-black text-xl uppercase shadow-xl shadow-blue-200 hover:bg-blue-700 transition-all flex items-center justify-center gap-3"
+              >
+                <Printer size={28} /> IN NGAY (PDF)
+              </button>
+              <button 
+                onClick={() => setLastTransaction(null)}
+                className="px-8 bg-gray-100 text-gray-600 rounded-2xl font-bold uppercase text-xs hover:bg-gray-200 text-gray-600"
+              >
+                Hủy
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {/* Defect Modal */}
       {defectModal && (
@@ -1438,6 +1510,7 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
   const [password, setPassword] = useState("");
   const [selectedLabel, setSelectedLabel] = useState<Transaction | null>(null);
   const [dateFilter, setDateFilter] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [limit, setLimit] = useState(50);
   const [activeTab, setActiveTab] = useState<'PENDING' | 'FINISHED' | 'PAINTING' | 'DISPOSAL' | 'GLAZING'>('PENDING');
 
@@ -1543,6 +1616,16 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
       if (!isScanned) return false;
     }
 
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const pName = parts.find(p => p.id === label.partId)?.name?.toLowerCase() || "";
+      const matches = label.partId.toLowerCase().includes(q) || 
+                      pName.includes(q) || 
+                      (label.poId || "").toLowerCase().includes(q) ||
+                      label.id.toLowerCase().includes(q);
+      if (!matches) return false;
+    }
+
     if (!dateFilter) return true;
     const labelDate = format(label.timestamp, 'yyyy-MM-dd');
     return labelDate === dateFilter;
@@ -1578,6 +1661,25 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                 <span className="text-[9px] font-bold opacity-60 uppercase">Chưa in/nhập</span>
               </div>
             </div>
+          </div>
+
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+            <input 
+              type="text"
+              placeholder="Tìm theo Mã LK, Tên, hoặc Mã PO..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all"
+            />
+            {searchQuery && (
+              <button 
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
 
           <div className="flex bg-gray-100 p-1 rounded-xl gap-1">
@@ -4248,14 +4350,18 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
 
     try {
       // 1. Record Stage Out (From GLAZING OUT to DCLR)
-      storageService.recordStageOut(item.partId, 'GLAZING', qty, 'OUT', 'DCLR');
+      const tx = storageService.recordStageOut(item.partId, 'GLAZING', qty, 'OUT', 'DCLR');
       
       // 2. Clear input
       setGlazingOutQty(prev => ({ ...prev, [item.partId]: '' }));
       
       // 3. Refresh
       refreshData();
-      alert('Đã xuất kho sang DCLR thành công! Nhãn QR đã được tạo trong mục "Danh sách nhãn QR"');
+      
+      // 4. Trigger print modal immediately
+      const isPseudo = item.partId.startsWith('GLZ-OUT-');
+      const displayName = isPseudo ? item.partId.replace('GLZ-OUT-', '') : (parts.find((p: any) => p.id === item.partId)?.name || item.partId);
+      onPrint({ ...tx, partName: displayName });
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Lỗi xuất kho');
     }
@@ -4587,9 +4693,11 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                           onPrint({
                             id: `QUICK-${Date.now()}-${p.id}`,
                             partId: p.id,
+                            partName: p.name, // Pass the name explicitly
                             quantity: p.quantity,
                             type: 'STAGE_OUT',
                             stageId: 'GLAZING',
+                            targetStageId: 'DCLR', // Default to DCLR
                             timestamp: Date.now(),
                             qrData: p.id
                           });
@@ -4771,7 +4879,7 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                               <div className="text-3xl font-black text-[#F27D26]">{l.quantity}</div>
                             </div>
                             <button 
-                              onClick={() => onPrint(l)}
+                              onClick={() => onPrint({ ...l, partName: displayName })}
                               className="bg-[#F27D26] text-white p-4 rounded-xl shadow-lg hover:shadow-orange-200 hover:scale-110 active:scale-95 transition-all flex items-center gap-2 group-hover:ring-4 group-hover:ring-orange-200"
                             >
                               <Printer size={20} />
