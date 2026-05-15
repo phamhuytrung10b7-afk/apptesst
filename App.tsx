@@ -2749,10 +2749,14 @@ function ProduceView({
 
       if (selectedPoId) {
         const selectedPo = allAvailablePos.find(po => po.id === selectedPoId);
+        // Only restrict by selected PO strictly if not PAINTING or if we want to enforce it.
+        // Wait, if a PO is selected, we should filter by it regardless.
         if (selectedPo && p.id !== selectedPo.partId) return false;
       } else {
         const hasAvailablePo = allAvailablePos.some(po => po.partId === p.id);
-        if (!hasAvailablePo && selectedStage !== 'GLAZING') return false; 
+        // Do not require a PO for GLAZING, or for PAINTING IN -> OUT
+        const isPaintingExempt = selectedStage === 'PAINTING' && sourceLocation === 'IN';
+        if (!hasAvailablePo && selectedStage !== 'GLAZING' && !isPaintingExempt) return false; 
       }
 
       if (selectedStage === 'LASER') {
@@ -3005,7 +3009,7 @@ function ProduceView({
             </div>
           </div>
 
-          {availablePos.length === 0 ? (
+          {availablePos.length === 0 && selectedStage !== 'GLAZING' && !(selectedStage === 'PAINTING' && sourceLocation === 'IN') ? (
             <div className="w-full bg-red-50 border-2 border-red-200 p-6 rounded-xl flex flex-col items-center gap-3 text-center">
               <AlertCircle size={32} className="text-red-600" />
               <div>
@@ -3017,10 +3021,10 @@ function ProduceView({
             <div className="flex gap-4">
               <button 
                 type="submit"
-                disabled={!selectedPoId}
+                disabled={!selectedPoId && selectedStage !== 'GLAZING' && !(selectedStage === 'PAINTING' && sourceLocation === 'IN')}
                 className={cn(
                   "flex-1 py-5 rounded-xl font-bold uppercase tracking-widest flex items-center justify-center gap-3 active:scale-[0.98] transition-all shadow-lg",
-                  !selectedPoId 
+                  (!selectedPoId && selectedStage !== 'GLAZING' && !(selectedStage === 'PAINTING' && sourceLocation === 'IN'))
                     ? "bg-gray-300 text-gray-500 cursor-not-allowed" 
                     : (selectedStage === 'LASER' || selectedStage === 'WELDING' || sourceLocation === 'IN' ? "bg-blue-600 text-white hover:bg-blue-700 shadow-blue-200" : "bg-[#F27D26] text-white hover:bg-[#F27D26]/90 shadow-[#F27D26]/20")
                 )}

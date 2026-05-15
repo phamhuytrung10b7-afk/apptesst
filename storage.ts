@@ -483,15 +483,16 @@ export const storageService = {
 
     // 0. Update Production Order progress if producing (IN -> OUT)
     const isGlazingOutPseudoPart = stageId === 'GLAZING' && cleanId.startsWith('GLZ-OUT-');
+    const isPaintingExempt = stageId === 'PAINTING' && sourceLocation === 'IN';
 
     if (sourceLocation === 'IN') {
-      if (poIndex === -1 && !isGlazingOutPseudoPart) {
+      if (poIndex === -1 && !isGlazingOutPseudoPart && !isPaintingExempt) {
         throw new Error(`Lỗi: Không tìm thấy lệnh PO sản xuất hợp lệ cho linh kiện ${cleanId} tại công đoạn ${STAGES.find(s => s.id === stageId)?.name}. Vui lòng tạo Lệnh sản xuất trước khi thực hiện.`);
       }
 
       if (poIndex !== -1) {
         const po = pos[poIndex];
-        if (po.producedQuantity + quantity > po.targetQuantity) {
+        if (po.producedQuantity + quantity > po.targetQuantity && !isPaintingExempt) {
           throw new Error(`Lỗi: Số lượng sản xuất (${po.producedQuantity + quantity}) vượt quá mục tiêu PO (${po.targetQuantity}) cho ${cleanId} tại ${stageId}`);
         }
         
