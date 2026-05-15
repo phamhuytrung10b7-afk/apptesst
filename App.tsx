@@ -534,13 +534,7 @@ export default function App() {
         "bg-white border-r border-gray-200 transition-all duration-300 flex flex-col z-50",
         isSidebarOpen ? "w-64" : "w-20"
       )}>
-        <div className="p-6 flex items-center justify-center border-b border-gray-100">
-          <div className="bg-[#F27D26] p-3 rounded-lg">
-            <Package size={28} className="text-white" />
-          </div>
-        </div>
-
-        <nav className="flex-1 p-4 space-y-3">
+        <nav className="flex-1 pt-2 px-3 space-y-1">
           <SidebarLink 
             active={currentView === 'dashboard'} 
             onClick={() => setCurrentView('dashboard')}
@@ -654,7 +648,7 @@ export default function App() {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Header */}
-        <header className="bg-white border-b border-gray-200 p-6 flex justify-between items-center shadow-sm z-40">
+        <header className="bg-white border-b border-gray-200 py-3 px-6 flex justify-between items-center shadow-sm z-40">
           <div className="flex items-center gap-4">
             <h2 className="font-bold text-2xl uppercase tracking-tight">
               {currentView === 'dashboard' && 'Báo cáo tồn kho WIP'}
