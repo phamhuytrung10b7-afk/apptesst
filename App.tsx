@@ -4433,20 +4433,18 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
       // Deduct subparts from IN
       for (const partId of Object.keys(requiredQtys)) {
         const required = requiredQtys[partId] * qty;
-        const inv = globalInventory.find(i => i.partId.toUpperCase() === partId.toUpperCase() && i.location === 'IN' && i.stageId === 'GLAZING')!;
-        storageService.setInventoryQuantity(partId, 'GLAZING', 'IN', inv.quantity - required);
+        storageService.updateInventory(partId, 'GLAZING', 'IN', -required);
       }
 
       // We use finalPartName as the "partId" for the final compiled object in inventory OUT
       const pseudoPartId = `GLZ-OUT-${finalPartName}`;
-      const outInv = globalInventory.find((i: any) => i.partId.toUpperCase() === pseudoPartId.toUpperCase() && i.stageId === 'GLAZING' && i.location === 'OUT');
-      storageService.setInventoryQuantity(pseudoPartId, 'GLAZING', 'OUT', (outInv?.quantity || 0) + qty);
+      storageService.updateInventory(pseudoPartId, 'GLAZING', 'OUT', qty);
       
       setOutboundQty({...outboundQty, [finalPartName]: ''});
       refreshData();
       alert('Đóng gói & Chuyển sang OUT thành công!');
     } catch(err) {
-      alert('Lỗi xuất kho');
+      alert('Lỗi xuất kho: ' + (err instanceof Error ? err.message : String(err)));
     }
   };
 
