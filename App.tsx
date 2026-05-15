@@ -13,7 +13,8 @@ import {
   Settings,
   Edit2,
   Trash2,
-  ArrowRight, 
+  ArrowRight,
+  ArrowUpRight,
   CheckCircle2, 
   AlertCircle,
   Printer,
@@ -743,6 +744,12 @@ export default function App() {
                   onManualInbound={handleManualInbound}
                   setDefectModal={setDefectModal}
                   refreshData={refreshData}
+                  labels={labels}
+                  onPrint={(label: any) => {
+                    setPrintModal(label);
+                    storageService.setTransactionPrinted(label.id, true);
+                    refreshData();
+                  }}
                 />
               )}
               {currentView === 'manual_inbound' && (
@@ -1535,8 +1542,8 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
       // Painting: Only Painting OUT labels
       if (!isPaintingOut) return false;
     } else if (activeTab === 'GLAZING') {
-      // Glazing: Only Glazing OUT labels
-      if (!isGlazingOut) return false;
+      // Glazing: Only Glazing OUT labels that are NOT draft (already printed)
+      if (!isGlazingOut || label.printed === false) return false;
     } else if (activeTab === 'DISPOSAL') {
       // Disposal: Only disposal labels
       if (!isDisposal) return false;
@@ -4204,7 +4211,7 @@ function ManualInboundView({ parts, onManualInbound, setDefectModal }: any) {
   );
 }
 
-function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDefectModal, refreshData }: any) {
+function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDefectModal, refreshData, labels: allLabels, onPrint }: any) {
   const [activeTab, setActiveTab] = useState<'INVENTORY' | 'INBOUND' | 'OUTBOUND' | 'CONFIG'>('INVENTORY');
   const [configs, setConfigs] = useState<import('./types').GlazingConfig[]>([]);
   const [outConfigs, setOutConfigs] = useState<import('./types').GlazingOutConfig[]>([]);
@@ -4212,6 +4219,10 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
   const inventory = useMemo(() => {
     return globalInventory.filter((i: any) => i.stageId === 'GLAZING');
   }, [globalInventory]);
+
+  const pendingGlazingLabels = useMemo(() => {
+    return (allLabels || []).filter((l: any) => l.stageId === 'GLAZING' && l.type === 'STAGE_OUT' && l.printed === false);
+  }, [allLabels]);
   
   useEffect(() => {
     const loadedConfigs = storageService.getGlazingConfigs();
@@ -4570,11 +4581,11 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                               onClick={() => handleGlazingExport(i)}
                               className="px-6 bg-[#F27D26] text-white font-black text-xs uppercase hover:bg-orange-700 transition-all active:scale-95 flex items-center gap-2 whitespace-nowrap"
                             >
-                              <Printer size={16} />
-                              XUẤT DCLR & IN
+                              <ArrowUpRight size={16} />
+                              XUẤT DCLR
                             </button>
                           </div>
-                          <div className="text-[10px] uppercase font-black text-orange-400 tracking-tighter">Tự tạo nhãn QR & Xuất sang DCLR</div>
+                          <div className="text-[10px] uppercase font-black text-orange-400 tracking-tighter italic">Tạm tính & Chờ in mã QR ở dưới</div>
                         </div>
                       </div>
                     );
@@ -4585,6 +4596,56 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                 </div>
               </div>
             </div>
+
+            {pendingGlazingLabels.length > 0 && (
+              <div className="mt-12 bg-white rounded-3xl border-4 border-[#F27D26] shadow-2xl overflow-hidden">
+                <div className="bg-[#F27D26] p-6 flex justify-between items-center">
+                  <div>
+                    <h3 className="text-white font-black text-2xl tracking-tighter uppercase italic flex items-center gap-3">
+                      <Printer size={28} />
+                      DANH SÁCH CHỜ IN NHÃN QR
+                    </h3>
+                    <p className="text-white/80 text-sm mt-1">Các tấm/gói đã chuẩn bị xuất sang DCLR nhưng chưa in mã QR</p>
+                  </div>
+                  <div className="bg-white/20 px-4 py-2 rounded-full text-white font-black">
+                    {pendingGlazingLabels.length} Nhãn
+                  </div>
+                </div>
+                <div className="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 bg-orange-50/30">
+                  {pendingGlazingLabels.map((l: any) => {
+                    const isPseudo = l.partId.startsWith('GLZ-OUT-');
+                    const displayName = isPseudo ? l.partId.replace('GLZ-OUT-', '') : (parts.find((p: any) => p.id === l.partId)?.name || l.partId);
+                    
+                    return (
+                      <div key={l.id} className="bg-white p-6 rounded-2xl shadow-lg border-2 border-orange-200 hover:border-orange-500 transition-all group relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-2 bg-orange-100 rounded-bl-xl text-[10px] font-black text-orange-600 font-mono">
+                          {format(l.timestamp, 'HH:mm:ss')}
+                        </div>
+                        <div className="flex flex-col gap-4">
+                          <div>
+                            <div className="text-[10px] uppercase font-black tracking-widest text-[#F27D26] mb-1">Mã: {l.partId}</div>
+                            <div className="font-bold text-gray-900 leading-tight h-10 line-clamp-2">{displayName}</div>
+                          </div>
+                          <div className="flex items-end justify-between border-t border-orange-100 pt-4">
+                            <div>
+                              <div className="text-[10px] uppercase font-bold text-gray-400">Số lượng:</div>
+                              <div className="text-3xl font-black text-[#F27D26]">{l.quantity}</div>
+                            </div>
+                            <button 
+                              onClick={() => onPrint(l)}
+                              className="bg-[#F27D26] text-white p-4 rounded-xl shadow-lg hover:shadow-orange-200 hover:scale-110 active:scale-95 transition-all flex items-center gap-2 group-hover:ring-4 group-hover:ring-orange-200"
+                            >
+                              <Printer size={20} />
+                              <span className="font-black uppercase tracking-tighter">IN NHÃN QC</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

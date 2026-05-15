@@ -585,7 +585,8 @@ export const storageService = {
       targetStageId,
       timestamp: Date.now(),
       qrData,
-      poId: linkedPoId
+      poId: linkedPoId,
+      printed: stageId === 'GLAZING' && sourceLocation === 'OUT' ? false : undefined
     };
     transactions.unshift(newTransaction);
     this.saveTransactions(transactions);
@@ -596,6 +597,22 @@ export const storageService = {
     }
 
     return newTransaction;
+  },
+
+  setTransactionPrinted(txId: string, printed: boolean) {
+    const transactions: Transaction[] = this.getTransactions();
+    const idx = transactions.findIndex(t => t.id === txId);
+    if (idx !== -1) {
+      transactions[idx].printed = printed;
+      // Also update in label history
+      const labels: Transaction[] = this.getLabels();
+      const lIdx = labels.findIndex(l => l.id === txId);
+      if (lIdx !== -1) {
+        labels[lIdx].printed = printed;
+        this.saveLabels(labels);
+      }
+      this.saveTransactions(transactions);
+    }
   },
 
   recordStageIn(qrData: string, currentStageId: StageId, targetLocation: 'IN' | 'OUT' = 'IN') {
