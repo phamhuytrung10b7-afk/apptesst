@@ -1216,7 +1216,8 @@ export const storageService = {
       if (hasIngredients || level <= 1) {
         addPoToList(partId, info, 'WELDING', weldingPOs);
       }
-      if (level <= 1) {
+      const part = partsList.find(p => p.id === partId);
+      if (level <= 1 || part?.hasPaintingPO) {
         addPoToList(partId, info, 'PAINTING', paintingPOs);
       }
     });

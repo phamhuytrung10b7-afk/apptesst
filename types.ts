@@ -14,6 +14,7 @@ export interface Part {
   skipBending?: boolean;
   skipWelding?: boolean;
   skipPainting?: boolean;
+  hasPaintingPO?: boolean;
 }
 
 export interface InventoryItem {

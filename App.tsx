@@ -2784,7 +2784,7 @@ function ProduceView({
       if (selectedStage === 'WELDING') {
         return (sourceLocation === 'IN' ? p.level === 2 : p.level === 1) && !p.skipWelding;
       }
-      if (selectedStage === 'PAINTING') return p.level === 1 && !p.skipPainting;
+      if (selectedStage === 'PAINTING') return (p.level === 1 || p.hasPaintingPO) && !p.skipPainting;
       
       return true;
     });
@@ -4951,7 +4951,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
   onLabelSettingsChange: (s: any) => void,
   key?: string 
 }) {
-  const [newPart, setNewPart] = useState<Part>({ id: '', name: '', unit: 'Cái', level: 1, skipLaser: false, skipBending: false, skipWelding: false, skipPainting: false });
+  const [newPart, setNewPart] = useState<Part>({ id: '', name: '', unit: 'Cái', level: 1, skipLaser: false, skipBending: false, skipWelding: false, skipPainting: false, hasPaintingPO: false });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [isImportingBOM, setIsImportingBOM] = useState(false);
@@ -5094,6 +5094,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
         const skipBendIdx = headers.findIndex(h => h === 'skipbending' || h === 'bỏ qua chấn' || h === 'miễn chấn' || h === 'skip bend');
         const skipWeldIdx = headers.findIndex(h => h === 'skipwelding' || h === 'bỏ qua hàn' || h === 'miễn hàn' || h === 'skip weld');
         const skipPaintIdx = headers.findIndex(h => h === 'skippainting' || h === 'bỏ qua sơn' || h === 'miễn sơn' || h === 'skip paint');
+        const hasPaintingPOIdx = headers.findIndex(h => h === 'haspaintingpo' || h === 'có po tại công đoạn sơn' || h === 'po sơn');
 
         if (itemIdx === -1 || descIdx === -1) {
           alert('Không tìm thấy cột Item hoặc Description trong file Excel.');
@@ -5125,7 +5126,8 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
             skipLaser: skipLaserIdx !== -1 ? isTruthful(row[skipLaserIdx]) : false,
             skipBending: skipBendIdx !== -1 ? isTruthful(row[skipBendIdx]) : false,
             skipWelding: skipWeldIdx !== -1 ? isTruthful(row[skipWeldIdx]) : false,
-            skipPainting: skipPaintIdx !== -1 ? isTruthful(row[skipPaintIdx]) : false
+            skipPainting: skipPaintIdx !== -1 ? isTruthful(row[skipPaintIdx]) : false,
+            hasPaintingPO: hasPaintingPOIdx !== -1 ? isTruthful(row[hasPaintingPOIdx]) : false
           };
         }).filter(p => p.id && p.name);
 
@@ -5174,7 +5176,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
     }
 
     storageService.saveParts(updatedParts);
-    setNewPart({ id: '', name: '', unit: 'Cái', level: 1 });
+    setNewPart({ id: '', name: '', unit: 'Cái', level: 1, hasPaintingPO: false });
     setEditingId(null);
     onPartsChange();
   };
@@ -5186,7 +5188,8 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
       skipLaser: !!part.skipLaser,
       skipBending: !!part.skipBending,
       skipWelding: !!part.skipWelding,
-      skipPainting: !!part.skipPainting
+      skipPainting: !!part.skipPainting,
+      hasPaintingPO: !!part.hasPaintingPO
     });
     setEditingId(part.id);
   };
@@ -5294,6 +5297,15 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                   className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
                 <span className="text-sm font-medium">Bỏ qua Sơn</span>
+              </label>
+              <label className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg cursor-pointer hover:bg-blue-100 transition-colors border border-blue-100 col-span-2">
+                <input 
+                  type="checkbox" 
+                  checked={!!newPart.hasPaintingPO} 
+                  onChange={e => setNewPart({...newPart, hasPaintingPO: e.target.checked})}
+                  className="w-5 h-5 rounded border-blue-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm font-bold text-blue-700">Có PO tại công đoạn sơn</span>
               </label>
             </div>
           </div>
@@ -5914,6 +5926,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                           {part.skipBending && <span className="px-1.5 py-0.5 bg-red-50 text-red-600 text-[9px] font-bold rounded border border-red-100">MIỄN CHẤN</span>}
                           {part.skipWelding && <span className="px-1.5 py-0.5 bg-orange-50 text-orange-600 text-[9px] font-bold rounded border border-orange-100">MIỄN HÀN</span>}
                           {part.skipPainting && <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[9px] font-bold rounded border border-gray-200">MIỄN SƠN</span>}
+                          {part.hasPaintingPO && <span className="px-1.5 py-0.5 bg-blue-600 text-white text-[9px] font-bold rounded shadow-sm">PAINT PO</span>}
                         </div>
                       </td>
                       <td className="p-6">
