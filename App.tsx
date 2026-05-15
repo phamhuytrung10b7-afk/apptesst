@@ -1441,7 +1441,7 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
   const [selectedLabel, setSelectedLabel] = useState<Transaction | null>(null);
   const [dateFilter, setDateFilter] = useState("");
   const [limit, setLimit] = useState(50);
-  const [activeTab, setActiveTab] = useState<'PENDING' | 'FINISHED' | 'PAINTING' | 'DISPOSAL'>('PENDING');
+  const [activeTab, setActiveTab] = useState<'PENDING' | 'FINISHED' | 'PAINTING' | 'DISPOSAL' | 'GLAZING'>('PENDING');
 
   useEffect(() => {
     setLabels(initialLabels);
@@ -1524,15 +1524,19 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
   const filteredLabels = labels.filter(label => {
     const isScanned = scannedIds.has(label.id);
     const isPaintingOut = label.stageId === 'PAINTING' && label.type === 'STAGE_OUT';
+    const isGlazingOut = label.stageId === 'GLAZING' && label.type === 'STAGE_OUT';
     const isDisposal = label.type === 'DISPOSAL';
     
-    // Split logic into 4 tabs
+    // Split logic into tabs
     if (activeTab === 'PENDING') {
-      // Pending: Not scanned and NOT a Painting OUT label and NOT disposal
-      if (isScanned || isPaintingOut || isDisposal) return false;
+      // Pending: Not scanned and NOT specialized labels
+      if (isScanned || isPaintingOut || isGlazingOut || isDisposal) return false;
     } else if (activeTab === 'PAINTING') {
       // Painting: Only Painting OUT labels
       if (!isPaintingOut) return false;
+    } else if (activeTab === 'GLAZING') {
+      // Glazing: Only Glazing OUT labels
+      if (!isGlazingOut) return false;
     } else if (activeTab === 'DISPOSAL') {
       // Disposal: Only disposal labels
       if (!isDisposal) return false;
@@ -1607,6 +1611,15 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
               Hàng Sơn
             </button>
             <button 
+              onClick={() => setActiveTab('GLAZING')}
+              className={cn(
+                "flex-1 py-2 text-[10px] font-bold uppercase tracking-tight rounded-lg transition-all",
+                activeTab === 'GLAZING' ? "bg-white text-orange-600 shadow-sm" : "text-gray-500 hover:text-gray-700"
+              )}
+            >
+              Dán Kính
+            </button>
+            <button 
               onClick={() => setActiveTab('DISPOSAL')}
               className={cn(
                 "flex-1 py-2 text-[10px] font-bold uppercase tracking-tight rounded-lg transition-all",
@@ -1677,6 +1690,9 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                         )}
                         {isPaintingOut && (
                           <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">Sơn OUT</span>
+                        )}
+                        {label.stageId === 'GLAZING' && label.type === 'STAGE_OUT' && (
+                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded">Dán Kính OUT</span>
                         )}
                         {label.type === 'DISPOSAL' && (
                           <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-red-100 text-red-700 rounded">HÀNG HỦY</span>
@@ -4228,17 +4244,12 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
 
     try {
       // 1. Record Stage Out (From GLAZING OUT to DCLR)
-      const tx = storageService.recordStageOut(item.partId, 'GLAZING', qty, 'OUT', 'DCLR');
+      storageService.recordStageOut(item.partId, 'GLAZING', qty, 'OUT', 'DCLR');
       
-      // 2. Automatically record Stage In at DCLR (User wants it to go "straight" to DCLR)
-      if (tx && tx.qrData) {
-        storageService.recordStageIn(tx.qrData, 'DCLR', 'IN');
-      }
-      
-      // 3. Clear input
+      // 2. Clear input
       setGlazingOutQty(prev => ({ ...prev, [item.partId]: '' }));
       
-      // 4. Refresh
+      // 3. Refresh
       refreshData();
       alert('Đã xuất kho sang DCLR thành công! Nhãn QR đã được tạo trong mục "Danh sách nhãn QR"');
     } catch (err) {
