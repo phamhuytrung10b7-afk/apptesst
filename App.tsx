@@ -739,6 +739,7 @@ export default function App() {
                 <GlazingView 
                   key="glazing"
                   parts={parts}
+                  inventory={inventory}
                   onManualInbound={handleManualInbound}
                   setDefectModal={setDefectModal}
                   refreshData={refreshData}
@@ -2728,25 +2729,24 @@ function ProduceView({
 
     // Inject pseudo parts if we are looking at Glazing OUT
     if (selectedStage === 'GLAZING' && sourceLocation === 'OUT') {
-      const outConfigs = storageService.getGlazingOutConfigs().filter(c => !c.finalPartName.toUpperCase().includes('DCLR'));
-      const pseudoParts = outConfigs.map(c => ({
-        id: `GLZ-OUT-${c.finalPartName}`,
-        name: c.finalPartName,
-        level: 1,
-        skipLaser: false, skipBending: false, skipWelding: false, skipPainting: false
-      }));
-      baseParts = pseudoParts; // ONLY use pseudo parts for Glazing OUT
+      // Show ONLY items that actually have inventory in GLAZING OUT
+      const glzInv = inventory.filter(i => i.stageId === 'GLAZING' && i.location === 'OUT' && i.quantity > 0);
+      return glzInv.map(i => {
+        const isPseudo = i.partId.startsWith('GLZ-OUT-');
+        const name = isPseudo ? i.partId.replace('GLZ-OUT-', '') : (parts.find(p => p.id === i.partId)?.name || i.partId);
+        return {
+          id: i.partId,
+          name: name,
+          level: 1,
+          skipLaser: false, skipBending: false, skipWelding: false, skipPainting: false
+        };
+      });
     } else if (selectedStage === 'GLAZING') {
       // For GLAZING IN, just return empty because we don't 'produce' IN using this view normally
       return [];
     }
 
     return baseParts.filter((p: any) => {
-      // Glazing OUT special case: just show them all
-      if (selectedStage === 'GLAZING' && sourceLocation === 'OUT') {
-        return true;
-      }
-
       if (selectedPoId) {
         const selectedPo = allAvailablePos.find(po => po.id === selectedPoId);
         // Only restrict by selected PO strictly if not PAINTING or if we want to enforce it.
@@ -2772,7 +2772,7 @@ function ProduceView({
       
       return true;
     });
-  }, [parts, selectedStage, sourceLocation, selectedPoId, allAvailablePos]);
+  }, [parts, inventory, selectedStage, sourceLocation, selectedPoId, allAvailablePos]);
 
   const availablePos = allAvailablePos.filter(p => p.partId === selectedPart);
 
@@ -4188,11 +4188,14 @@ function ManualInboundView({ parts, onManualInbound, setDefectModal }: any) {
   );
 }
 
-function GlazingView({ parts, onManualInbound, setDefectModal, refreshData }: any) {
+function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDefectModal, refreshData }: any) {
   const [activeTab, setActiveTab] = useState<'INVENTORY' | 'INBOUND' | 'OUTBOUND' | 'CONFIG'>('INVENTORY');
   const [configs, setConfigs] = useState<import('./types').GlazingConfig[]>([]);
   const [outConfigs, setOutConfigs] = useState<import('./types').GlazingOutConfig[]>([]);
-  const [inventory, setInventory] = useState<import('./types').InventoryItem[]>([]);
+  
+  const inventory = useMemo(() => {
+    return globalInventory.filter((i: any) => i.stageId === 'GLAZING');
+  }, [globalInventory]);
   
   useEffect(() => {
     const loadedConfigs = storageService.getGlazingConfigs();
@@ -4214,7 +4217,6 @@ function GlazingView({ parts, onManualInbound, setDefectModal, refreshData }: an
 
     setConfigs(uniqueConfigs);
     setOutConfigs(loadedOutConfigs.filter(c => !c.finalPartName.toUpperCase().includes('DCLR')));
-    setInventory(storageService.getInventory().filter((i: any) => i.stageId === 'GLAZING'));
   }, []);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -4336,7 +4338,7 @@ function GlazingView({ parts, onManualInbound, setDefectModal, refreshData }: an
     const qty = parseFloat(inboundQty[config.partId]);
     if (!qty || qty <= 0) return alert('Vui lòng nhập số lượng hợp lệ');
     
-    const sourceInv = storageService.getInventory().find((i: any) => i.partId === config.partId && i.stageId === config.sourceStageId && i.location === 'OUT');
+    const sourceInv = globalInventory.find((i: any) => i.partId.toUpperCase() === config.partId.toUpperCase() && i.stageId === config.sourceStageId && i.location === 'OUT');
     if (!sourceInv || sourceInv.quantity < qty) {
       return alert(`Không đủ tồn kho OUT tại ${STAGES.find(s => s.id === config.sourceStageId)?.name || config.sourceStageId}. Kho hiện có: ${sourceInv?.quantity || 0}`);
     }
@@ -4345,7 +4347,6 @@ function GlazingView({ parts, onManualInbound, setDefectModal, refreshData }: an
       storageService.recordStageOut(config.partId, config.sourceStageId, qty, 'OUT', 'GLAZING');
       storageService.recordManualInbound(config.partId, 'GLAZING', 'IN', qty);
       setInboundQty({...inboundQty, [config.partId]: ''});
-      setInventory(storageService.getInventory().filter((i: any) => i.stageId === 'GLAZING'));
       refreshData();
       alert('Nhập kho thành công!');
     } catch(err) {
@@ -4371,7 +4372,7 @@ function GlazingView({ parts, onManualInbound, setDefectModal, refreshData }: an
     // Validate all subparts have enough qty
     for (const partId of Object.keys(requiredQtys)) {
       const required = requiredQtys[partId] * qty;
-      const inv = inventory.find(i => i.partId === partId && i.location === 'IN');
+      const inv = globalInventory.find(i => i.partId.toUpperCase() === partId.toUpperCase() && i.location === 'IN' && i.stageId === 'GLAZING');
       if (!inv || inv.quantity < required) {
         return alert(`Không đủ tồn kho IN cho linh kiện mã ${partId}. Cần: ${required}, Có: ${inv?.quantity || 0}`);
       }
@@ -4381,17 +4382,16 @@ function GlazingView({ parts, onManualInbound, setDefectModal, refreshData }: an
       // Deduct subparts from IN
       for (const partId of Object.keys(requiredQtys)) {
         const required = requiredQtys[partId] * qty;
-        const inv = inventory.find(i => i.partId === partId && i.location === 'IN')!;
+        const inv = globalInventory.find(i => i.partId.toUpperCase() === partId.toUpperCase() && i.location === 'IN' && i.stageId === 'GLAZING')!;
         storageService.setInventoryQuantity(partId, 'GLAZING', 'IN', inv.quantity - required);
       }
 
       // We use finalPartName as the "partId" for the final compiled object in inventory OUT
       const pseudoPartId = `GLZ-OUT-${finalPartName}`;
-      const outInv = storageService.getInventory().find((i: any) => i.partId === pseudoPartId && i.stageId === 'GLAZING' && i.location === 'OUT');
+      const outInv = globalInventory.find((i: any) => i.partId.toUpperCase() === pseudoPartId.toUpperCase() && i.stageId === 'GLAZING' && i.location === 'OUT');
       storageService.setInventoryQuantity(pseudoPartId, 'GLAZING', 'OUT', (outInv?.quantity || 0) + qty);
       
       setOutboundQty({...outboundQty, [finalPartName]: ''});
-      setInventory(storageService.getInventory().filter((i: any) => i.stageId === 'GLAZING'));
       refreshData();
       alert('Đóng gói & Chuyển sang OUT thành công!');
     } catch(err) {
@@ -4532,7 +4532,7 @@ function GlazingView({ parts, onManualInbound, setDefectModal, refreshData }: an
               <thead><tr className="bg-gray-100 text-gray-500 uppercase text-xs tracking-wider"><th className="p-4">Linh kiện</th><th className="p-4 w-40 text-center">Slg tại OUT nguồn</th><th className="p-4 w-64">Thao tác</th></tr></thead>
               <tbody>
                 {configs.map(c => {
-                  const sourceQty = storageService.getInventory().find((i: any) => i.partId === c.partId && i.stageId === c.sourceStageId && i.location === 'OUT')?.quantity || 0;
+                  const sourceQty = globalInventory.find((i: any) => i.partId.toUpperCase() === c.partId.toUpperCase() && i.stageId === c.sourceStageId && i.location === 'OUT')?.quantity || 0;
                   return (
                     <tr key={c.partId} className="border-b">
                       <td className="p-4 border-r">

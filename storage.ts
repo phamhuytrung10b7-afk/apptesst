@@ -322,7 +322,7 @@ export const storageService = {
 
   setInventoryQuantity(partId: string, stageId: StageId, location: 'IN' | 'OUT' | 'DEFECT', quantity: number) {
     const inventory = this.getInventory();
-    const cleanId = partId.split(' - ')[0];
+    const cleanId = partId.split(' - ')[0].trim().toUpperCase();
     const index = inventory.findIndex(
       (item) => item.partId === cleanId && item.stageId === stageId && item.location === location
     );
@@ -338,7 +338,7 @@ export const storageService = {
 
   deleteInventoryItem(partId: string, stageId: StageId, location: 'IN' | 'OUT' | 'DEFECT') {
     const inventory = this.getInventory();
-    const cleanId = partId.split(' - ')[0];
+    const cleanId = partId.split(' - ')[0].trim().toUpperCase();
     const filtered = inventory.filter(
       (item) => !(item.partId === cleanId && item.stageId === stageId && item.location === location)
     );
