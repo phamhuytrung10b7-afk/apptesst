@@ -437,7 +437,7 @@ export const storageService = {
   },
 
   recordStageOut(partId: string, stageId: StageId, quantity: number, sourceLocation: 'IN' | 'OUT' = 'IN', targetStageId?: StageId, poId?: string) {
-    const cleanId = partId.split(' - ')[0];
+    const cleanId = partId.split(' - ')[0].trim().toUpperCase();
     const pos = this.getProductionOrders();
     const poIndex = poId 
       ? pos.findIndex(p => p.id === poId)
@@ -452,11 +452,11 @@ export const storageService = {
     const inventory = this.getInventory();
     const effectiveId = this.getEffectivePartId(cleanId, stageId, linkedPoId);
     const stock = inventory.find(
-      (item) => item.partId === effectiveId && item.stageId === stageId && item.location === sourceLocation
+      (item) => item.partId.toUpperCase() === effectiveId.toUpperCase() && item.stageId === stageId && item.location === sourceLocation
     );
 
     if (!stock || stock.quantity < quantity) {
-      const part = this.getParts().find(p => p.id === effectiveId);
+      const part = this.getParts().find(p => p.id.toUpperCase() === effectiveId.toUpperCase());
       throw new Error(`Lỗi: Số lượng xuất (${quantity}) lớn hơn tồn kho ${part?.name || effectiveId} tại ${STAGES.find(s => s.id === stageId)?.name}_${sourceLocation} (${stock?.quantity || 0})`);
     }
 
@@ -692,7 +692,7 @@ export const storageService = {
   },
 
   recordManualInbound(partId: string, stageId: StageId, location: 'IN' | 'OUT', quantity: number, poId?: string) {
-    const cleanId = partId.split(' - ')[0];
+    const cleanId = partId.split(' - ')[0].trim().toUpperCase();
     let linkedPoId = poId;
 
     // Check for required PO

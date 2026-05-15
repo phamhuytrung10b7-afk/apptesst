@@ -2830,7 +2830,7 @@ function ProduceView({
   }, [selectedStage, selectedPart, sourceLocation, parts]);
 
   const currentStock = inventory.find(
-    (i: any) => i.partId === selectedPart && i.stageId === selectedStage && i.location === sourceLocation
+    (i: any) => i.partId.toUpperCase() === selectedPart.split(' - ')[0].trim().toUpperCase() && i.stageId === selectedStage && i.location === sourceLocation
   )?.quantity || 0;
 
   const activePo = availablePos.find(p => p.id === selectedPoId) || availablePos[0];
@@ -2963,6 +2963,15 @@ function ProduceView({
                   <option key={stage.id} value={stage.id}>{stage.name}</option>
                 ))}
               </select>
+            </div>
+          )}
+
+          {sourceLocation === 'OUT' && targetStageId === 'DCLR' && (
+            <div className="space-y-4">
+              <label className="text-sm font-bold uppercase tracking-widest opacity-50">4. Công đoạn đích (Nhập kho IN)</label>
+              <div className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg bg-gray-50 text-gray-500 text-center">
+                Lắp ráp (DCLR)
+              </div>
             </div>
           )}
 
