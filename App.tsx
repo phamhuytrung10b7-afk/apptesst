@@ -4228,14 +4228,19 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
 
     try {
       // 1. Record Stage Out (From GLAZING OUT to DCLR)
-      storageService.recordStageOut(item.partId, 'GLAZING', qty, 'OUT', 'DCLR');
+      const tx = storageService.recordStageOut(item.partId, 'GLAZING', qty, 'OUT', 'DCLR');
       
-      // 2. Clear input
+      // 2. Automatically record Stage In at DCLR (User wants it to go "straight" to DCLR)
+      if (tx && tx.qrData) {
+        storageService.recordStageIn(tx.qrData, 'DCLR', 'IN');
+      }
+      
+      // 3. Clear input
       setGlazingOutQty(prev => ({ ...prev, [item.partId]: '' }));
       
-      // 3. Refresh
+      // 4. Refresh
       refreshData();
-      alert('Đã xuất kho thành công! Nhãn QR đã được tạo trong mục "Danh sách nhãn QR"');
+      alert('Đã xuất kho sang DCLR thành công! Nhãn QR đã được tạo trong mục "Danh sách nhãn QR"');
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Lỗi xuất kho');
     }

@@ -305,7 +305,7 @@ export const storageService = {
     // Clean partId
     const cleanId = partId.split(' - ')[0].trim().toUpperCase();
     const index = inventory.findIndex(
-      (item) => item.partId === cleanId && item.stageId === stageId && item.location === location
+      (item) => item.partId.toUpperCase() === cleanId && item.stageId === stageId && item.location === location
     );
 
     if (index >= 0) {
@@ -324,7 +324,7 @@ export const storageService = {
     const inventory = this.getInventory();
     const cleanId = partId.split(' - ')[0].trim().toUpperCase();
     const index = inventory.findIndex(
-      (item) => item.partId === cleanId && item.stageId === stageId && item.location === location
+      (item) => item.partId.toUpperCase() === cleanId && item.stageId === stageId && item.location === location
     );
 
     if (index >= 0) {
@@ -340,7 +340,7 @@ export const storageService = {
     const inventory = this.getInventory();
     const cleanId = partId.split(' - ')[0].trim().toUpperCase();
     const filtered = inventory.filter(
-      (item) => !(item.partId === cleanId && item.stageId === stageId && item.location === location)
+      (item) => !(item.partId.toUpperCase() === cleanId && item.stageId === stageId && item.location === location)
     );
     this.saveInventory(filtered);
   },
