@@ -412,29 +412,8 @@ export const storageService = {
 
     // Painting stage deduction for ingredients that skipped welding
     if (stageId === 'PAINTING') {
-      const bomV2 = this.getBOMV2();
-      const allIngredients = bomV2.filter(b => b.resultPartId === cleanId && (!b.applicableModel || b.applicableModel === currentModelId));
-      const skipWeldedIngredients = allIngredients.filter(ing => {
-        const p = parts.find(part => part.id === ing.ingredientPartId);
-        return p?.skipWelding;
-      });
-
-      if (skipWeldedIngredients.length > 0) {
-        const inventory = this.getInventory();
-        for (const ing of skipWeldedIngredients) {
-          const needed = quantity * ing.quantity;
-          const effectiveIngId = this.getEffectivePartId(ing.ingredientPartId, 'PAINTING', poId);
-          const stock = inventory.find(i => i.partId === effectiveIngId && i.stageId === 'PAINTING' && i.location === 'IN');
-          if (!stock || stock.quantity < needed) {
-            const ingPart = parts.find(p => p.id === effectiveIngId);
-            throw new Error(`Lỗi: Không đủ tồn kho ${ingPart?.name || effectiveIngId} tại PAINTING_IN. Cần ${needed} ${ingPart?.unit || ''}, hiện có ${stock?.quantity || 0}`);
-          }
-        }
-        for (const ing of skipWeldedIngredients) {
-          const effectiveIngId = this.getEffectivePartId(ing.ingredientPartId, 'PAINTING', poId);
-          this.updateInventory(effectiveIngId, 'PAINTING', 'IN', -(quantity * ing.quantity));
-        }
-      }
+      // User request: Skip BOM V2 requirement when producing (IN->OUT) for Painting
+      return;
     }
   },
 
