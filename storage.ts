@@ -461,11 +461,11 @@ export const storageService = {
     }
 
     // 0. Update Production Order progress if producing (IN -> OUT)
-    const isGlazingOutPseudoPart = stageId === 'GLAZING' && cleanId.startsWith('GLZ-OUT-');
+    const isGlazingStage = stageId === 'GLAZING';
     const isPaintingExempt = stageId === 'PAINTING' && sourceLocation === 'IN';
 
     if (sourceLocation === 'IN') {
-      if (poIndex === -1 && !isGlazingOutPseudoPart && !isPaintingExempt) {
+      if (poIndex === -1 && !isGlazingStage && !isPaintingExempt) {
         throw new Error(`Lỗi: Không tìm thấy lệnh PO sản xuất hợp lệ cho linh kiện ${cleanId} tại công đoạn ${STAGES.find(s => s.id === stageId)?.name}. Vui lòng tạo Lệnh sản xuất trước khi thực hiện.`);
       }
 
@@ -503,7 +503,7 @@ export const storageService = {
       const pos = this.getProductionOrders();
       const poIndex = poId ? pos.findIndex(p => p.id === poId) : pos.findIndex(p => p.partId === cleanId && p.stageId === stageId && p.status !== 'COMPLETED');
       
-      if (poIndex === -1 && !isGlazingOutPseudoPart) {
+      if (poIndex === -1 && !isGlazingStage) {
         throw new Error(`Lỗi: Không tìm thấy lệnh PO sản xuất hợp lệ để thực hiện xuất kho QR cho linh kiện ${cleanId}.`);
       }
 

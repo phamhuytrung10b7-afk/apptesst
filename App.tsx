@@ -4219,6 +4219,28 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
     setOutConfigs(loadedOutConfigs.filter(c => !c.finalPartName.toUpperCase().includes('DCLR')));
   }, []);
 
+  const handleGlazingExport = (item: import('./types').InventoryItem) => {
+    const qtyInput = glazingOutQty[item.partId];
+    const qty = parseFloat(qtyInput);
+    
+    if (!qty || qty <= 0) return alert('Vui lòng nhập số lượng xuất');
+    if (qty > item.quantity) return alert('Số lượng xuất vượt quá tồn kho');
+
+    try {
+      // 1. Record Stage Out (From GLAZING OUT to DCLR)
+      storageService.recordStageOut(item.partId, 'GLAZING', qty, 'OUT', 'DCLR');
+      
+      // 2. Clear input
+      setGlazingOutQty(prev => ({ ...prev, [item.partId]: '' }));
+      
+      // 3. Refresh
+      refreshData();
+      alert('Đã xuất kho thành công! Nhãn QR đã được tạo trong mục "Danh sách nhãn QR"');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Lỗi xuất kho');
+    }
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -4334,6 +4356,8 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
   };
 
   const [inboundQty, setInboundQty] = useState<Record<string, string>>({});
+  const [glazingOutQty, setGlazingOutQty] = useState<Record<string, string>>({});
+
   const handleReceive = (config: import('./types').GlazingConfig) => {
     const qty = parseFloat(inboundQty[config.partId]);
     if (!qty || qty <= 0) return alert('Vui lòng nhập số lượng hợp lệ');
@@ -4499,26 +4523,49 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                 </div>
               </div>
               <div>
-                <h4 className="font-bold bg-[#F27D26] text-white p-3 rounded-t-xl text-center uppercase tracking-widest">KHO OUT</h4>
-                <div className="border border-gray-200 border-t-0 p-4 rounded-b-xl min-h-[300px]">
+                <h4 className="font-bold bg-[#F27D26] text-white p-3 rounded-t-xl text-center uppercase tracking-widest">KHO OUT (Chờ sang DCLR)</h4>
+                <div className="border border-gray-200 border-t-0 p-4 rounded-b-xl min-h-[300px] bg-orange-50/20">
                   {inventory.filter(i => i.location === 'OUT' && i.quantity > 0).map(i => {
                     const isPseudo = i.partId.startsWith('GLZ-OUT-');
                     const displayName = isPseudo ? i.partId.replace('GLZ-OUT-', '') : (parts.find((p: any) => p.id === i.partId)?.name || i.partId);
                     
                     return (
-                      <div key={i.partId} className="flex justify-between items-center py-3 border-b border-gray-100 last:border-0">
-                        <div>
-                          <div className="font-bold text-orange-900">{displayName}</div>
+                      <div key={i.partId} className="bg-white p-4 rounded-xl shadow-sm border border-orange-100 mb-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 group hover:border-orange-300 transition-all">
+                        <div className="flex-1">
+                          <div className="font-bold text-gray-900">{displayName}</div>
                           {isPseudo ? (
-                            <div className="font-mono text-[10px] uppercase font-bold text-orange-500 mt-1 bg-orange-50 px-1.5 py-0.5 rounded inline-block">Thành phẩm</div>
+                            <div className="font-mono text-[10px] uppercase font-black text-orange-600 mt-1 bg-orange-100 px-2 py-0.5 rounded inline-block">Gói thành phẩm</div>
                           ) : (
                             <div className="font-mono text-xs opacity-50">{i.partId}</div>
                           )}
+                          <div className="mt-2 text-2xl font-black text-[#F27D26]">{i.quantity}</div>
                         </div>
-                        <div className="font-bold text-lg text-orange-600">{i.quantity}</div>
+                        
+                        <div className="flex flex-col items-end gap-2 w-full sm:w-auto">
+                          <div className="flex bg-white rounded-lg border-2 border-orange-200 overflow-hidden shadow-sm h-12 w-full sm:w-auto">
+                            <input 
+                              type="number"
+                              value={glazingOutQty[i.partId] || ''}
+                              onChange={e => setGlazingOutQty({...glazingOutQty, [i.partId]: e.target.value})}
+                              placeholder="SL xuất"
+                              className="w-full sm:w-24 px-3 text-center font-black outline-none border-r border-orange-100 text-lg text-orange-600"
+                            />
+                            <button 
+                              onClick={() => handleGlazingExport(i)}
+                              className="px-6 bg-[#F27D26] text-white font-black text-xs uppercase hover:bg-orange-700 transition-all active:scale-95 flex items-center gap-2 whitespace-nowrap"
+                            >
+                              <Printer size={16} />
+                              XUẤT DCLR & IN
+                            </button>
+                          </div>
+                          <div className="text-[10px] uppercase font-black text-orange-400 tracking-tighter">Tự tạo nhãn QR & Xuất sang DCLR</div>
+                        </div>
                       </div>
-                    )
+                    );
                   })}
+                  {inventory.filter(i => i.location === 'OUT' && i.quantity > 0).length === 0 && (
+                    <div className="text-center py-20 text-gray-400 italic text-sm">Kho OUT đang trống...</div>
+                  )}
                 </div>
               </div>
             </div>
