@@ -4308,7 +4308,7 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
   const [activeTab, setActiveTab] = useState<'INVENTORY' | 'INBOUND' | 'OUTBOUND' | 'CONFIG' | 'QUICK_PRINT'>('INVENTORY');
   const [configs, setConfigs] = useState<import('./types').GlazingConfig[]>([]);
   const [outConfigs, setOutConfigs] = useState<import('./types').GlazingOutConfig[]>([]);
-  const [quickPrintParts, setQuickPrintParts] = useState<{id: string, name: string, quantity: number}[]>([]);
+  const [quickPrintParts, setQuickPrintParts] = useState<{id: string, name: string, quantity: number}[]>(() => storageService.getQuickPrintParts());
   const [searchQuery, setSearchQuery] = useState('');
   
   const inventory = useMemo(() => {
@@ -4340,6 +4340,10 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
     setConfigs(uniqueConfigs);
     setOutConfigs(loadedOutConfigs.filter(c => !c.finalPartName.toUpperCase().includes('DCLR')));
   }, []);
+
+  useEffect(() => {
+    storageService.saveQuickPrintParts(quickPrintParts);
+  }, [quickPrintParts]);
 
   const handleGlazingExport = (item: import('./types').InventoryItem) => {
     const qtyInput = glazingOutQty[item.partId];
@@ -4651,7 +4655,10 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                       Hiển thị: <span className="text-blue-600">{filteredQuickPrintParts.length}</span> / {quickPrintParts.length} mục
                     </div>
                     <button 
-                      onClick={() => setQuickPrintParts([])}
+                      onClick={() => {
+                        setQuickPrintParts([]);
+                        storageService.saveQuickPrintParts([]);
+                      }}
                       className="text-[10px] font-black text-red-400 uppercase hover:text-red-600 transition-colors"
                     >
                       Xóa tất cả

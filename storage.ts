@@ -21,6 +21,7 @@ const STORAGE_KEYS = {
   TRANSFORMATIONS: 'wip_transformations',
   GLAZING_CONFIGS: 'wip_glazing_configs',
   GLAZING_OUT_CONFIGS: 'wip_glazing_out_configs',
+  QUICK_PRINT_PARTS: 'wip_quick_print_parts',
 };
 
 // In-memory cache to reduce localStorage hits
@@ -196,6 +197,18 @@ export const storageService = {
   saveGlazingOutConfigs(configs: import('./types').GlazingOutConfig[]) {
     localStorage.setItem(STORAGE_KEYS.GLAZING_OUT_CONFIGS, JSON.stringify(configs));
     cache[STORAGE_KEYS.GLAZING_OUT_CONFIGS] = configs;
+  },
+
+  getQuickPrintParts(): {id: string, name: string, quantity: number}[] {
+    return getCached(STORAGE_KEYS.QUICK_PRINT_PARTS, () => {
+      const data = localStorage.getItem(STORAGE_KEYS.QUICK_PRINT_PARTS);
+      return data ? JSON.parse(data) : [];
+    });
+  },
+
+  saveQuickPrintParts(parts: {id: string, name: string, quantity: number}[]) {
+    localStorage.setItem(STORAGE_KEYS.QUICK_PRINT_PARTS, JSON.stringify(parts));
+    cache[STORAGE_KEYS.QUICK_PRINT_PARTS] = parts;
   },
 
   getInventory(): InventoryItem[] {
