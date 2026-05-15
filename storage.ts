@@ -1135,6 +1135,10 @@ export const storageService = {
     const masterPoId = generateUniqueId(`${idPrefix}-${modelPrefix}-${dateStr}`);
     const norms = this.getNorms();
     const partsList = this.getParts();
+    const findPart = (id: string) => {
+      const cleanId = id.trim().toUpperCase();
+      return partsList.find(p => p.id.trim().toUpperCase() === cleanId);
+    };
     const modelBom = this.getModelBOM();
     const bomV2 = this.getBOMV2();
 
@@ -1185,11 +1189,11 @@ export const storageService = {
     const addPoToList = (partId: string, info: any, stageId: StageId, list: ProductionOrder[]) => {
       if (STAGE_ORDER.indexOf(stageId) >= targetStageIdx) return;
       const { qty, minLevel: level } = info;
-      const part = partsList.find(p => p.id === partId);
+      const part = findPart(partId);
       if (stageId === 'LASER' && part?.skipLaser) return;
       if (stageId === 'BENDING' && part?.skipBending) return;
       if (stageId === 'WELDING' && part?.skipWelding) return;
-      if (stageId === 'PAINTING' && (part?.skipPainting || level > 1)) return;
+      if (stageId === 'PAINTING' && (part?.skipPainting || (level > 1 && !part?.hasPaintingPO))) return;
       let idSuffix = "";
       if (stageId === 'WELDING') idSuffix = "- H";
       else if (stageId === 'BENDING') idSuffix = "- CD";
@@ -1216,7 +1220,7 @@ export const storageService = {
       if (hasIngredients || level <= 1) {
         addPoToList(partId, info, 'WELDING', weldingPOs);
       }
-      const part = partsList.find(p => p.id === partId);
+      const part = findPart(partId);
       if (level <= 1 || part?.hasPaintingPO) {
         addPoToList(partId, info, 'PAINTING', paintingPOs);
       }
