@@ -37,6 +37,7 @@ import {
   Plus,
   Users,
   FileSpreadsheet,
+  FileDown,
   Square
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -282,8 +283,8 @@ export default function App() {
 
   const handlePrint = (label: Transaction) => {
     setLastTransaction(label);
-    if (label.id) {
-      storageService.markLabelAsPrinted(label.id);
+    if (label.id && !label.id.startsWith('QUICK-')) {
+      storageService.setTransactionPrinted(label.id, true);
       refreshData();
     }
     setTimeout(() => {
@@ -739,11 +740,7 @@ export default function App() {
                   setDefectModal={setDefectModal}
                   refreshData={refreshData}
                   labels={labels}
-                  onPrint={(label: any) => {
-                    setPrintModal(label);
-                    storageService.setTransactionPrinted(label.id, true);
-                    refreshData();
-                  }}
+                  onPrint={handlePrint}
                 />
               )}
               {currentView === 'manual_inbound' && (
@@ -4206,9 +4203,11 @@ function ManualInboundView({ parts, onManualInbound, setDefectModal }: any) {
 }
 
 function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDefectModal, refreshData, labels: allLabels, onPrint }: any) {
-  const [activeTab, setActiveTab] = useState<'INVENTORY' | 'INBOUND' | 'OUTBOUND' | 'CONFIG'>('INVENTORY');
+  const [activeTab, setActiveTab] = useState<'INVENTORY' | 'INBOUND' | 'OUTBOUND' | 'CONFIG' | 'QUICK_PRINT'>('INVENTORY');
   const [configs, setConfigs] = useState<import('./types').GlazingConfig[]>([]);
   const [outConfigs, setOutConfigs] = useState<import('./types').GlazingOutConfig[]>([]);
+  const [quickPrintParts, setQuickPrintParts] = useState<{id: string, name: string, quantity: number}[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   
   const inventory = useMemo(() => {
     return globalInventory.filter((i: any) => i.stageId === 'GLAZING');
@@ -4442,24 +4441,172 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
     }
   };
 
+  const handleQuickPrintImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const dataBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(dataBuffer);
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<any[]>(firstSheet, { header: 1 });
+
+      if (rows.length < 2) {
+        alert('File Excel không có dữ liệu');
+        return;
+      }
+
+      const headers = rows[0].map((h: any) => String(h || '').toLowerCase().trim());
+      const nameIdx = headers.findIndex((h: any) => h.includes('tên'));
+      const idIdx = headers.findIndex((h: any) => h.includes('mã'));
+
+      if (nameIdx === -1 || idIdx === -1) {
+        alert('Không tìm thấy cột "Tên linh kiện" hoặc "Mã linh kiện" trong file Excel.');
+        return;
+      }
+
+      const imported = rows.slice(1).map(row => ({
+        id: String(row[idIdx] || '').trim(),
+        name: String(row[nameIdx] || '').trim(),
+        quantity: 1
+      })).filter(p => p.id && p.name);
+
+      // Lọc trùng mã (ID)
+      const uniqueMap = new Map();
+      imported.forEach(item => {
+        if (!uniqueMap.has(item.id)) {
+          uniqueMap.set(item.id, item);
+        }
+      });
+
+      setQuickPrintParts(Array.from(uniqueMap.values()));
+    } catch (err) {
+      alert('Lỗi đọc file: ' + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
+  const filteredQuickPrintParts = useMemo(() => {
+    if (!searchQuery.trim()) return quickPrintParts;
+    const q = searchQuery.toLowerCase().trim();
+    return quickPrintParts.filter(p => 
+      p.id.toLowerCase().includes(q) || 
+      p.name.toLowerCase().includes(q)
+    );
+  }, [quickPrintParts, searchQuery]);
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-      <div className="flex gap-4 border-b border-gray-200">
-        {(['INVENTORY', 'INBOUND', 'OUTBOUND', 'CONFIG'] as const).map(tab => (
+      <div className="flex gap-4 border-b border-gray-200 overflow-x-auto scrollbar-hide">
+        {(['INVENTORY', 'INBOUND', 'OUTBOUND', 'QUICK_PRINT', 'CONFIG'] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={cn(
-              "px-6 py-4 font-bold text-sm uppercase tracking-widest border-b-4 transition-all duration-200",
+              "px-6 py-4 font-bold text-sm uppercase tracking-widest border-b-4 transition-all duration-200 whitespace-nowrap",
               activeTab === tab ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-900 focus:outline-none"
             )}
           >
-            {tab === 'INVENTORY' ? 'Tồn kho' : tab === 'INBOUND' ? 'Nhập IN' : tab === 'OUTBOUND' ? 'Xuất OUT' : 'Cấu hình'}
+            {tab === 'INVENTORY' ? 'Tồn kho' : tab === 'INBOUND' ? 'Nhập IN' : tab === 'OUTBOUND' ? 'Xuất OUT' : tab === 'QUICK_PRINT' ? 'In Nhãn Nhanh' : 'Cấu hình'}
           </button>
         ))}
       </div>
 
       <div className="bg-white p-6 rounded-2xl shadow-xl border border-gray-100 min-h-[500px]">
+        {activeTab === 'QUICK_PRINT' && (
+          <div className="space-y-8">
+            <div className="flex flex-col md:flex-row gap-6 items-stretch">
+              <div className="flex-1 bg-blue-50 p-8 rounded-3xl border-4 border-dashed border-blue-200 text-center relative overflow-hidden group">
+                <input type="file" accept=".xlsx,.xls" onChange={handleQuickPrintImport} className="hidden" id="quick-print-upload" />
+                <label htmlFor="quick-print-upload" className="cursor-pointer flex flex-col items-center justify-center gap-4">
+                  <div className="bg-white p-4 rounded-full shadow-lg group-hover:scale-110 transition-transform">
+                    <Upload size={32} className="text-blue-600" />
+                  </div>
+                  <div>
+                    <div className="font-black text-blue-800 text-lg uppercase tracking-tighter">Tải Excel</div>
+                    <div className="text-blue-600/60 text-xs font-bold">Cột: Tên | Mã</div>
+                  </div>
+                </label>
+              </div>
+
+              {quickPrintParts.length > 0 && (
+                <div className="flex-1 bg-white p-6 rounded-3xl border-2 border-gray-100 shadow-xl flex flex-col justify-center gap-4">
+                  <div className="relative">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                    <input 
+                      type="text"
+                      placeholder="Tìm tên hoặc mã linh kiện..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-12 pr-4 py-4 bg-gray-50 border-2 border-transparent rounded-2xl font-bold text-gray-700 focus:bg-white focus:border-blue-500 transition-all outline-none"
+                    />
+                  </div>
+                  <div className="flex justify-between items-center px-2">
+                    <div className="text-xs font-black text-gray-400 uppercase tracking-widest">
+                      Hiển thị: <span className="text-blue-600">{filteredQuickPrintParts.length}</span> / {quickPrintParts.length} mục
+                    </div>
+                    <button 
+                      onClick={() => setQuickPrintParts([])}
+                      className="text-[10px] font-black text-red-400 uppercase hover:text-red-600 transition-colors"
+                    >
+                      Xóa tất cả
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {filteredQuickPrintParts.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredQuickPrintParts.map((p, idx) => (
+                  <div key={`${p.id}-${idx}`} className="bg-white p-6 rounded-2xl shadow-lg border-2 border-blue-100 hover:border-blue-500 transition-all flex flex-col gap-4 group relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-2 bg-blue-50 rounded-bl-xl text-[10px] font-black text-blue-600 font-mono">
+                      #{idx + 1}
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase font-black text-blue-600 mb-1">Mã: {p.id}</div>
+                      <div className="font-bold text-gray-900 leading-tight h-10 line-clamp-2">{p.name}</div>
+                    </div>
+                    
+                    <div className="flex items-end justify-between border-t border-blue-50 pt-4 mt-auto">
+                      <div>
+                        <div className="text-[10px] uppercase font-bold text-gray-400 mb-1">Số lượng in:</div>
+                        <input 
+                          type="number"
+                          min="1"
+                          value={p.quantity}
+                          onChange={(e) => {
+                            const newParts = [...quickPrintParts];
+                            newParts[idx].quantity = parseFloat(e.target.value) || 0;
+                            setQuickPrintParts(newParts);
+                          }}
+                          className="w-20 bg-blue-50 border-2 border-blue-100 rounded-xl px-3 py-2 font-black text-blue-700 text-xl focus:ring-4 focus:ring-blue-100 outline-none transition-all"
+                        />
+                      </div>
+                      <button 
+                        onClick={() => {
+                          onPrint({
+                            id: `QUICK-${Date.now()}-${p.id}`,
+                            partId: p.id,
+                            quantity: p.quantity,
+                            type: 'STAGE_OUT',
+                            stageId: 'GLAZING',
+                            timestamp: Date.now(),
+                            qrData: p.id
+                          });
+                        }}
+                        className="bg-blue-600 text-white p-4 rounded-xl shadow-lg hover:shadow-blue-200 hover:scale-110 active:scale-95 transition-all flex items-center gap-2"
+                      >
+                        <Printer size={20} />
+                        <span className="font-black uppercase tracking-tighter">IN NGAY</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {activeTab === 'CONFIG' && (
           <div className="grid grid-cols-2 gap-8">
             <div className="space-y-6">
