@@ -134,6 +134,26 @@ export interface GlazingOutConfig {
   }[];
 }
 
+export interface GlazingPlanNorm {
+  id: string;
+  partName: string;
+  norm: number;
+  modelName: string;
+  appliedModel?: string; // The model this component belongs to
+}
+
+export interface GlazingPlan {
+  id: string;
+  modelId: string;
+  targetQuantity: number;
+  targetCompletionTime: number;
+  plannedStartTime?: number;
+  expectedCompletionTime?: number;
+  createdAt: number;
+  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
+  producedQuantities?: Record<string, number>; // Track printed quantity per component ID
+}
+
 export const STAGES: { id: StageId; name: string; nextStageId?: StageId }[] = [
   { id: 'LASER', name: 'Cắt Laser', nextStageId: 'BENDING' },
   { id: 'BENDING', name: 'Chấn/Dập', nextStageId: 'WELDING' },

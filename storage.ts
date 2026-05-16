@@ -22,6 +22,8 @@ const STORAGE_KEYS = {
   GLAZING_CONFIGS: 'wip_glazing_configs',
   GLAZING_OUT_CONFIGS: 'wip_glazing_out_configs',
   QUICK_PRINT_PARTS: 'wip_quick_print_parts',
+  GLAZING_PLAN_NORMS: 'wip_glazing_plan_norms',
+  GLAZING_PLANS: 'wip_glazing_plans',
 };
 
 // In-memory cache to reduce localStorage hits
@@ -127,9 +129,9 @@ export const storageService = {
   getShiftConfigs(): ShiftConfig[] {
     return getCached(STORAGE_KEYS.SHIFT_CONFIGS, () => {
       const data = localStorage.getItem(STORAGE_KEYS.SHIFT_CONFIGS);
-      if (data) return JSON.parse(data);
+      let configs: ShiftConfig[] = data ? JSON.parse(data) : [];
       
-      return [
+      const defaults: ShiftConfig[] = [
         {
           stageId: 'LASER',
           workerCount: 1,
@@ -153,8 +155,23 @@ export const storageService = {
           workerCount: 1,
           shifts: [{ start: '08:00', end: '20:00' }],
           breaks: [{ start: '10:00', end: '10:10' }, { start: '11:50', end: '13:00' }, { start: '15:00', end: '15:10' }, { start: '17:00', end: '17:10' }]
+        },
+        {
+          stageId: 'GLAZING',
+          workerCount: 2,
+          shifts: [{ start: '08:00', end: '20:00' }],
+          breaks: [{ start: '10:00', end: '10:10' }, { start: '11:50', end: '13:00' }, { start: '15:00', end: '15:10' }, { start: '17:00', end: '17:10' }]
         }
       ];
+
+      // Add missing defaults to existing configs
+      defaults.forEach(def => {
+        if (!configs.find(c => c.stageId === def.stageId)) {
+          configs.push(def);
+        }
+      });
+      
+      return configs;
     });
   },
 
@@ -209,6 +226,113 @@ export const storageService = {
   saveQuickPrintParts(parts: {id: string, name: string, quantity: number}[]) {
     localStorage.setItem(STORAGE_KEYS.QUICK_PRINT_PARTS, JSON.stringify(parts));
     cache[STORAGE_KEYS.QUICK_PRINT_PARTS] = parts;
+  },
+
+  getGlazingPlanNorms(): import('./types').GlazingPlanNorm[] {
+    return getCached(STORAGE_KEYS.GLAZING_PLAN_NORMS, () => {
+      const data = localStorage.getItem(STORAGE_KEYS.GLAZING_PLAN_NORMS);
+      return data ? JSON.parse(data) : [];
+    });
+  },
+
+  saveGlazingPlanNorms(norms: import('./types').GlazingPlanNorm[]) {
+    localStorage.setItem(STORAGE_KEYS.GLAZING_PLAN_NORMS, JSON.stringify(norms));
+    cache[STORAGE_KEYS.GLAZING_PLAN_NORMS] = norms;
+  },
+
+  getGlazingPlans(): import('./types').GlazingPlan[] {
+    return getCached(STORAGE_KEYS.GLAZING_PLANS, () => {
+      const data = localStorage.getItem(STORAGE_KEYS.GLAZING_PLANS);
+      return data ? JSON.parse(data) : [];
+    });
+  },
+
+  saveGlazingPlans(plans: import('./types').GlazingPlan[]) {
+    localStorage.setItem(STORAGE_KEYS.GLAZING_PLANS, JSON.stringify(plans));
+    cache[STORAGE_KEYS.GLAZING_PLANS] = plans;
+  },
+
+  createGlazingPlan(modelId: string, quantity: number, targetCompletion: number) {
+    const plans = this.getGlazingPlans();
+    const schedule = this.getGlazingSchedule(modelId, quantity, targetCompletion);
+    
+    const newPlan: import('./types').GlazingPlan = {
+      id: `GLZ-PLN-${Date.now()}`,
+      modelId,
+      targetQuantity: quantity,
+      targetCompletionTime: targetCompletion,
+      plannedStartTime: schedule.start,
+      expectedCompletionTime: schedule.end,
+      createdAt: Date.now(),
+      status: 'PENDING'
+    };
+    plans.push(newPlan);
+    this.saveGlazingPlans(plans);
+    return newPlan;
+  },
+
+  getGlazingSchedule(modelId: string, quantity: number, targetCompletion: number) {
+    const norms = this.getGlazingPlanNorms().filter(n => n.appliedModel === modelId);
+    const shiftConfigs = this.getShiftConfigs();
+    const glazingConfig = shiftConfigs.find(c => c.stageId === 'GLAZING');
+    const workerCount = glazingConfig?.workerCount || 2;
+
+    const totalDurationMs = norms.length > 0 
+      ? norms.reduce((sum, n) => sum + (n.norm * quantity * 1000) / workerCount, 0)
+      : (quantity * 300 * 1000) / workerCount; // Default 5 min per unit if no norms
+
+    const existingPlans = this.getGlazingPlans().filter(p => p.status !== 'COMPLETED' && p.expectedCompletionTime);
+    const maxExistingEnd = existingPlans.length > 0 ? Math.max(...existingPlans.map(p => p.expectedCompletionTime!)) : Date.now();
+
+    const runForward = (baseStartTime: number) => {
+      const actualStart = this.getNextWorkingTime(Math.max(baseStartTime, maxExistingEnd), 'GLAZING', shiftConfigs);
+      const end = this.calculateEndTime(actualStart, totalDurationMs, 'GLAZING', shiftConfigs);
+      return { start: actualStart, end };
+    };
+
+    let low = Date.now();
+    let high = targetCompletion > low ? targetCompletion : low;
+    let best = runForward(low);
+
+    if (high > low) {
+      for (let i = 0; i < 20; i++) {
+        const mid = Math.floor((low + high) / 2);
+        const res = runForward(mid);
+        if (res.end <= targetCompletion) {
+          best = res;
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+    }
+    return best;
+  },
+
+  calculateGlazingStartTime(modelId: string, quantity: number, targetCompletion: number) {
+    const schedule = this.getGlazingSchedule(modelId, quantity, targetCompletion);
+    return schedule.start;
+  },
+
+  deleteGlazingPlan(id: string) {
+    const plans = this.getGlazingPlans().filter(p => p.id !== id);
+    this.saveGlazingPlans(plans);
+  },
+
+  updateGlazingPlanProgress(planId: string, partId: string, quantity: number) {
+    const plans = this.getGlazingPlans();
+    const planIndex = plans.findIndex(p => p.id === planId);
+    if (planIndex !== -1) {
+      const plan = plans[planIndex];
+      const producedQuantities = { ...(plan.producedQuantities || {}) };
+      producedQuantities[partId] = (producedQuantities[partId] || 0) + quantity;
+      
+      // Update status if all components are "completed"?
+      // But typically plans are completed manually or when 100% components done.
+      // Let's just update the count.
+      plans[planIndex] = { ...plan, producedQuantities, status: 'IN_PROGRESS' };
+      this.saveGlazingPlans(plans);
+    }
   },
 
   getInventory(): InventoryItem[] {

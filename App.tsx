@@ -38,7 +38,8 @@ import {
   Users,
   FileSpreadsheet,
   FileDown,
-  Square
+  Square,
+  Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -1882,8 +1883,8 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                 <div className="w-full text-center mb-6 relative z-10 text-black">
                   <h2 className="text-4xl font-black uppercase tracking-tight leading-none mb-2">
                     {selectedLabel.type === 'DISPOSAL' 
-                      ? (parts.find(p => p.id === selectedLabel.partId)?.name || selectedLabel.partId)
-                      : getProcessValue(parts.find(p => p.id === selectedLabel.partId)?.name, parts.find(p => p.id === selectedLabel.partId), selectedLabel.stageId, 'OUT')}
+                      ? (selectedLabel.partName || parts.find(p => p.id === selectedLabel.partId)?.name || selectedLabel.partId)
+                      : getProcessValue(selectedLabel.partName || parts.find(p => p.id === selectedLabel.partId)?.name, parts.find(p => p.id === selectedLabel.partId), selectedLabel.stageId, 'OUT')}
                   </h2>
                   <p className="font-mono text-sm font-black text-black">
                     Mã LK: {selectedLabel.type === 'DISPOSAL' 
@@ -2270,7 +2271,7 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
   const [searchTerm, setSearchTerm] = useState('');
 
   const chartData = useMemo(() => {
-    return STAGES.filter(s => s.id !== 'GLAZING' && s.id !== 'DCLR').map(stage => {
+    return STAGES.filter(s => s.id !== 'DCLR').map(stage => {
       const stageItems = inventory.filter(item => item.stageId === stage.id);
       const inQty = stageItems
         .filter(item => item.location === 'IN')
@@ -2345,8 +2346,8 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stageSummaries.filter(s => s.id !== 'GLAZING' && s.id !== 'DCLR').map((summary, idx) => {
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+        {stageSummaries.filter(s => s.id !== 'DCLR').map((summary, idx) => {
           const isActive = selectedStageDetail === summary.id;
 
           return (
@@ -4304,16 +4305,117 @@ function ManualInboundView({ parts, onManualInbound, setDefectModal }: any) {
   );
 }
 
-function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDefectModal, refreshData, labels: allLabels, onPrint }: any) {
-  const [activeTab, setActiveTab] = useState<'INVENTORY' | 'INBOUND' | 'OUTBOUND' | 'CONFIG' | 'QUICK_PRINT'>('INVENTORY');
+function GlazingComponentPrintCard({ norm, plan, idx, onPrint, onUpdateProgress }: any) {
+  const printed = (plan.producedQuantities || {})[norm.id] || 0;
+  const total = plan.targetQuantity;
+  const remaining = total - printed;
+  const [printQty, setPrintQty] = useState(remaining > 0 ? remaining : 1);
+  const progress = Math.min(100, (printed / total) * 100);
+
+  return (
+    <div key={`${norm.id}-${idx}`} className="bg-white p-6 rounded-3xl shadow-xl border border-gray-100 flex flex-col gap-6 group hover:shadow-2xl transition-all">
+      <div className="flex justify-between items-start">
+        <div className="space-y-1">
+          <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest">{norm.id}</span>
+          <h5 className="font-black text-gray-900 leading-tight text-lg">{norm.partName}</h5>
+        </div>
+        <div className="bg-blue-50 px-3 py-1 rounded-full text-[10px] font-black text-blue-600 uppercase">
+          Norm: {norm.norm}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex justify-between text-xs font-black uppercase">
+          <span className="text-gray-400">Tiến độ in label:</span>
+          <span className={cn(progress >= 100 ? "text-green-600" : "text-blue-600")}>
+            {printed.toLocaleString()} / {total.toLocaleString()}
+          </span>
+        </div>
+        <div className="h-3 bg-gray-100 rounded-full overflow-hidden p-0.5 border border-gray-50">
+          <motion.div 
+            initial={{ width: 0 }}
+            animate={{ width: `${progress}%` }}
+            className={cn(
+              "h-full rounded-full shadow-inner",
+              progress >= 100 ? "bg-green-500" : "bg-blue-500"
+            )}
+          />
+        </div>
+      </div>
+
+      <div className="flex items-center gap-4 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+        <div className="flex-1">
+          <span className="text-[10px] font-black text-gray-400 uppercase block mb-1">Số lượng in</span>
+          <input 
+            type="number"
+            min="1"
+            max={remaining}
+            value={printQty}
+            onChange={(e) => setPrintQty(parseInt(e.target.value) || 0)}
+            className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2 font-black text-blue-700 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
+          />
+        </div>
+        <button 
+          disabled={printed >= total || printQty <= 0}
+          onClick={() => {
+            onPrint({
+              id: `GLZ-${Date.now()}-${norm.id}`,
+              partId: norm.id,
+              partName: norm.partName,
+              quantity: printQty,
+              type: 'STAGE_OUT',
+              stageId: 'GLAZING',
+              targetStageId: 'DCLR',
+              timestamp: Date.now(),
+              qrData: norm.id,
+              planId: plan.id
+            });
+            onUpdateProgress(printQty);
+          }}
+          className={cn(
+            "h-12 px-6 rounded-xl flex items-center justify-center gap-2 transition-all font-black uppercase text-xs tracking-tight shadow-lg",
+            (printed >= total || printQty <= 0)
+              ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+              : "bg-blue-600 text-white hover:bg-blue-700 hover:scale-105 active:scale-95 shadow-blue-200"
+          )}
+        >
+          <Printer size={16} />
+          IN {printQty} NHÃN
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDefectModal, refreshData, allLabels, onPrint }: any) {
+  const inventory = globalInventory || [];
+  const [activeTab, setActiveTab] = useState<'INVENTORY' | 'INBOUND' | 'OUTBOUND' | 'QUICK_PRINT' | 'PLANNING' | 'CONFIG'>('INVENTORY');
   const [configs, setConfigs] = useState<import('./types').GlazingConfig[]>([]);
   const [outConfigs, setOutConfigs] = useState<import('./types').GlazingOutConfig[]>([]);
   const [quickPrintParts, setQuickPrintParts] = useState<{id: string, name: string, quantity: number}[]>(() => storageService.getQuickPrintParts());
-  const [searchQuery, setSearchQuery] = useState('');
   
-  const inventory = useMemo(() => {
-    return globalInventory.filter((i: any) => i.stageId === 'GLAZING');
-  }, [globalInventory]);
+  // Planning state
+  const [selectedModel, setSelectedModel] = useState("");
+  const [planQuantity, setPlanQuantity] = useState(0);
+  const [targetCompletion, setTargetCompletion] = useState(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
+  const [glazingPlans, setGlazingPlans] = useState<import('./types').GlazingPlan[]>(() => storageService.getGlazingPlans());
+  const [glazingPlanNorms, setGlazingPlanNorms] = useState<import('./types').GlazingPlanNorm[]>(() => storageService.getGlazingPlanNorms());
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedPlanIdForPrint, setSelectedPlanIdForPrint] = useState<string | "">("");
+  const [estimatedGlazingStart, setEstimatedGlazingStart] = useState<number | null>(null);
+  const [estimatedGlazingEnd, setEstimatedGlazingEnd] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (selectedModel && planQuantity > 0 && targetCompletion) {
+      const endTs = new Date(targetCompletion).getTime();
+      const schedule = storageService.getGlazingSchedule(selectedModel, planQuantity, endTs);
+      setEstimatedGlazingStart(schedule.start);
+      setEstimatedGlazingEnd(schedule.end);
+    } else {
+      setEstimatedGlazingStart(null);
+      setEstimatedGlazingEnd(null);
+    }
+  }, [selectedModel, planQuantity, targetCompletion, glazingPlanNorms]);
 
   const pendingGlazingLabels = useMemo(() => {
     return (allLabels || []).filter((l: any) => l.stageId === 'GLAZING' && l.type === 'STAGE_OUT' && l.printed === false);
@@ -4595,6 +4697,81 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
     }
   };
 
+  const handleGlazingPlanImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const dataBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(dataBuffer);
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<any[]>(firstSheet, { header: 1 });
+
+      if (rows.length < 2) {
+        alert('File Excel không có dữ liệu');
+        return;
+      }
+
+      const headers = rows[0].map((h: any) => String(h || '').toLowerCase().trim());
+      const nameIdx = headers.findIndex((h: any) => h.includes('tên linh kiện'));
+      const normIdx = headers.findIndex((h: any) => h.includes('định mức'));
+      const modelIdx = headers.findIndex((h: any) => h.includes('tên model'));
+      const appliedIdx = headers.findIndex((h: any) => h.includes('model áp dụng') || h.includes('model sx'));
+
+      if (nameIdx === -1 || normIdx === -1 || modelIdx === -1) {
+        alert('Không tìm thấy các cột: Tên linh kiện, Định mức, Tên Model. Cột "Model áp dụng" là tùy chọn.');
+        return;
+      }
+
+      const imported: import('./types').GlazingPlanNorm[] = rows.slice(1).map((row, idx) => {
+        const partName = String(row[nameIdx] || '').trim();
+        const norm = parseFloat(String(row[normIdx]).replace(',', '.')) || 0;
+        const modelName = String(row[modelIdx] || '').trim();
+        const appliedModel = appliedIdx > -1 ? String(row[appliedIdx] || '').trim() : modelName;
+        
+        let partId = '';
+        const foundPart = parts.find((p: any) => p.name.toLowerCase() === partName.toLowerCase());
+        if (foundPart) partId = foundPart.id;
+        else partId = `GLZ-PLAN-${idx}-${Date.now()}`;
+
+        return {
+          id: partId,
+          partName,
+          norm,
+          modelName,
+          appliedModel
+        };
+      }).filter(n => n.partName);
+
+      storageService.saveGlazingPlanNorms(imported);
+      setGlazingPlanNorms(imported);
+      alert(`Đã nhập thành công ${imported.length} định mức kế hoạch dán kính.`);
+    } catch (err) {
+      alert('Lỗi đọc file: ' + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
+  const handleCreatePlan = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedModel || planQuantity <= 0) return;
+    
+    try {
+      const endTs = targetCompletion ? new Date(targetCompletion).getTime() : Date.now();
+      storageService.createGlazingPlan(selectedModel, planQuantity, endTs);
+      setGlazingPlans(storageService.getGlazingPlans());
+      setSelectedModel("");
+      setPlanQuantity(0);
+      refreshData();
+      alert('Đã lập kế hoạch dán kính thành công!');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Lỗi khi tạo kế hoạch');
+    }
+  };
+
+  const currentGlazingPlans = useMemo(() => {
+    return glazingPlans.filter(p => p.status !== 'COMPLETED');
+  }, [glazingPlans]);
+
   const filteredQuickPrintParts = useMemo(() => {
     if (!searchQuery.trim()) return quickPrintParts;
     const q = searchQuery.toLowerCase().trim();
@@ -4607,7 +4784,7 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
       <div className="flex gap-4 border-b border-gray-200 overflow-x-auto scrollbar-hide">
-        {(['INVENTORY', 'INBOUND', 'OUTBOUND', 'QUICK_PRINT', 'CONFIG'] as const).map(tab => (
+        {(['INVENTORY', 'INBOUND', 'OUTBOUND', 'QUICK_PRINT', 'PLANNING', 'CONFIG'] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -4616,171 +4793,461 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
               activeTab === tab ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-900 focus:outline-none"
             )}
           >
-            {tab === 'INVENTORY' ? 'Tồn kho' : tab === 'INBOUND' ? 'Nhập IN' : tab === 'OUTBOUND' ? 'Xuất OUT' : tab === 'QUICK_PRINT' ? 'In Nhãn Nhanh' : 'Cấu hình'}
+            {tab === 'INVENTORY' ? 'Tồn kho' : tab === 'INBOUND' ? 'Nhập IN' : tab === 'OUTBOUND' ? 'Xuất OUT' : tab === 'QUICK_PRINT' ? 'In Nhãn Nhanh' : tab === 'PLANNING' ? 'Kế hoạch' : 'Cấu hình'}
           </button>
         ))}
       </div>
 
       <div className="bg-white p-6 rounded-2xl shadow-xl border border-gray-100 min-h-[500px]">
-        {activeTab === 'QUICK_PRINT' && (
+        {activeTab === 'PLANNING' && (
           <div className="space-y-8">
-            <div className="flex flex-col md:flex-row gap-6 items-stretch">
-              <div className="flex-1 bg-blue-50 p-8 rounded-3xl border-4 border-dashed border-blue-200 text-center relative overflow-hidden group">
-                <input type="file" accept=".xlsx,.xls" onChange={handleQuickPrintImport} className="hidden" id="quick-print-upload" />
-                <label htmlFor="quick-print-upload" className="cursor-pointer flex flex-col items-center justify-center gap-4">
-                  <div className="bg-white p-4 rounded-full shadow-lg group-hover:scale-110 transition-transform">
-                    <Upload size={32} className="text-blue-600" />
-                  </div>
-                  <div>
-                    <div className="font-black text-blue-800 text-lg uppercase tracking-tighter">Tải Excel</div>
-                    <div className="text-blue-600/60 text-xs font-bold">Cột: Tên | Mã</div>
-                  </div>
-                </label>
+            <div className="bg-blue-50 p-6 rounded-3xl border border-blue-100">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="bg-blue-600 p-2 rounded-lg">
+                  <ClipboardList className="text-white" size={24} />
+                </div>
+                <h3 className="text-xl font-black uppercase text-blue-900 tracking-tight">Lập Kế Hoạch Sản Xuất Dán Kính</h3>
               </div>
 
-              {quickPrintParts.length > 0 && (
-                <div className="flex-1 bg-white p-6 rounded-3xl border-2 border-gray-100 shadow-xl flex flex-col justify-center gap-4">
-                  <div className="relative">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                    <input 
-                      type="text"
-                      placeholder="Tìm tên hoặc mã linh kiện..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full pl-12 pr-4 py-4 bg-gray-50 border-2 border-transparent rounded-2xl font-bold text-gray-700 focus:bg-white focus:border-blue-500 transition-all outline-none"
+              <form onSubmit={handleCreatePlan} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-end">
+                  <div className="space-y-2">
+                    <label className="text-xs font-black uppercase text-blue-900/40 tracking-widest pl-1">Chọn Model</label>
+                    <SearchableSelect 
+                      options={Array.from(new Set(storageService.getModelBOM().map(b => b.modelId))).map(id => ({ 
+                        id, 
+                        label: parts.find((p: any) => p.id === id)?.name || id 
+                      }))}
+                      value={selectedModel}
+                      onChange={setSelectedModel}
+                      placeholder="Chọn model sản xuất..."
                     />
                   </div>
-                  <div className="flex justify-between items-center px-2">
-                    <div className="text-xs font-black text-gray-400 uppercase tracking-widest">
-                      Hiển thị: <span className="text-blue-600">{filteredQuickPrintParts.length}</span> / {quickPrintParts.length} mục
-                    </div>
-                    <button 
-                      onClick={() => {
-                        setQuickPrintParts([]);
-                        storageService.saveQuickPrintParts([]);
-                      }}
-                      className="text-[10px] font-black text-red-400 uppercase hover:text-red-600 transition-colors"
-                    >
-                      Xóa tất cả
-                    </button>
+                  <div className="space-y-2">
+                    <label className="text-xs font-black uppercase text-blue-900/40 tracking-widest pl-1">Số lượng (Máy)</label>
+                    <input 
+                      type="number"
+                      value={planQuantity || ''}
+                      onChange={e => setPlanQuantity(parseFloat(e.target.value) || 0)}
+                      className="w-full p-4 rounded-xl border-2 border-blue-100 font-bold text-lg focus:border-blue-600 outline-none"
+                      placeholder="Nhập số lượng..."
+                    />
                   </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-black uppercase text-blue-900/40 tracking-widest pl-1">Ngày mong muốn hoàn thành</label>
+                    <input 
+                      type="datetime-local"
+                      value={targetCompletion}
+                      onChange={e => setTargetCompletion(e.target.value)}
+                      className="w-full p-4 rounded-xl border-2 border-blue-100 font-bold text-lg focus:border-blue-600 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col md:flex-row justify-between items-center bg-white/50 p-4 rounded-2xl border border-blue-100 gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="bg-white px-5 py-3 rounded-xl border border-blue-100 flex items-center gap-6 shadow-sm">
+                      <div className="flex flex-col">
+                        <span className="text-[9px] font-black text-blue-900/50 uppercase tracking-widest leading-none mb-1.5 flex items-center gap-1">
+                          <Clock size={10} className="text-blue-400" /> Bắt đầu dự kiến
+                        </span>
+                        <span className="text-sm font-black text-blue-800">
+                          {estimatedGlazingStart ? format(new Date(estimatedGlazingStart), 'HH:mm - dd/MM/yyyy') : '--:--'}
+                        </span>
+                      </div>
+                      <div className="w-px h-8 bg-blue-100" />
+                      <div className="flex flex-col">
+                        <span className="text-[9px] font-black text-orange-900/50 uppercase tracking-widest leading-none mb-1.5 flex items-center gap-1">
+                          <CheckCircle2 size={10} className="text-orange-400" /> Dự kiến hoàn thành
+                        </span>
+                        <span className="text-sm font-black text-orange-600">
+                          {estimatedGlazingEnd ? format(new Date(estimatedGlazingEnd), 'HH:mm - dd/MM/yyyy') : '--:--'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <button 
+                    type="submit"
+                    disabled={!selectedModel || planQuantity <= 0}
+                    className="bg-blue-600 text-white px-10 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 disabled:opacity-50"
+                  >
+                    Tạo Kế Hoạch
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {selectedModel && (
+              <div className="bg-white rounded-2xl border border-blue-100 p-6 flex flex-col gap-4">
+                <div className="flex justify-between items-center">
+                  <h4 className="font-black text-gray-900 uppercase tracking-tight flex items-center gap-2">
+                    <div className="w-1.5 h-4 bg-blue-600 rounded-full" />
+                    Thành phần Model (Gói Cánh / Gói Đỉnh)
+                  </h4>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {glazingPlanNorms.filter(n => n.appliedModel === selectedModel).map((c, i) => (
+                    <div key={i} className="bg-blue-50/50 p-4 rounded-xl border border-blue-50 flex flex-col gap-1">
+                      <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Linh kiện</span>
+                      <span className="font-bold text-gray-800">{c.partName}</span>
+                      <div className="flex border-t border-blue-100 mt-2 pt-2 gap-4">
+                        <div className="flex-1">
+                          <span className="text-[9px] font-bold text-gray-400 uppercase block">Số lượng:</span>
+                          <span className="text-base font-black text-blue-700">{planQuantity.toLocaleString()} Tấm</span>
+                        </div>
+                        <div className="flex-1">
+                          <span className="text-[9px] font-bold text-gray-400 uppercase block">Tổng thời gian:</span>
+                          <span className="text-base font-black text-orange-600">{(c.norm * planQuantity).toLocaleString()} s</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {glazingPlanNorms.filter(n => n.appliedModel === selectedModel).length === 0 && (
+                    <div className="col-span-full py-6 text-center text-gray-400 italic text-sm">
+                      Model này chưa được cài đặt định mức dán kính
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div className="flex justify-between items-center px-2">
+                <h4 className="font-black text-gray-900 uppercase tracking-tight flex items-center gap-2">
+                  <div className="w-2 h-6 bg-blue-600 rounded-full" />
+                  Kế hoạch dán kính đang thực hiện
+                </h4>
+                <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-100 px-3 py-1 rounded-full">
+                  Tổng cộng: {currentGlazingPlans.length} kế hoạch
+                </div>
+              </div>
+
+              {currentGlazingPlans.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {currentGlazingPlans.map((plan) => {
+                    const modelName = parts.find((p: any) => p.id === plan.modelId)?.name || plan.modelId;
+                    const components = glazingPlanNorms.filter(n => n.appliedModel === plan.modelId);
+                    
+                    return (
+                      <div key={plan.id} className="bg-white border-2 border-gray-100 rounded-2xl p-5 hover:border-blue-200 transition-all group">
+                        <div className="flex justify-between items-start mb-4">
+                          <div>
+                            <div className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">{plan.id}</div>
+                            <h5 className="font-bold text-gray-900 leading-tight">{modelName}</h5>
+                          </div>
+                          <div className="px-3 py-1 rounded-full text-[10px] bg-blue-100 text-blue-700 font-black uppercase tracking-widest">
+                            {plan.targetQuantity} MÁY
+                          </div>
+                        </div>
+
+                        <div className="space-y-2 mb-4">
+                          <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Thành phần & Tiến độ in</div>
+                          <div className="space-y-1">
+                            {components.map((c, i) => {
+                              const printed = (plan.producedQuantities || {})[c.id] || 0;
+                              const target = plan.targetQuantity;
+                              const compProgress = Math.min(100, (printed / target) * 100);
+                              
+                              return (
+                                <div key={i} className="flex flex-col bg-gray-50 px-3 py-2 rounded-lg gap-1.5">
+                                  <div className="flex justify-between items-center text-xs">
+                                    <span className="font-medium text-gray-600 truncate mr-2">{c.partName}</span>
+                                    <span className="font-black text-blue-700 whitespace-nowrap">{printed}/{target}</span>
+                                  </div>
+                                  <div className="h-1 bg-gray-200 rounded-full overflow-hidden">
+                                    <div 
+                                      className={cn("h-full transition-all duration-500", compProgress >= 100 ? "bg-green-500" : "bg-blue-500")}
+                                      style={{ width: `${compProgress}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            {components.length === 0 && (
+                              <div className="text-[10px] text-gray-400 italic">Chưa cài đặt định mức cho model này</div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="pt-3 border-t border-gray-100 flex flex-col gap-3">
+                          <div className="flex justify-between items-center">
+                            <div className="flex flex-col">
+                              <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest pl-1">Bắt đầu dự kiến</span>
+                              <div className="flex items-center gap-2 bg-blue-50/50 px-2.5 py-1.5 rounded-lg border border-blue-50">
+                                <span className="text-xs font-black text-blue-700">
+                                  {plan.plannedStartTime ? format(new Date(plan.plannedStartTime), 'HH:mm - dd/MM') : '--:-- - --/--'}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex flex-col items-end">
+                              <span className="text-[9px] font-black text-orange-400 uppercase tracking-widest pr-1">Dự kiến xong</span>
+                              <div className="flex items-center gap-2 bg-orange-50/50 px-2.5 py-1.5 rounded-lg border border-orange-50">
+                                <span className="text-xs font-black text-orange-700">
+                                  {plan.expectedCompletionTime ? format(new Date(plan.expectedCompletionTime), 'HH:mm - dd/MM') : '--:-- - --/--'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="flex justify-between items-center border-t border-gray-50 pt-3">
+                            <div className="flex flex-col">
+                              <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest pl-1">Hạn hoàn thành (Target)</span>
+                              <span className="text-[10px] font-bold text-gray-500 italic">
+                                {format(new Date(plan.targetCompletionTime), 'HH:mm - dd/MM/yyyy')}
+                              </span>
+                            </div>
+                            <button 
+                              onClick={() => {
+                                if (confirm('Xóa kế hoạch dán kính này?')) {
+                                  storageService.deleteGlazingPlan(plan.id);
+                                  setGlazingPlans(storageService.getGlazingPlans());
+                                  refreshData();
+                                }
+                              }}
+                              className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="py-20 flex flex-col items-center justify-center text-gray-300 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
+                  <ClipboardList size={64} strokeWidth={1} />
+                  <p className="text-lg font-bold mt-4 uppercase tracking-widest opacity-50">Chưa có kế hoạch dán kính</p>
+                  <p className="text-sm opacity-50">Sử dụng form bên trên để tạo kế hoạch mới</p>
                 </div>
               )}
             </div>
+          </div>
+        )}
+        {activeTab === 'QUICK_PRINT' && (
+          <div className="space-y-8">
+            {/* Step 1: Select Plan */}
+            <div className="bg-white p-8 rounded-3xl border border-blue-100 shadow-xl space-y-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
+                  <ClipboardList size={24} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">Chọn Kế Hoạch Đán Kính</h3>
+                  <p className="text-sm text-gray-500 font-bold italic">* Bạn cần chọn một kế hoạch đang thực hiện để in nhãn</p>
+                </div>
+              </div>
 
-            {filteredQuickPrintParts.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredQuickPrintParts.map((p, idx) => (
-                  <div key={`${p.id}-${idx}`} className="bg-white p-6 rounded-2xl shadow-lg border-2 border-blue-100 hover:border-blue-500 transition-all flex flex-col gap-4 group relative overflow-hidden">
-                    <div className="absolute top-0 right-0 p-2 bg-blue-50 rounded-bl-xl text-[10px] font-black text-blue-600 font-mono">
-                      #{idx + 1}
-                    </div>
-                    <div>
-                      <div className="text-[10px] uppercase font-black text-blue-600 mb-1">Mã: {p.id}</div>
-                      <div className="font-bold text-gray-900 leading-tight h-10 line-clamp-2">{p.name}</div>
-                    </div>
-                    
-                    <div className="flex items-end justify-between border-t border-blue-50 pt-4 mt-auto">
-                      <div>
-                        <div className="text-[10px] uppercase font-bold text-gray-400 mb-1">Số lượng in:</div>
-                        <input 
-                          type="number"
-                          min="1"
-                          value={p.quantity}
-                          onChange={(e) => {
-                            const newParts = [...quickPrintParts];
-                            newParts[idx].quantity = parseFloat(e.target.value) || 0;
-                            setQuickPrintParts(newParts);
-                          }}
-                          className="w-20 bg-blue-50 border-2 border-blue-100 rounded-xl px-3 py-2 font-black text-blue-700 text-xl focus:ring-4 focus:ring-blue-100 outline-none transition-all"
-                        />
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {glazingPlans.filter(p => p.status !== 'COMPLETED').map(plan => (
+                  <button
+                    key={plan.id}
+                    onClick={() => setSelectedPlanIdForPrint(plan.id)}
+                    className={cn(
+                      "p-5 rounded-2xl border-2 transition-all text-left flex flex-col gap-2 relative group",
+                      selectedPlanIdForPrint === plan.id 
+                        ? "border-blue-600 bg-blue-50 shadow-lg shadow-blue-100" 
+                        : "border-gray-100 hover:border-blue-300 hover:bg-gray-50"
+                    )}
+                  >
+                    {selectedPlanIdForPrint === plan.id && (
+                      <div className="absolute -top-3 -right-3 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center shadow-lg border-4 border-white">
+                        <Check size={16} strokeWidth={3} />
                       </div>
-                      <button 
-                        onClick={() => {
-                          onPrint({
-                            id: `QUICK-${Date.now()}-${p.id}`,
-                            partId: p.id,
-                            partName: p.name, // Pass the name explicitly
-                            quantity: p.quantity,
-                            type: 'STAGE_OUT',
-                            stageId: 'GLAZING',
-                            targetStageId: 'DCLR', // Default to DCLR
-                            timestamp: Date.now(),
-                            qrData: p.id
-                          });
-                        }}
-                        className="bg-blue-600 text-white p-4 rounded-xl shadow-lg hover:shadow-blue-200 hover:scale-110 active:scale-95 transition-all flex items-center gap-2"
-                      >
-                        <Printer size={20} />
-                        <span className="font-black uppercase tracking-tighter">IN NGAY</span>
-                      </button>
+                    )}
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{plan.modelId}</span>
+                    <span className="font-bold text-gray-800 text-lg">Hạn: {format(new Date(plan.targetCompletionTime), 'dd/MM')}</span>
+                    <div className="flex justify-between items-center mt-2">
+                      <span className="text-xs font-black text-blue-600 bg-blue-100/50 px-2 py-0.5 rounded-full">
+                        SL: {plan.targetQuantity}
+                      </span>
+                      <span className={cn(
+                        "text-[9px] font-black uppercase px-2 py-0.5 rounded-full",
+                        plan.status === 'IN_PROGRESS' ? "text-orange-600 bg-orange-100" : "text-blue-600 bg-blue-100"
+                      )}>
+                        {plan.status === 'IN_PROGRESS' ? 'Đang chạy' : 'Chờ'}
+                      </span>
                     </div>
-                  </div>
+                  </button>
                 ))}
+                {glazingPlans.filter(p => p.status !== 'COMPLETED').length === 0 && (
+                  <div className="col-span-full py-12 text-center bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
+                    <p className="text-gray-400 font-bold uppercase tracking-widest text-sm">Chưa có kế hoạch nào đang hoạt động</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Step 2: Show Components if Plan selected */}
+            {selectedPlanIdForPrint && (
+              <div className="space-y-6">
+                <div className="flex justify-between items-center px-4">
+                  <h4 className="font-black text-gray-900 uppercase tracking-tight flex items-center gap-3">
+                    <div className="w-1.5 h-5 bg-blue-600 rounded-full" />
+                    Linh kiện trong kế hoạch
+                  </h4>
+                  <div className="text-xs font-black text-gray-400 uppercase tracking-widest">
+                    Model: <span className="text-blue-600">{glazingPlans.find(p => p.id === selectedPlanIdForPrint)?.modelId}</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {glazingPlanNorms.filter(n => n.appliedModel === glazingPlans.find(p => p.id === selectedPlanIdForPrint)?.modelId).map((norm, idx) => {
+                    const plan = glazingPlans.find(p => p.id === selectedPlanIdForPrint)!;
+                    return (
+                      <GlazingComponentPrintCard
+                        key={`${norm.id}-${idx}`}
+                        norm={norm}
+                        plan={plan}
+                        idx={idx}
+                        onPrint={onPrint}
+                        onUpdateProgress={(qty) => {
+                          storageService.updateGlazingPlanProgress(plan.id, norm.id, qty);
+                          setGlazingPlans(storageService.getGlazingPlans());
+                          refreshData();
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            
+            {!selectedPlanIdForPrint && (
+              <div className="py-20 flex flex-col items-center justify-center text-gray-300 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
+                <Printer size={64} strokeWidth={1} />
+                <p className="text-lg font-bold mt-4 uppercase tracking-widest opacity-50">Chọn kế hoạch để bắt đầu in</p>
               </div>
             )}
           </div>
         )}
 
         {activeTab === 'CONFIG' && (
-          <div className="grid grid-cols-2 gap-8">
-            <div className="space-y-6">
-              <h3 className="text-xl font-bold uppercase text-blue-800">Cấu hình linh kiện (Kho IN)</h3>
-              <div className="p-6 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 text-center">
-                <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} className="hidden" id="glazing-upload" />
-                <label htmlFor="glazing-upload" className="cursor-pointer flex flex-col items-center justify-center gap-4">
-                  <FileSpreadsheet size={48} className="text-blue-500 opacity-50" />
-                  <div>
-                    <div className="font-bold text-blue-600 text-lg">Click tải lên Excel (IN)</div>
-                    <div className="text-sm text-gray-500 mt-2">Cột yêu cầu: Tên linh kiện | Mã linh kiện | Công đoạn tiếp nhận</div>
-                  </div>
-                </label>
-              </div>
-
-              {configs.length > 0 && (
-                <table className="w-full text-left bg-white text-sm">
-                  <thead><tr className="bg-gray-100 text-gray-500 uppercase"><th className="p-3">Mã</th><th className="p-3">Nguồn</th></tr></thead>
-                  <tbody>
-                    {configs.map((c) => (
-                      <tr key={c.partId} className="border-b"><td className="p-3 font-mono text-xs">{c.partId}</td><td className="p-3 font-bold">{STAGES.find(s => s.id === c.sourceStageId)?.name || c.sourceStageId}</td></tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-
-            <div className="space-y-6">
-              <h3 className="text-xl font-bold uppercase text-orange-800">Cấu hình Gói Thành Phẩm (Kho OUT)</h3>
-              <div className="p-6 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 text-center">
-                <input type="file" accept=".xlsx,.xls" onChange={handleOutFileUpload} className="hidden" id="glazing-upload-out" />
-                <label htmlFor="glazing-upload-out" className="cursor-pointer flex flex-col items-center justify-center gap-4">
-                  <FileSpreadsheet size={48} className="text-orange-500 opacity-50" />
-                  <div>
-                    <div className="font-bold text-orange-600 text-lg">Click tải lên Excel (OUT)</div>
-                    <div className="text-sm text-gray-500 mt-2">Tên linh kiện thành phẩm | Tên linh kiện thành phẩm con | Mã...</div>
-                  </div>
-                </label>
-              </div>
-
-              {outConfigs.length > 0 && (
-                <div className="space-y-4">
-                  {outConfigs.map(c => (
-                    <div key={c.finalPartName} className="border border-gray-200 rounded-lg overflow-hidden">
-                      <div className="bg-orange-50 font-bold p-3 border-b border-gray-200">
-                        {c.finalPartName}
-                      </div>
-                      <div className="p-3 bg-white space-y-2">
-                        {c.subParts.map((sp, idx) => (
-                          <div key={`${sp.partId}-${idx}`} className="flex justify-between text-sm border-b border-gray-100 last:border-0 pb-2 last:pb-0">
-                            <span className="text-gray-600">{sp.partName}</span>
-                            <span className="font-mono text-xs opacity-70">{sp.partId}</span>
-                          </div>
-                        ))}
+          <div className="space-y-12">
+            <div className="space-y-6 bg-blue-50/30 p-8 rounded-3xl border border-blue-100">
+              <hgroup>
+                <h3 className="text-xl font-black uppercase text-blue-800 tracking-tight">Định mức Kế hoạch Dán Kính</h3>
+                <p className="text-xs text-blue-600 font-bold uppercase tracking-widest mt-1 italic">Dành cho lập kế hoạch Gói Cánh / Gói Đỉnh</p>
+              </hgroup>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="p-8 border-2 border-dashed border-blue-200 rounded-2xl bg-white text-center hover:bg-blue-50 transition-all group overflow-hidden">
+                  <input type="file" accept=".xlsx,.xls" onChange={handleGlazingPlanImport} className="hidden" id="glazing-plan-norm-upload" />
+                  <label htmlFor="glazing-plan-norm-upload" className="cursor-pointer flex flex-col items-center justify-center gap-4">
+                    <FileSpreadsheet size={40} className="text-blue-500 group-hover:scale-110 transition-transform" />
+                    <div>
+                      <div className="font-black text-blue-600 uppercase tracking-tight">Tải lên định mức dán kính</div>
+                      <div className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-2 leading-relaxed">
+                        Tên linh kiện | Định mức | Tên Model | Model áp dụng
                       </div>
                     </div>
-                  ))}
+                  </label>
                 </div>
-              )}
+
+                <div className="bg-white rounded-2xl border border-blue-100 shadow-sm flex flex-col max-h-[300px]">
+                  <div className="p-4 border-b border-blue-50 flex justify-between items-center bg-blue-50/50">
+                    <span className="text-[10px] font-black uppercase text-blue-600 tracking-widest">Định mức đã tải ({glazingPlanNorms.length})</span>
+                    {glazingPlanNorms.length > 0 && (
+                      <button 
+                        onClick={() => { if(confirm('Xóa sạch định mức kế hoạch?')) { storageService.saveGlazingPlanNorms([]); setGlazingPlanNorms([]); } }}
+                        className="text-red-400 hover:text-red-600 transition-colors"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
+                  </div>
+                  <div className="overflow-y-auto scrollbar-hide flex-1">
+                    {glazingPlanNorms.length > 0 ? (
+                      <table className="w-full text-left text-[11px]">
+                        <thead className="bg-gray-50 font-black uppercase text-gray-400">
+                          <tr>
+                            <th className="px-3 py-2">Linh kiện</th>
+                            <th className="px-3 py-2 text-center">T/G (giây)</th>
+                            <th className="px-3 py-2">Model áp dụng</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-50">
+                          {glazingPlanNorms.map((n, i) => (
+                            <tr key={i} className="hover:bg-blue-50/20">
+                              <td className="px-3 py-2 font-bold text-gray-700">{n.partName}</td>
+                              <td className="px-3 py-2 text-center font-black text-blue-600">{n.norm}</td>
+                              <td className="px-3 py-2 font-bold italic text-blue-500 bg-blue-50/30">{n.appliedModel || n.modelName}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-gray-400 italic text-[10px] uppercase font-bold tracking-widest">
+                        Chưa có dữ liệu định mức
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-8">
+              <div className="space-y-6">
+                <h3 className="text-xl font-bold uppercase text-blue-800">Cấu hình linh kiện (Kho IN)</h3>
+                <div className="p-6 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 text-center">
+                  <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} className="hidden" id="glazing-upload" />
+                  <label htmlFor="glazing-upload" className="cursor-pointer flex flex-col items-center justify-center gap-4">
+                    <FileSpreadsheet size={48} className="text-blue-500 opacity-50" />
+                    <div>
+                      <div className="font-bold text-blue-600 text-lg">Click tải lên Excel (IN)</div>
+                      <div className="text-sm text-gray-500 mt-2">Cột yêu cầu: Tên linh kiện | Mã linh kiện | Công đoạn tiếp nhận</div>
+                    </div>
+                  </label>
+                </div>
+
+                {configs.length > 0 && (
+                  <table className="w-full text-left bg-white text-sm">
+                    <thead><tr className="bg-gray-100 text-gray-500 uppercase"><th className="p-3">Mã</th><th className="p-3">Nguồn</th></tr></thead>
+                    <tbody>
+                      {configs.map((c) => (
+                        <tr key={c.partId} className="border-b">
+                          <td className="p-3 font-mono text-xs">{c.partId}</td>
+                          <td className="p-3 font-bold">{STAGES.find(s => s.id === c.sourceStageId)?.name || c.sourceStageId}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              <div className="space-y-6">
+                <h3 className="text-xl font-bold uppercase text-orange-800">Cấu hình Gói Thành Phẩm (Kho OUT)</h3>
+                <div className="p-6 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 text-center">
+                  <input type="file" accept=".xlsx,.xls" onChange={handleOutFileUpload} className="hidden" id="glazing-upload-out" />
+                  <label htmlFor="glazing-upload-out" className="cursor-pointer flex flex-col items-center justify-center gap-4">
+                    <FileSpreadsheet size={48} className="text-orange-500 opacity-50" />
+                    <div>
+                      <div className="font-bold text-orange-600 text-lg">Click tải lên Excel (OUT)</div>
+                      <div className="text-sm text-gray-500 mt-2">Tên linh kiện thành phẩm | Tên linh kiện thành phẩm con | Mã...</div>
+                    </div>
+                  </label>
+                </div>
+
+                {outConfigs.length > 0 && (
+                  <div className="space-y-4">
+                    {outConfigs.map(c => (
+                      <div key={c.finalPartName} className="border border-gray-200 rounded-lg overflow-hidden">
+                        <div className="bg-orange-50 font-bold p-3 border-b border-gray-200">
+                          {c.finalPartName}
+                        </div>
+                        <div className="p-3 bg-white space-y-2">
+                          {c.subParts.map((sp, idx) => (
+                            <div key={`${sp.partId}-${idx}`} className="flex justify-between text-sm border-b border-gray-100 last:border-0 pb-2 last:pb-0">
+                              <span className="text-gray-600">{sp.partName}</span>
+                              <span className="font-mono text-xs opacity-70">{sp.partId}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -6484,7 +6951,7 @@ function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () 
         >
           Tổ hợp Laser
         </button>
-        {STAGES.filter(s => s.id !== 'LASER').map(stage => (
+        {STAGES.filter(s => s.id !== 'LASER' && s.id !== 'DCLR').map(stage => (
           <button
             key={stage.id}
             onClick={() => setActiveTab(stage.id)}
@@ -6926,10 +7393,18 @@ function WorkingHoursView() {
           if (!config) return null;
 
           return (
-            <div key={stage.id} className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden border-t-4 border-t-blue-500">
+            <div key={stage.id} className={cn(
+              "bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden border-t-4",
+              stage.id === 'LASER' ? "border-t-orange-500" : 
+              stage.id === 'GLAZING' ? "border-t-indigo-500" :
+              stage.id === 'PAINTING' ? "border-t-pink-500" : "border-t-blue-500"
+            )}>
               <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                 <h3 className="text-xl font-bold flex items-center gap-3 italic">
-                  {stage.id === 'LASER' ? <Flame className="text-orange-500" /> : <Monitor className="text-blue-500" />}
+                  {stage.id === 'LASER' && <Flame className="text-orange-500" />}
+                  {stage.id === 'GLAZING' && <Square className="text-indigo-500" />}
+                  {stage.id === 'PAINTING' && <Monitor className="text-pink-500" />}
+                  {(stage.id !== 'LASER' && stage.id !== 'GLAZING' && stage.id !== 'PAINTING') && <Monitor className="text-blue-500" />}
                   {stage.name}
                 </h3>
                 <span className="text-xs font-mono font-bold bg-gray-200 px-2 py-1 rounded">
