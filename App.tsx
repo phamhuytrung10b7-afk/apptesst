@@ -4389,7 +4389,7 @@ function GlazingComponentPrintCard({ norm, plan, idx, onPrint, onUpdateProgress 
 
 function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDefectModal, refreshData, allLabels, onPrint }: any) {
   const inventory = globalInventory || [];
-  const [activeTab, setActiveTab] = useState<'INVENTORY' | 'INBOUND' | 'OUTBOUND' | 'QUICK_PRINT' | 'PLANNING' | 'CONFIG'>('INVENTORY');
+  const [activeTab, setActiveTab] = useState<'INBOUND' | 'OUTBOUND' | 'QUICK_PRINT' | 'PLANNING' | 'CONFIG'>('PLANNING');
   const [configs, setConfigs] = useState<import('./types').GlazingConfig[]>([]);
   const [outConfigs, setOutConfigs] = useState<import('./types').GlazingOutConfig[]>([]);
   const [quickPrintParts, setQuickPrintParts] = useState<{id: string, name: string, quantity: number}[]>(() => storageService.getQuickPrintParts());
@@ -4784,7 +4784,7 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
       <div className="flex gap-4 border-b border-gray-200 overflow-x-auto scrollbar-hide">
-        {(['INVENTORY', 'INBOUND', 'OUTBOUND', 'QUICK_PRINT', 'PLANNING', 'CONFIG'] as const).map(tab => (
+        {(['PLANNING', 'INBOUND', 'QUICK_PRINT', 'OUTBOUND', 'CONFIG'] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -4793,7 +4793,7 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
               activeTab === tab ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-900 focus:outline-none"
             )}
           >
-            {tab === 'INVENTORY' ? 'Tồn kho' : tab === 'INBOUND' ? 'Nhập IN' : tab === 'OUTBOUND' ? 'Xuất OUT' : tab === 'QUICK_PRINT' ? 'In Nhãn Nhanh' : tab === 'PLANNING' ? 'Kế hoạch' : 'Cấu hình'}
+            {tab === 'PLANNING' ? 'Kế hoạch sẩn xuất' : tab === 'INBOUND' ? 'Nhập IN' : tab === 'QUICK_PRINT' ? 'In Nhãn Nhanh' : tab === 'OUTBOUND' ? 'Xuất OUT' : 'Cấu hình'}
           </button>
         ))}
       </div>
@@ -5252,124 +5252,6 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
           </div>
         )}
 
-        {activeTab === 'INVENTORY' && (
-          <div>
-            <h3 className="text-xl font-bold uppercase mb-6">Tồn kho Dán Kính</h3>
-            <div className="grid grid-cols-2 gap-8">
-              <div>
-                <h4 className="font-bold bg-gray-900 text-white p-3 rounded-t-xl text-center uppercase tracking-widest">KHO IN</h4>
-                <div className="border border-gray-200 border-t-0 p-4 rounded-b-xl min-h-[300px]">
-                  {inventory.filter(i => i.location === 'IN' && i.quantity > 0).map(i => (
-                    <div key={i.partId} className="flex justify-between items-center py-3 border-b border-gray-100 last:border-0">
-                      <div>
-                        <div className="font-bold">{parts.find((p: any) => p.id === i.partId)?.name || i.partId}</div>
-                        <div className="font-mono text-xs opacity-50">{i.partId}</div>
-                      </div>
-                      <div className="font-bold text-lg">{i.quantity}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <h4 className="font-bold bg-[#F27D26] text-white p-3 rounded-t-xl text-center uppercase tracking-widest">KHO OUT (Chờ sang DCLR)</h4>
-                <div className="border border-gray-200 border-t-0 p-4 rounded-b-xl min-h-[300px] bg-orange-50/20">
-                  {inventory.filter(i => i.location === 'OUT' && i.quantity > 0).map(i => {
-                    const isPseudo = i.partId.startsWith('GLZ-OUT-');
-                    const displayName = isPseudo ? i.partId.replace('GLZ-OUT-', '') : (parts.find((p: any) => p.id === i.partId)?.name || i.partId);
-                    
-                    return (
-                      <div key={i.partId} className="bg-white p-4 rounded-xl shadow-sm border border-orange-100 mb-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 group hover:border-orange-300 transition-all">
-                        <div className="flex-1">
-                          <div className="font-bold text-gray-900">{displayName}</div>
-                          {isPseudo ? (
-                            <div className="font-mono text-[10px] uppercase font-black text-orange-600 mt-1 bg-orange-100 px-2 py-0.5 rounded inline-block">Gói thành phẩm</div>
-                          ) : (
-                            <div className="font-mono text-xs opacity-50">{i.partId}</div>
-                          )}
-                          <div className="mt-2 text-2xl font-black text-[#F27D26]">{i.quantity}</div>
-                        </div>
-                        
-                        <div className="flex flex-col items-end gap-2 w-full sm:w-auto">
-                          <div className="flex bg-white rounded-lg border-2 border-orange-200 overflow-hidden shadow-sm h-12 w-full sm:w-auto">
-                            <input 
-                              type="number"
-                              value={glazingOutQty[i.partId] || ''}
-                              onChange={e => setGlazingOutQty({...glazingOutQty, [i.partId]: e.target.value})}
-                              placeholder="SL xuất"
-                              className="w-full sm:w-24 px-3 text-center font-black outline-none border-r border-orange-100 text-lg text-orange-600"
-                            />
-                            <button 
-                              onClick={() => handleGlazingExport(i)}
-                              className="px-6 bg-[#F27D26] text-white font-black text-xs uppercase hover:bg-orange-700 transition-all active:scale-95 flex items-center gap-2 whitespace-nowrap"
-                            >
-                              <ArrowUpRight size={16} />
-                              XUẤT DCLR
-                            </button>
-                          </div>
-                          <div className="text-[10px] uppercase font-black text-orange-400 tracking-tighter italic">Tạm tính & Chờ in mã QR ở dưới</div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {inventory.filter(i => i.location === 'OUT' && i.quantity > 0).length === 0 && (
-                    <div className="text-center py-20 text-gray-400 italic text-sm">Kho OUT đang trống...</div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {pendingGlazingLabels.length > 0 && (
-              <div className="mt-12 bg-white rounded-3xl border-4 border-[#F27D26] shadow-2xl overflow-hidden">
-                <div className="bg-[#F27D26] p-6 flex justify-between items-center">
-                  <div>
-                    <h3 className="text-white font-black text-2xl tracking-tighter uppercase italic flex items-center gap-3">
-                      <Printer size={28} />
-                      DANH SÁCH CHỜ IN NHÃN QR
-                    </h3>
-                    <p className="text-white/80 text-sm mt-1">Các tấm/gói đã chuẩn bị xuất sang DCLR nhưng chưa in mã QR</p>
-                  </div>
-                  <div className="bg-white/20 px-4 py-2 rounded-full text-white font-black">
-                    {pendingGlazingLabels.length} Nhãn
-                  </div>
-                </div>
-                <div className="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 bg-orange-50/30">
-                  {pendingGlazingLabels.map((l: any) => {
-                    const isPseudo = l.partId.startsWith('GLZ-OUT-');
-                    const displayName = isPseudo ? l.partId.replace('GLZ-OUT-', '') : (parts.find((p: any) => p.id === l.partId)?.name || l.partId);
-                    
-                    return (
-                      <div key={l.id} className="bg-white p-6 rounded-2xl shadow-lg border-2 border-orange-200 hover:border-orange-500 transition-all group relative overflow-hidden">
-                        <div className="absolute top-0 right-0 p-2 bg-orange-100 rounded-bl-xl text-[10px] font-black text-orange-600 font-mono">
-                          {format(l.timestamp, 'HH:mm:ss')}
-                        </div>
-                        <div className="flex flex-col gap-4">
-                          <div>
-                            <div className="text-[10px] uppercase font-black tracking-widest text-[#F27D26] mb-1">Mã: {l.partId}</div>
-                            <div className="font-bold text-gray-900 leading-tight h-10 line-clamp-2">{displayName}</div>
-                          </div>
-                          <div className="flex items-end justify-between border-t border-orange-100 pt-4">
-                            <div>
-                              <div className="text-[10px] uppercase font-bold text-gray-400">Số lượng:</div>
-                              <div className="text-3xl font-black text-[#F27D26]">{l.quantity}</div>
-                            </div>
-                            <button 
-                              onClick={() => onPrint({ ...l, partName: displayName })}
-                              className="bg-[#F27D26] text-white p-4 rounded-xl shadow-lg hover:shadow-orange-200 hover:scale-110 active:scale-95 transition-all flex items-center gap-2 group-hover:ring-4 group-hover:ring-orange-200"
-                            >
-                              <Printer size={20} />
-                              <span className="font-black uppercase tracking-tighter">IN NHÃN QC</span>
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
         {activeTab === 'INBOUND' && (
           <div>
             <h3 className="text-xl font-bold uppercase mb-6 bg-blue-50 text-blue-800 p-4 rounded-xl border border-blue-100">Tiếp nhận từ công đoạn khác</h3>
@@ -5417,74 +5299,174 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
         )}
 
         {activeTab === 'OUTBOUND' && (
-          <div>
-            <h3 className="text-xl font-bold uppercase mb-6 bg-orange-50 text-orange-800 p-4 rounded-xl border border-orange-100">Chuyển sang kho OUT (Đóng gói thành phẩm)</h3>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
-              {outConfigs.map(c => {
-                const requiredQtys: Record<string, number> = {};
-                for (const sp of c.subParts) {
-                  if (!requiredQtys[sp.partId]) requiredQtys[sp.partId] = 0;
-                  requiredQtys[sp.partId] += 1;
-                }
+          <div className="space-y-12">
+            <div>
+              <h3 className="text-xl font-bold uppercase mb-6 bg-orange-50 text-orange-800 p-4 rounded-xl border border-orange-100 flex items-center gap-3">
+                <Package size={24} />
+                Đóng gói thành phẩm (Chuyển từ IN sang OUT)
+              </h3>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
+                {outConfigs.map(c => {
+                  const requiredQtys: Record<string, number> = {};
+                  for (const sp of c.subParts) {
+                    if (!requiredQtys[sp.partId]) requiredQtys[sp.partId] = 0;
+                    requiredQtys[sp.partId] += 1;
+                  }
 
-                // For each unique subpart, check max possible assemblies
-                let maxPossible = Infinity;
-                for (const partId of Object.keys(requiredQtys)) {
-                  const reqPerItem = requiredQtys[partId];
-                  const invQt = inventory.find(i => i.partId === partId && i.location === 'IN')?.quantity || 0;
-                  const possible = Math.floor(invQt / reqPerItem);
-                  if (possible < maxPossible) maxPossible = possible;
-                }
-                if (maxPossible === Infinity) maxPossible = 0;
+                  // For each unique subpart, check max possible assemblies
+                  let maxPossible = Infinity;
+                  for (const partId of Object.keys(requiredQtys)) {
+                    const reqPerItem = requiredQtys[partId];
+                    const invQt = inventory.find(i => i.partId === partId && i.location === 'IN' && i.stageId === 'GLAZING')?.quantity || 0;
+                    const possible = Math.floor(invQt / reqPerItem);
+                    if (possible < maxPossible) maxPossible = possible;
+                  }
+                  if (maxPossible === Infinity) maxPossible = 0;
 
-                return (
-                  <div key={c.finalPartName} className="border border-gray-200 rounded-xl overflow-hidden shadow-sm bg-white">
-                    <div className="bg-gray-50 border-b border-gray-200 p-4">
-                      <div className="font-bold text-lg text-gray-900">{c.finalPartName}</div>
-                      <div className="text-sm font-medium text-orange-600 mt-1">Có thể đóng gói: {maxPossible}</div>
-                    </div>
-                    <div className="p-4 space-y-3">
-                      <div className="text-xs font-bold uppercase text-gray-400 mb-2">Linh kiện yêu cầu (từ kho IN)</div>
-                      {c.subParts.map((sp, idx) => {
-                        const invQt = inventory.find(i => i.partId === sp.partId && i.location === 'IN')?.quantity || 0;
-                        return (
-                          <div key={`${sp.partId}-${idx}`} className="flex justify-between items-center text-sm">
-                            <div>
-                              <div className="font-medium text-gray-700">{sp.partName}</div>
-                              <div className="font-mono text-xs text-gray-400">{sp.partId}</div>
+                  return (
+                    <div key={c.finalPartName} className="border border-gray-200 rounded-xl overflow-hidden shadow-sm bg-white">
+                      <div className="bg-gray-50 border-b border-gray-200 p-4">
+                        <div className="font-bold text-lg text-gray-900">{c.finalPartName}</div>
+                        <div className="text-sm font-medium text-orange-600 mt-1">Có thể đóng gói: {maxPossible}</div>
+                      </div>
+                      <div className="p-4 space-y-3">
+                        <div className="text-xs font-bold uppercase text-gray-400 mb-2">Linh kiện yêu cầu (từ kho IN Dán Kính)</div>
+                        {c.subParts.map((sp, idx) => {
+                          const invQt = inventory.find(i => i.partId === sp.partId && i.location === 'IN' && i.stageId === 'GLAZING')?.quantity || 0;
+                          return (
+                            <div key={`${sp.partId}-${idx}`} className="flex justify-between items-center text-sm">
+                              <div>
+                                <div className="font-medium text-gray-700">{sp.partName}</div>
+                                <div className="font-mono text-xs text-gray-400">{sp.partId}</div>
+                              </div>
+                              <div className={cn("font-bold", invQt > 0 ? "text-green-600" : "text-red-500")}>
+                                Kho IN: {invQt}
+                              </div>
                             </div>
-                            <div className={cn("font-bold", invQt > 0 ? "text-green-600" : "text-red-500")}>
-                              Kho IN: {invQt}
-                            </div>
-                          </div>
-                        )
-                      })}
-                      <div className="pt-4 mt-2 border-t border-gray-100">
-                        <div className="flex bg-gray-50 rounded-xl overflow-hidden border border-gray-200 p-1">
+                          )
+                        })}
+                        <div className="pt-4 border-t border-gray-100 flex gap-2">
                           <input 
                             type="number"
                             value={outboundQty[c.finalPartName] || ''}
                             onChange={e => setOutboundQty({...outboundQty, [c.finalPartName]: e.target.value})}
                             placeholder="SL"
-                            min="1"
-                            max={maxPossible || 1}
-                            className="bg-transparent border-none p-3 w-20 outline-none text-center font-bold"
-                            disabled={maxPossible === 0}
+                            className="w-20 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg font-bold outline-none focus:border-blue-500"
                           />
                           <button 
-                            onClick={() => handleTransferOut(c.finalPartName)}
-                            disabled={maxPossible === 0}
-                            className={cn("flex-1 p-3 font-bold uppercase text-white transition-all", maxPossible > 0 ? "bg-orange-600 hover:bg-orange-700" : "bg-gray-300")}
-                          >XUẤT OUT</button>
+                            onClick={() => handleStageOutbound(c.finalPartName, c)}
+                            className="flex-1 bg-blue-600 text-white font-bold py-2 rounded-lg hover:bg-blue-700 transition-colors uppercase text-xs"
+                          >
+                            Đóng gói & Nhập OUT
+                          </button>
                         </div>
                       </div>
                     </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
               {outConfigs.length === 0 && (
-                <div className="col-span-2 text-center text-gray-500 py-12">
+                <div className="text-center text-gray-500 py-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
                   Chưa có cấu hình Gói Thành Phẩm OUT. Vui lòng tải lên ở tab Cấu hình.
+                </div>
+              )}
+            </div>
+
+            {/* Warehouse OUT and Export to DCLR section */}
+            <div className="pt-12 border-t-4 border-dashed border-gray-100">
+              <h3 className="text-xl font-bold uppercase mb-6 bg-gray-900 text-white p-4 rounded-xl border border-gray-800 flex items-center gap-3">
+                <ArrowUpRight size={24} />
+                Linh kiện/Gói thành phẩm sẵn sàng xuất sang DCLR
+              </h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {inventory.filter(i => i.stageId === 'GLAZING' && i.location === 'OUT' && i.quantity > 0).map(i => {
+                  const isPseudo = i.partId.startsWith('GLZ-OUT-');
+                  const displayName = isPseudo ? i.partId.replace('GLZ-OUT-', '') : (parts.find((p: any) => p.id === i.partId)?.name || i.partId);
+                  
+                  return (
+                    <div key={i.partId} className="bg-white p-6 rounded-2xl shadow-lg border border-orange-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 group hover:border-orange-300 transition-all">
+                      <div className="flex-1">
+                        <div className="font-bold text-gray-900 text-lg">{displayName}</div>
+                        {isPseudo ? (
+                          <div className="font-mono text-[10px] uppercase font-black text-orange-600 mt-1 bg-orange-100 px-2 py-0.5 rounded inline-block">Gói thành phẩm</div>
+                        ) : (
+                          <div className="font-mono text-xs opacity-50">{i.partId}</div>
+                        )}
+                        <div className="mt-2 text-3xl font-black text-[#F27D26]">{i.quantity}</div>
+                      </div>
+                      
+                      <div className="flex flex-col items-end gap-2 w-full sm:w-auto">
+                        <div className="flex bg-white rounded-lg border-2 border-orange-200 overflow-hidden shadow-sm h-12 w-full sm:w-auto">
+                          <input 
+                            type="number"
+                            value={glazingOutQty[i.partId] || ''}
+                            onChange={e => setGlazingOutQty({...glazingOutQty, [i.partId]: e.target.value})}
+                            placeholder="SL"
+                            className="w-full sm:w-24 px-3 text-center font-black outline-none border-r border-orange-100 text-lg text-orange-600"
+                          />
+                          <button 
+                            onClick={() => handleGlazingExport(i)}
+                            className="px-6 bg-[#F27D26] text-white font-black text-xs uppercase hover:bg-orange-700 transition-all active:scale-95 flex items-center gap-2 whitespace-nowrap"
+                          >
+                            <ArrowUpRight size={16} />
+                            XUẤT DCLR
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {inventory.filter(i => i.stageId === 'GLAZING' && i.location === 'OUT' && i.quantity > 0).length === 0 && (
+                  <div className="col-span-full text-center py-12 text-gray-400 italic bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
+                    Chưa có linh kiện nào trong kho OUT Dán Kính...
+                  </div>
+                )}
+              </div>
+
+              {pendingGlazingLabels.length > 0 && (
+                <div className="mt-12 bg-white rounded-3xl border-4 border-[#F27D26] shadow-2xl overflow-hidden">
+                  <div className="bg-[#F27D26] p-6 flex justify-between items-center">
+                    <div>
+                      <h3 className="text-white font-black text-2xl tracking-tighter uppercase italic flex items-center gap-3">
+                        <Printer size={28} />
+                        DANH SÁCH CHỜ IN NHÃN QR XUẤT KHO
+                      </h3>
+                    </div>
+                    <div className="bg-white/20 px-4 py-2 rounded-full text-white font-black">
+                      {pendingGlazingLabels.length} Nhãn
+                    </div>
+                  </div>
+                  <div className="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 bg-orange-50/30">
+                    {pendingGlazingLabels.map((l: any) => {
+                      const isPseudo = l.partId.startsWith('GLZ-OUT-');
+                      const displayName = isPseudo ? l.partId.replace('GLZ-OUT-', '') : (parts.find((p: any) => p.id === l.partId)?.name || l.partId);
+                      
+                      return (
+                        <div key={l.id} className="bg-white p-6 rounded-2xl shadow-lg border-2 border-orange-200 hover:border-orange-500 transition-all group relative overflow-hidden">
+                          <div className="flex flex-col gap-4">
+                            <div>
+                              <div className="text-[10px] uppercase font-black tracking-widest text-[#F27D26] mb-1">Mã: {l.partId}</div>
+                              <div className="font-bold text-gray-900 leading-tight h-10 line-clamp-2">{displayName}</div>
+                            </div>
+                            <div className="flex items-end justify-between border-t border-orange-100 pt-4">
+                              <div>
+                                <div className="text-[10px] uppercase font-bold text-gray-400">Số lượng:</div>
+                                <div className="text-3xl font-black text-[#F27D26]">{l.quantity}</div>
+                              </div>
+                              <button 
+                                onClick={() => onPrint({ ...l, partName: displayName })}
+                                className="bg-[#F27D26] text-white p-4 rounded-xl shadow-lg hover:shadow-orange-200 hover:scale-110 active:scale-95 transition-all flex items-center gap-2"
+                              >
+                                <Printer size={20} />
+                                <span className="font-black uppercase tracking-tighter">IN NHÃN QC</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
