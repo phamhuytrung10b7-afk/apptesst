@@ -359,6 +359,11 @@ export const storageService = {
     cache[STORAGE_KEYS.TRANSACTIONS] = transactions;
   },
 
+  saveLabels(labels: Transaction[]) {
+    localStorage.setItem('wip_labels', JSON.stringify(labels));
+    cache['wip_labels'] = labels;
+  },
+
   getLabels(): Transaction[] {
     return getCached('wip_labels', () => {
       const data = localStorage.getItem('wip_labels');

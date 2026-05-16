@@ -286,8 +286,8 @@ export default function App() {
     setLastTransaction(label);
     if (label.id && !label.id.startsWith('QUICK-')) {
       storageService.setTransactionPrinted(label.id, true);
-      refreshData();
     }
+    refreshData();
   };
 
   const handlePrintConfirm = () => {
@@ -4387,7 +4387,7 @@ function GlazingComponentPrintCard({ norm, plan, idx, onPrint, onUpdateProgress 
   );
 }
 
-function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDefectModal, refreshData, allLabels, onPrint }: any) {
+function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDefectModal, refreshData, labels, onPrint }: any) {
   const inventory = globalInventory || [];
   const [activeTab, setActiveTab] = useState<'INVENTORY' | 'INBOUND' | 'OUTBOUND' | 'QUICK_PRINT' | 'PLANNING' | 'CONFIG'>('INVENTORY');
   const [configs, setConfigs] = useState<import('./types').GlazingConfig[]>([]);
@@ -4418,8 +4418,8 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
   }, [selectedModel, planQuantity, targetCompletion, glazingPlanNorms]);
 
   const pendingGlazingLabels = useMemo(() => {
-    return (allLabels || []).filter((l: any) => l.stageId === 'GLAZING' && l.type === 'STAGE_OUT' && l.printed === false);
-  }, [allLabels]);
+    return (labels || []).filter((l: any) => l.stageId === 'GLAZING' && l.type === 'STAGE_OUT' && l.printed === false);
+  }, [labels]);
   
   useEffect(() => {
     const loadedConfigs = storageService.getGlazingConfigs();
@@ -5100,7 +5100,10 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                         norm={norm}
                         plan={plan}
                         idx={idx}
-                        onPrint={onPrint}
+                        onPrint={(label) => {
+                          storageService.saveLabel(label);
+                          onPrint(label);
+                        }}
                         onUpdateProgress={(qty) => {
                           storageService.updateGlazingPlanProgress(plan.id, norm.id, qty);
                           setGlazingPlans(storageService.getGlazingPlans());
@@ -5109,6 +5112,50 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                       />
                     );
                   })}
+                </div>
+
+                <div className="mt-12 space-y-4">
+                  <h4 className="font-black text-gray-900 uppercase tracking-tight flex items-center gap-3 px-4">
+                    <History size={20} className="text-gray-400" />
+                    Lịch sử in gần đây
+                  </h4>
+                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-gray-50 border-b border-gray-100 text-gray-500 font-black uppercase text-[10px] tracking-widest">
+                        <tr>
+                          <th className="px-6 py-4">Thời gian</th>
+                          <th className="px-6 py-4">Tên linh kiện / Gói</th>
+                          <th className="px-6 py-4 text-center">Số lượng</th>
+                          <th className="px-6 py-4">Thao tác</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {labels && labels.filter((l: any) => l.planId === selectedPlanIdForPrint).sort((a: any, b: any) => b.timestamp - a.timestamp).map((label: any) => (
+                          <tr key={label.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                            <td className="px-6 py-4 font-mono text-[11px] font-bold text-gray-500">
+                              {format(label.timestamp, 'HH:mm:ss dd/MM')}
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="font-bold text-gray-900">{label.partName || label.partId}</div>
+                              <div className="text-[10px] font-mono text-gray-400 uppercase mt-1">{label.partId}</div>
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              <span className="font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full">{label.quantity}</span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <button 
+                                onClick={() => onPrint(label)}
+                                className="flex items-center gap-2 text-blue-600 hover:text-blue-800 font-bold text-xs uppercase bg-white border border-blue-200 px-3 py-1.5 rounded-lg hover:border-blue-400 transition-all shadow-sm"
+                              >
+                                <Printer size={14} />
+                                In lại
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             )}
