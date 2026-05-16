@@ -2271,7 +2271,7 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
   const [searchTerm, setSearchTerm] = useState('');
 
   const chartData = useMemo(() => {
-    return STAGES.filter(s => s.id !== 'DCLR').map(stage => {
+    return STAGES.filter(s => s.id !== 'DCLR' && s.id !== 'GLAZING').map(stage => {
       const stageItems = inventory.filter(item => item.stageId === stage.id);
       const inQty = stageItems
         .filter(item => item.location === 'IN')
@@ -2347,7 +2347,7 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-        {stageSummaries.filter(s => s.id !== 'DCLR').map((summary, idx) => {
+        {stageSummaries.filter(s => s.id !== 'DCLR' && s.id !== 'GLAZING').map((summary, idx) => {
           const isActive = selectedStageDetail === summary.id;
 
           return (
@@ -4389,7 +4389,7 @@ function GlazingComponentPrintCard({ norm, plan, idx, onPrint, onUpdateProgress 
 
 function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDefectModal, refreshData, allLabels, onPrint }: any) {
   const inventory = globalInventory || [];
-  const [activeTab, setActiveTab] = useState<'INBOUND' | 'OUTBOUND' | 'QUICK_PRINT' | 'PLANNING' | 'CONFIG'>('PLANNING');
+  const [activeTab, setActiveTab] = useState<'INVENTORY' | 'INBOUND' | 'OUTBOUND' | 'QUICK_PRINT' | 'PLANNING' | 'CONFIG'>('INVENTORY');
   const [configs, setConfigs] = useState<import('./types').GlazingConfig[]>([]);
   const [outConfigs, setOutConfigs] = useState<import('./types').GlazingOutConfig[]>([]);
   const [quickPrintParts, setQuickPrintParts] = useState<{id: string, name: string, quantity: number}[]>(() => storageService.getQuickPrintParts());
@@ -4784,7 +4784,7 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
       <div className="flex gap-4 border-b border-gray-200 overflow-x-auto scrollbar-hide">
-        {(['PLANNING', 'INBOUND', 'QUICK_PRINT', 'OUTBOUND', 'CONFIG'] as const).map(tab => (
+        {(['INVENTORY', 'PLANNING', 'INBOUND', 'QUICK_PRINT', 'OUTBOUND', 'CONFIG'] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -4793,7 +4793,7 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
               activeTab === tab ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-900 focus:outline-none"
             )}
           >
-            {tab === 'PLANNING' ? 'Kế hoạch sẩn xuất' : tab === 'INBOUND' ? 'Nhập IN' : tab === 'QUICK_PRINT' ? 'In Nhãn Nhanh' : tab === 'OUTBOUND' ? 'Xuất OUT' : 'Cấu hình'}
+            {tab === 'INVENTORY' ? 'Tồn kho IN' : tab === 'PLANNING' ? 'Kế hoạch sản xuất' : tab === 'INBOUND' ? 'Nhập IN' : tab === 'QUICK_PRINT' ? 'In Nhãn Nhanh' : tab === 'OUTBOUND' ? 'Đóng gói OUT' : 'Cấu hình'}
           </button>
         ))}
       </div>
@@ -5252,6 +5252,28 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
           </div>
         )}
 
+        {activeTab === 'INVENTORY' && (
+          <div>
+            <h3 className="text-xl font-bold uppercase mb-6 flex items-center gap-2">Tồn kho IN Dán Kính</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {inventory.filter(i => i.location === 'IN' && i.stageId === 'GLAZING' && i.quantity > 0).map(i => (
+                <div key={i.partId} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex justify-between items-center hover:border-blue-300 transition-all">
+                  <div>
+                    <div className="font-bold text-gray-900 leading-tight mb-1">{parts.find((p: any) => p.id === i.partId)?.name || i.partId}</div>
+                    <div className="font-mono text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded inline-block">{i.partId}</div>
+                  </div>
+                  <div className="font-black text-2xl text-blue-600 pl-4">{i.quantity}</div>
+                </div>
+              ))}
+              {inventory.filter(i => i.location === 'IN' && i.stageId === 'GLAZING' && i.quantity > 0).length === 0 && (
+                <div className="col-span-full py-12 text-center text-gray-400 border-2 border-dashed border-gray-100 rounded-xl italic">
+                  Không có linh kiện nào trong kho IN.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {activeTab === 'INBOUND' && (
           <div>
             <h3 className="text-xl font-bold uppercase mb-6 bg-blue-50 text-blue-800 p-4 rounded-xl border border-blue-100">Tiếp nhận từ công đoạn khác</h3>
@@ -5351,11 +5373,15 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                             value={outboundQty[c.finalPartName] || ''}
                             onChange={e => setOutboundQty({...outboundQty, [c.finalPartName]: e.target.value})}
                             placeholder="SL"
-                            className="w-20 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg font-bold outline-none focus:border-blue-500"
+                            min="1"
+                            max={maxPossible || 1}
+                            disabled={maxPossible === 0}
+                            className="w-20 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg font-bold outline-none focus:border-blue-500 disabled:opacity-50"
                           />
                           <button 
-                            onClick={() => handleStageOutbound(c.finalPartName, c)}
-                            className="flex-1 bg-blue-600 text-white font-bold py-2 rounded-lg hover:bg-blue-700 transition-colors uppercase text-xs"
+                            onClick={() => handleTransferOut(c.finalPartName)}
+                            disabled={maxPossible === 0}
+                            className="flex-1 bg-blue-600 text-white font-bold py-2 rounded-lg hover:bg-blue-700 transition-colors uppercase text-xs disabled:bg-gray-400 disabled:cursor-not-allowed"
                           >
                             Đóng gói & Nhập OUT
                           </button>
