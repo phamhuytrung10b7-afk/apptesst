@@ -1061,37 +1061,40 @@ export const storageService = {
     };
 
     let checkTime = new Date(timestamp);
-    for (let day = 0; day < 10; day++) {
+    for (let day = 0; day < 100; day++) { // Increase day limit
       const baseDay = startOfDay(checkTime);
       const workingIntervals: { start: Date, end: Date }[] = [];
-      config.shifts.forEach(shift => {
-        const s = timeToDate(shift.start, baseDay);
-        let e = timeToDate(shift.end, baseDay);
-        if (isBefore(e, s)) e = addDays(e, 1);
-        
-        let intervals = [{ start: s, end: e }];
-        config.breaks.forEach(brk => {
-          const bs = timeToDate(brk.start, baseDay);
-          const be = timeToDate(brk.end, baseDay);
-          const newIntervals: typeof intervals = [];
-          intervals.forEach(inv => {
-            if (isAfter(be, inv.start) && isBefore(bs, inv.end)) {
-              if (isAfter(bs, inv.start)) newIntervals.push({ start: inv.start, end: bs });
-              if (isBefore(be, inv.end)) newIntervals.push({ start: be, end: inv.end });
-            } else {
-              newIntervals.push(inv);
-            }
+      
+      if (!(baseDay.getDay() === 0 && !config.workOnSunday)) {
+        config.shifts.forEach(shift => {
+          const s = timeToDate(shift.start, baseDay);
+          let e = timeToDate(shift.end, baseDay);
+          if (isBefore(e, s)) e = addDays(e, 1);
+          
+          let intervals = [{ start: s, end: e }];
+          config.breaks.forEach(brk => {
+            const bs = timeToDate(brk.start, baseDay);
+            const be = timeToDate(brk.end, baseDay);
+            const newIntervals: typeof intervals = [];
+            intervals.forEach(inv => {
+              if (isAfter(be, inv.start) && isBefore(bs, inv.end)) {
+                if (isAfter(bs, inv.start)) newIntervals.push({ start: inv.start, end: bs });
+                if (isBefore(be, inv.end)) newIntervals.push({ start: be, end: inv.end });
+              } else {
+                newIntervals.push(inv);
+              }
+            });
+            intervals = newIntervals;
           });
-          intervals = newIntervals;
+          workingIntervals.push(...intervals);
         });
-        workingIntervals.push(...intervals);
-      });
-      workingIntervals.sort((a, b) => a.start.getTime() - b.start.getTime());
+        workingIntervals.sort((a, b) => a.start.getTime() - b.start.getTime());
 
-      for (const inv of workingIntervals) {
-        if (isBefore(checkTime, inv.end)) {
-          if (isBefore(checkTime, inv.start)) return inv.start.getTime();
-          else return checkTime.getTime();
+        for (const inv of workingIntervals) {
+          if (isBefore(checkTime, inv.end)) {
+            if (isBefore(checkTime, inv.start)) return inv.start.getTime();
+            else return checkTime.getTime();
+          }
         }
       }
       checkTime = startOfDay(addDays(baseDay, 1));
@@ -1109,38 +1112,41 @@ export const storageService = {
     };
 
     let checkTime = new Date(timestamp);
-    for (let day = 0; day < 10; day++) {
+    for (let day = 0; day < 100; day++) { // Increase day limit
       const baseDay = startOfDay(checkTime);
       const workingIntervals: { start: Date, end: Date }[] = [];
-      config.shifts.forEach(shift => {
-        const s = timeToDate(shift.start, baseDay);
-        let e = timeToDate(shift.end, baseDay);
-        if (isBefore(e, s)) e = addDays(e, 1);
-        
-        let intervals = [{ start: s, end: e }];
-        config.breaks.forEach(brk => {
-          const bs = timeToDate(brk.start, baseDay);
-          const be = timeToDate(brk.end, baseDay);
-          const newIntervals: typeof intervals = [];
-          intervals.forEach(inv => {
-            if (isAfter(be, inv.start) && isBefore(bs, inv.end)) {
-              if (isAfter(bs, inv.start)) newIntervals.push({ start: inv.start, end: bs });
-              if (isBefore(be, inv.end)) newIntervals.push({ start: be, end: inv.end });
-            } else {
-              newIntervals.push(inv);
-            }
+      
+      if (!(baseDay.getDay() === 0 && !config.workOnSunday)) {
+        config.shifts.forEach(shift => {
+          const s = timeToDate(shift.start, baseDay);
+          let e = timeToDate(shift.end, baseDay);
+          if (isBefore(e, s)) e = addDays(e, 1);
+          
+          let intervals = [{ start: s, end: e }];
+          config.breaks.forEach(brk => {
+            const bs = timeToDate(brk.start, baseDay);
+            const be = timeToDate(brk.end, baseDay);
+            const newIntervals: typeof intervals = [];
+            intervals.forEach(inv => {
+              if (isAfter(be, inv.start) && isBefore(bs, inv.end)) {
+                if (isAfter(bs, inv.start)) newIntervals.push({ start: inv.start, end: bs });
+                if (isBefore(be, inv.end)) newIntervals.push({ start: be, end: inv.end });
+              } else {
+                newIntervals.push(inv);
+              }
+            });
+            intervals = newIntervals;
           });
-          intervals = newIntervals;
+          workingIntervals.push(...intervals);
         });
-        workingIntervals.push(...intervals);
-      });
-      // Sort intervals descending to easily find previous time
-      workingIntervals.sort((a, b) => b.start.getTime() - a.start.getTime());
+        // Sort intervals descending to easily find previous time
+        workingIntervals.sort((a, b) => b.start.getTime() - a.start.getTime());
 
-      for (const inv of workingIntervals) {
-        if (isAfter(checkTime, inv.start)) {
-          if (isAfter(checkTime, inv.end)) return inv.end.getTime();
-          else return checkTime.getTime();
+        for (const inv of workingIntervals) {
+          if (isAfter(checkTime, inv.start)) {
+            if (isAfter(checkTime, inv.end)) return inv.end.getTime();
+            else return checkTime.getTime();
+          }
         }
       }
       checkTime = new Date(baseDay.getTime() - 1); // 23:59:59.999 of previous day
@@ -1163,29 +1169,32 @@ export const storageService = {
     while (remaining > 0) {
       const baseDay = startOfDay(new Date(currentTime));
       const workingIntervals: { start: Date, end: Date }[] = [];
-      config.shifts.forEach(shift => {
-        const s = timeToDate(shift.start, baseDay);
-        let e = timeToDate(shift.end, baseDay);
-        if (isBefore(e, s)) e = addDays(e, 1);
-        let intervals = [{ start: s, end: e }];
-        config.breaks.forEach(brk => {
-          const bs = timeToDate(brk.start, baseDay);
-          const be = timeToDate(brk.end, baseDay);
-          const newIntervals: typeof intervals = [];
-          intervals.forEach(inv => {
-            if (isAfter(be, inv.start) && isBefore(bs, inv.end)) {
-              if (isAfter(bs, inv.start)) newIntervals.push({ start: inv.start, end: bs });
-              if (isBefore(be, inv.end)) newIntervals.push({ start: be, end: inv.end });
-            } else {
-              newIntervals.push(inv);
-            }
+      
+      if (!(baseDay.getDay() === 0 && !config.workOnSunday)) {
+        config.shifts.forEach(shift => {
+          const s = timeToDate(shift.start, baseDay);
+          let e = timeToDate(shift.end, baseDay);
+          if (isBefore(e, s)) e = addDays(e, 1);
+          let intervals = [{ start: s, end: e }];
+          config.breaks.forEach(brk => {
+            const bs = timeToDate(brk.start, baseDay);
+            const be = timeToDate(brk.end, baseDay);
+            const newIntervals: typeof intervals = [];
+            intervals.forEach(inv => {
+              if (isAfter(be, inv.start) && isBefore(bs, inv.end)) {
+                if (isAfter(bs, inv.start)) newIntervals.push({ start: inv.start, end: bs });
+                if (isBefore(be, inv.end)) newIntervals.push({ start: be, end: inv.end });
+              } else {
+                newIntervals.push(inv);
+              }
+            });
+            intervals = newIntervals;
           });
-          intervals = newIntervals;
+          workingIntervals.push(...intervals);
         });
-        workingIntervals.push(...intervals);
-      });
-      // Sort descending for backward search
-      workingIntervals.sort((a, b) => b.end.getTime() - a.end.getTime());
+        // Sort descending for backward search
+        workingIntervals.sort((a, b) => b.end.getTime() - a.end.getTime());
+      }
 
       let moved = false;
       for (const inv of workingIntervals) {
@@ -1221,28 +1230,31 @@ export const storageService = {
     while (remaining > 0) {
       const baseDay = startOfDay(new Date(currentTime));
       const workingIntervals: { start: Date, end: Date }[] = [];
-      config.shifts.forEach(shift => {
-        const s = timeToDate(shift.start, baseDay);
-        let e = timeToDate(shift.end, baseDay);
-        if (isBefore(e, s)) e = addDays(e, 1);
-        let intervals = [{ start: s, end: e }];
-        config.breaks.forEach(brk => {
-          const bs = timeToDate(brk.start, baseDay);
-          const be = timeToDate(brk.end, baseDay);
-          const newIntervals: typeof intervals = [];
-          intervals.forEach(inv => {
-            if (isAfter(be, inv.start) && isBefore(bs, inv.end)) {
-              if (isAfter(bs, inv.start)) newIntervals.push({ start: inv.start, end: bs });
-              if (isBefore(be, inv.end)) newIntervals.push({ start: be, end: inv.end });
-            } else {
-              newIntervals.push(inv);
-            }
+      
+      if (!(baseDay.getDay() === 0 && !config.workOnSunday)) {
+        config.shifts.forEach(shift => {
+          const s = timeToDate(shift.start, baseDay);
+          let e = timeToDate(shift.end, baseDay);
+          if (isBefore(e, s)) e = addDays(e, 1);
+          let intervals = [{ start: s, end: e }];
+          config.breaks.forEach(brk => {
+            const bs = timeToDate(brk.start, baseDay);
+            const be = timeToDate(brk.end, baseDay);
+            const newIntervals: typeof intervals = [];
+            intervals.forEach(inv => {
+              if (isAfter(be, inv.start) && isBefore(bs, inv.end)) {
+                if (isAfter(bs, inv.start)) newIntervals.push({ start: inv.start, end: bs });
+                if (isBefore(be, inv.end)) newIntervals.push({ start: be, end: inv.end });
+              } else {
+                newIntervals.push(inv);
+              }
+            });
+            intervals = newIntervals;
           });
-          intervals = newIntervals;
+          workingIntervals.push(...intervals);
         });
-        workingIntervals.push(...intervals);
-      });
-      workingIntervals.sort((a, b) => a.start.getTime() - b.start.getTime());
+        workingIntervals.sort((a, b) => a.start.getTime() - b.start.getTime());
+      }
 
       let moved = false;
       for (const inv of workingIntervals) {

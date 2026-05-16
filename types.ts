@@ -106,6 +106,7 @@ export interface ShiftConfig {
   stageId: StageId;
   workerCount: number; // Number of people or parallel resources
   workerOverrides?: WorkerOverride[];
+  workOnSunday?: boolean; // Toggles working on Sunday
   shifts: {
     start: string; // HH:mm
     end: string;   // HH:mm

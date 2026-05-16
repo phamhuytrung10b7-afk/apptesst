@@ -7480,15 +7480,28 @@ function WorkingHoursView() {
                         <p className="text-xs text-gray-500">Mặc định cho công đoạn này</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <input 
-                        type="number" 
-                        min="1"
-                        value={config.workerCount || 1}
-                        onChange={(e) => updateWorkerCount(stage.id, parseInt(e.target.value))}
-                        className="w-20 bg-white border border-gray-200 rounded-lg p-2 font-mono text-center font-bold text-blue-600 focus:border-blue-500 outline-none"
-                      />
-                      <span className="text-xs font-bold text-gray-400">NGƯỜI</span>
+                    <div className="flex items-center gap-6">
+                      <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm hover:border-blue-300 transition-all">
+                        <input
+                          type="checkbox"
+                          checked={config.workOnSunday || false}
+                          onChange={(e) => {
+                            setConfigs(prev => prev.map(c => c.stageId === stage.id ? { ...c, workOnSunday: e.target.checked } : c));
+                          }}
+                          className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-xs font-bold text-gray-700 select-none">LÀM CHỦ NHẬT</span>
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <input 
+                          type="number" 
+                          min="1"
+                          value={config.workerCount || 1}
+                          onChange={(e) => updateWorkerCount(stage.id, parseInt(e.target.value))}
+                          className="w-20 bg-white border border-gray-200 rounded-lg p-2 font-mono text-center font-bold text-blue-600 focus:border-blue-500 outline-none"
+                        />
+                        <span className="text-xs font-bold text-gray-400">NGƯỜI</span>
+                      </div>
                     </div>
                   </div>
 
