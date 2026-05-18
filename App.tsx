@@ -4874,16 +4874,26 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
       const modelIdx = headers.findIndex((h: any) => h.includes('tên model'));
       const appliedIdx = headers.findIndex((h: any) => h.includes('model áp dụng') || h.includes('model sx'));
 
-      if (nameIdx === -1 || normIdx === -1 || modelIdx === -1) {
-        alert('Không tìm thấy các cột: Tên linh kiện, Định mức, Tên Model. Cột "Mã linh kiện" và "Model áp dụng" là tùy chọn.');
+      if (nameIdx === -1 || normIdx === -1) {
+        alert('Không tìm thấy các cột tối thiểu: Tên linh kiện, Định mức.');
+        return;
+      }
+
+      if (modelIdx === -1 && appliedIdx === -1) {
+        alert('Cần có ít nhất một trong các cột: Tên model hoặc Model áp dụng.');
         return;
       }
 
       const imported: import('./types').GlazingPlanNorm[] = rows.slice(1).map((row, idx) => {
         const partName = String(row[nameIdx] || '').trim();
         const norm = parseFloat(String(row[normIdx]).replace(',', '.')) || 0;
-        const modelName = String(row[modelIdx] || '').trim();
-        const appliedModel = appliedIdx > -1 ? String(row[appliedIdx] || '').trim() : modelName;
+        
+        // Cần đảm bảo có modelName. Nếu thiếu modelIdx thì lấy appliedIdx
+        const modelVal = modelIdx > -1 ? String(row[modelIdx] || '').trim() : '';
+        const appliedVal = appliedIdx > -1 ? String(row[appliedIdx] || '').trim() : '';
+        
+        const modelName = modelVal || appliedVal;
+        const appliedModel = appliedVal || modelVal;
         
         let partId = '';
         if (idIdx > -1 && row[idIdx]) {
@@ -5462,7 +5472,7 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                     <div>
                       <div className="font-black text-blue-600 uppercase tracking-tight">Tải lên định mức dán kính</div>
                       <div className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-2 leading-relaxed">
-                        Tên linh kiện | Định mức | Tên Model | Model áp dụng
+                        Tên linh kiện | Định mức | Mã Linh Kiện | Model áp dụng
                       </div>
                     </div>
                   </label>
