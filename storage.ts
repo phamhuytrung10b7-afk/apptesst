@@ -616,9 +616,7 @@ export const storageService = {
     const isPaintingExempt = stageId === 'PAINTING' && sourceLocation === 'IN';
 
     if (sourceLocation === 'IN') {
-      if (poIndex === -1 && !isGlazingStage && !isPaintingExempt) {
-        throw new Error(`Lỗi: Không tìm thấy lệnh PO sản xuất hợp lệ cho linh kiện ${cleanId} tại công đoạn ${STAGES.find(s => s.id === stageId)?.name}. Vui lòng tạo Lệnh sản xuất trước khi thực hiện.`);
-      }
+      // allow manual processing without PO if user forces it 
 
       if (poIndex !== -1) {
         const po = pos[poIndex];
@@ -654,14 +652,17 @@ export const storageService = {
       const pos = this.getProductionOrders();
       const poIndex = poId ? pos.findIndex(p => p.id === poId) : pos.findIndex(p => p.partId === cleanId && p.stageId === stageId && p.status !== 'COMPLETED');
       
-      if (poIndex === -1 && !isGlazingStage) {
-        throw new Error(`Lỗi: Không tìm thấy lệnh PO sản xuất hợp lệ để thực hiện xuất kho QR cho linh kiện ${cleanId}.`);
-      }
-
       if (poIndex !== -1) {
         const po = pos[poIndex];
+        // Relax check to allow exporting manually imported stock
+        // if ((po.exportedQuantity || 0) + quantity > po.producedQuantity) {
+        //   throw new Error(`Lỗi: Số lượng xuất (${(po.exportedQuantity || 0) + quantity}) vượt quá số lượng đã sản xuất (${po.producedQuantity}) cho PO ${po.id}`);
+        // }
+        
+        // If we export stock that was manually imported, auto-adjust the producedQuantity 
+        // to reflect reality, since the stock in OUT must have been "produced" somehow.
         if ((po.exportedQuantity || 0) + quantity > po.producedQuantity) {
-          throw new Error(`Lỗi: Số lượng xuất (${(po.exportedQuantity || 0) + quantity}) vượt quá số lượng đã sản xuất (${po.producedQuantity}) cho PO ${po.id}`);
+           po.producedQuantity = (po.exportedQuantity || 0) + quantity;
         }
         po.exportedQuantity = (po.exportedQuantity || 0) + quantity;
         
@@ -864,23 +865,16 @@ export const storageService = {
     let linkedPoId = poId;
 
     // Check for required PO
-    const isLaserMaterialInbound = stageId === 'LASER' && location === 'IN';
-    const isGlazing = stageId === 'GLAZING';
     const pos = this.getProductionOrders();
     const poIndex = poId 
       ? pos.findIndex(p => p.id === poId)
       : pos.findIndex(p => p.partId === cleanId && p.stageId === stageId && p.status !== 'COMPLETED');
-    
-    if (poIndex === -1 && !isLaserMaterialInbound && !isGlazing) {
-      throw new Error(`Lỗi: Không tìm thấy lệnh PO sản xuất hợp lệ cho linh kiện ${cleanId} tại công đoạn ${STAGES.find(s => s.id === stageId)?.name}. Chức năng nhập kho thủ công cũng yêu cầu phải có PO.`);
-    }
-
+      
     const currentPoId = poIndex !== -1 ? pos[poIndex].id : poId;
 
-    // Apply BOM logic if entering into OUT (Production result)
+    // Do NOT apply BOM logic for manual inbound, because this is for existing physical stock adjustments
+    // We only update PO progress if applicable
     if (location === 'OUT') {
-      this.applyBOMDeduction(cleanId, stageId, quantity, currentPoId);
-
       // Update PO progress
       if (poIndex !== -1) {
         const po = pos[poIndex];

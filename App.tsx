@@ -2855,7 +2855,8 @@ function ProduceView({
       if (sourceLocation === 'IN') {
         return p.producedQuantity < p.targetQuantity;
       } else {
-        return (p.exportedQuantity || 0) < p.producedQuantity;
+        // Allow exporting if there's stock available manually, so we just check against targetQuantity
+        return (p.exportedQuantity || 0) < p.targetQuantity;
       }
     });
   }, [selectedStage, sourceLocation, storageService.getProductionOrders()]); // Depend on getter
@@ -2893,7 +2894,9 @@ function ProduceView({
         const hasAvailablePo = allAvailablePos.some(po => po.partId === p.id);
         // Do not require a PO for GLAZING, or for PAINTING IN -> OUT
         const isPaintingExempt = selectedStage === 'PAINTING' && sourceLocation === 'IN';
-        if (!hasAvailablePo && selectedStage !== 'GLAZING' && !isPaintingExempt) return false; 
+        // Allow if they have stock manually added or left over
+        const hasInventory = inventory.some((i: any) => i.partId === p.id && i.stageId === selectedStage && i.location === sourceLocation && i.quantity > 0);
+        if (!hasAvailablePo && selectedStage !== 'GLAZING' && !isPaintingExempt && !hasInventory) return false; 
       }
 
       if (selectedStage === 'LASER') {
@@ -3983,12 +3986,10 @@ function ManualInboundView({ parts, onManualInbound, setDefectModal }: any) {
   }, [selectedStage, storageService.getProductionOrders()]);
 
   const filteredParts = parts.filter((p: any) => {
+    // Allow selecting any valid part for IN/OUT even if no PO exists in manual inbound
     if (selectedPoId && targetLocation === 'OUT') {
       const selectedPo = allAvailablePos.find(po => po.id === selectedPoId);
       if (selectedPo && p.id !== selectedPo.partId) return false;
-    } else if (targetLocation === 'OUT') {
-      const hasAvailablePo = allAvailablePos.some(po => po.partId === p.id);
-      if (!hasAvailablePo) return false;
     }
 
     if (selectedStage === 'LASER') {
