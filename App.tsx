@@ -4420,6 +4420,7 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
   const [targetCompletion, setTargetCompletion] = useState(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
   const [glazingPlans, setGlazingPlans] = useState<import('./types').GlazingPlan[]>(() => storageService.getGlazingPlans());
   const [glazingPlanNorms, setGlazingPlanNorms] = useState<import('./types').GlazingPlanNorm[]>(() => storageService.getGlazingPlanNorms());
+  const [planSubTab, setPlanSubTab] = useState<'IN_PROGRESS' | 'COMPLETED'>('IN_PROGRESS');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPlanIdForPrint, setSelectedPlanIdForPrint] = useState<string | "">("");
   const [estimatedGlazingStart, setEstimatedGlazingStart] = useState<number | null>(null);
@@ -4941,142 +4942,161 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
             )}
 
             <div className="space-y-4">
-              <div className="flex justify-between items-center px-2">
-                <h4 className="font-black text-gray-900 uppercase tracking-tight flex items-center gap-2">
-                  <div className="w-2 h-6 bg-blue-600 rounded-full" />
-                  Kế hoạch dán kính đang thực hiện
-                </h4>
-                <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-100 px-3 py-1 rounded-full">
-                  Tổng cộng: {currentGlazingPlans.length} kế hoạch
-                </div>
+              <div className="flex border-b border-gray-200 gap-6 px-4">
+                <button
+                  onClick={() => setPlanSubTab('IN_PROGRESS')}
+                  className={cn(
+                    "pb-3 text-sm font-black uppercase tracking-widest transition-all relative",
+                    planSubTab === 'IN_PROGRESS' ? "text-blue-600" : "text-gray-400 hover:text-gray-600"
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    Kế hoạch đang thực hiện
+                    <span className="bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full text-[10px]">{currentGlazingPlans.length}</span>
+                  </div>
+                  {planSubTab === 'IN_PROGRESS' && (
+                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-blue-600 rounded-t-full" />
+                  )}
+                </button>
+                <button
+                  onClick={() => setPlanSubTab('COMPLETED')}
+                  className={cn(
+                    "pb-3 text-sm font-black uppercase tracking-widest transition-all relative",
+                    planSubTab === 'COMPLETED' ? "text-green-600" : "text-gray-400 hover:text-gray-600"
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    Đã hoàn thành
+                    <span className="bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full text-[10px]">{completedGlazingPlans.length}</span>
+                  </div>
+                  {planSubTab === 'COMPLETED' && (
+                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-green-600 rounded-t-full" />
+                  )}
+                </button>
               </div>
 
-              {currentGlazingPlans.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {currentGlazingPlans.map((plan) => {
-                    const modelName = parts.find((p: any) => p.id === plan.modelId)?.name || plan.modelId;
-                    const components = glazingPlanNorms.filter(n => n.appliedModel === plan.modelId);
-                    
-                    return (
-                      <div key={plan.id} className="bg-white border-2 border-gray-100 rounded-2xl p-5 hover:border-blue-200 transition-all group">
-                        <div className="flex justify-between items-start mb-4">
-                          <div>
-                            <div className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">{plan.id}</div>
-                            <h5 className="font-bold text-gray-900 leading-tight">{modelName}</h5>
-                          </div>
-                          <div className="px-3 py-1 rounded-full text-[10px] bg-blue-100 text-blue-700 font-black uppercase tracking-widest">
-                            {plan.targetQuantity} MÁY
-                          </div>
-                        </div>
+              {planSubTab === 'IN_PROGRESS' && (
+                <>
+                  {currentGlazingPlans.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {currentGlazingPlans.map((plan) => {
+                        const modelName = parts.find((p: any) => p.id === plan.modelId)?.name || plan.modelId;
+                        const components = glazingPlanNorms.filter(n => n.appliedModel === plan.modelId);
+                        
+                        return (
+                          <div key={plan.id} className="bg-white border-2 border-gray-100 rounded-2xl p-5 hover:border-blue-200 transition-all group">
+                            <div className="flex justify-between items-start mb-4">
+                              <div>
+                                <div className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">{plan.id}</div>
+                                <h5 className="font-bold text-gray-900 leading-tight">{modelName}</h5>
+                              </div>
+                              <div className="px-3 py-1 rounded-full text-[10px] bg-blue-100 text-blue-700 font-black uppercase tracking-widest">
+                                {plan.targetQuantity} MÁY
+                              </div>
+                            </div>
 
-                        <div className="space-y-2 mb-4">
-                          <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Thành phần & Tiến độ in</div>
-                          <div className="space-y-1">
-                            {components.map((c, i) => {
-                              const printed = (plan.producedQuantities || {})[c.id] || 0;
-                              const target = plan.targetQuantity;
-                              const compProgress = Math.min(100, (printed / target) * 100);
-                              
-                              return (
-                                <div key={i} className="flex flex-col bg-gray-50 px-3 py-2 rounded-lg gap-1.5">
-                                  <div className="flex justify-between items-center text-xs">
-                                    <span className="font-medium text-gray-600 truncate mr-2">{c.partName}</span>
-                                    <span className="font-black text-blue-700 whitespace-nowrap">{printed}/{target}</span>
-                                  </div>
-                                  <div className="h-1 bg-gray-200 rounded-full overflow-hidden">
-                                    <div 
-                                      className={cn("h-full transition-all duration-500", compProgress >= 100 ? "bg-green-500" : "bg-blue-500")}
-                                      style={{ width: `${compProgress}%` }}
-                                    />
+                            <div className="space-y-2 mb-4">
+                              <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Thành phần & Tiến độ in</div>
+                              <div className="space-y-1">
+                                {components.map((c, i) => {
+                                  const printed = (plan.producedQuantities || {})[c.id] || 0;
+                                  const target = plan.targetQuantity;
+                                  const compProgress = Math.min(100, (printed / target) * 100);
+                                  
+                                  return (
+                                    <div key={i} className="flex flex-col bg-gray-50 px-3 py-2 rounded-lg gap-1.5">
+                                      <div className="flex justify-between items-center text-xs">
+                                        <span className="font-medium text-gray-600 truncate mr-2">{c.partName}</span>
+                                        <span className="font-black text-blue-700 whitespace-nowrap">{printed}/{target}</span>
+                                      </div>
+                                      <div className="h-1 bg-gray-200 rounded-full overflow-hidden">
+                                        <div 
+                                          className={cn("h-full transition-all duration-500", compProgress >= 100 ? "bg-green-500" : "bg-blue-500")}
+                                          style={{ width: `${compProgress}%` }}
+                                        />
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                                {components.length === 0 && (
+                                  <div className="text-[10px] text-gray-400 italic">Chưa cài đặt định mức cho model này</div>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="pt-3 border-t border-gray-100 flex flex-col gap-3">
+                              <div className="flex justify-between items-center">
+                                <div className="flex flex-col">
+                                  <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest pl-1">Bắt đầu dự kiến</span>
+                                  <div className="flex items-center gap-2 bg-blue-50/50 px-2.5 py-1.5 rounded-lg border border-blue-50">
+                                    <span className="text-xs font-black text-blue-700">
+                                      {plan.plannedStartTime ? format(new Date(plan.plannedStartTime), 'HH:mm - dd/MM') : '--:-- - --/--'}
+                                    </span>
                                   </div>
                                 </div>
-                              );
-                            })}
-                            {components.length === 0 && (
-                              <div className="text-[10px] text-gray-400 italic">Chưa cài đặt định mức cho model này</div>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="pt-3 border-t border-gray-100 flex flex-col gap-3">
-                          <div className="flex justify-between items-center">
-                            <div className="flex flex-col">
-                              <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest pl-1">Bắt đầu dự kiến</span>
-                              <div className="flex items-center gap-2 bg-blue-50/50 px-2.5 py-1.5 rounded-lg border border-blue-50">
-                                <span className="text-xs font-black text-blue-700">
-                                  {plan.plannedStartTime ? format(new Date(plan.plannedStartTime), 'HH:mm - dd/MM') : '--:-- - --/--'}
-                                </span>
+                                <div className="flex flex-col items-end">
+                                  <span className="text-[9px] font-black text-orange-400 uppercase tracking-widest pr-1">Dự kiến xong</span>
+                                  <div className="flex items-center gap-2 bg-orange-50/50 px-2.5 py-1.5 rounded-lg border border-orange-50">
+                                    <span className="text-xs font-black text-orange-700">
+                                      {plan.expectedCompletionTime ? format(new Date(plan.expectedCompletionTime), 'HH:mm - dd/MM') : '--:-- - --/--'}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              <div className="flex justify-between items-center border-t border-gray-50 pt-3">
+                                <div className="flex flex-col">
+                                  <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest pl-1">Hạn hoàn thành (Target)</span>
+                                  <span className="text-[10px] font-bold text-gray-500 italic">
+                                    {format(new Date(plan.targetCompletionTime), 'HH:mm - dd/MM/yyyy')}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <button 
+                                    onClick={() => {
+                                      if (confirm('Đánh dấu kế hoạch này đã hoàn thành? Kế hoạch sẽ được chuyển sang mục Đã hoàn thành.')) {
+                                        storageService.completeGlazingPlan(plan.id);
+                                        setGlazingPlans(storageService.getGlazingPlans());
+                                        refreshData();
+                                      }
+                                    }}
+                                    className="p-2 text-blue-500 hover:text-white hover:bg-blue-500 rounded-lg transition-all font-bold text-[10px] uppercase tracking-widest flex items-center gap-1"
+                                  >
+                                    <CheckCircle2 size={16} /> 
+                                    Xong
+                                  </button>
+                                  <button 
+                                    onClick={() => {
+                                      if (confirm('Xóa kế hoạch dán kính này?')) {
+                                        storageService.deleteGlazingPlan(plan.id);
+                                        setGlazingPlans(storageService.getGlazingPlans());
+                                        refreshData();
+                                      }
+                                    }}
+                                    className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </div>
                               </div>
                             </div>
-                            <div className="flex flex-col items-end">
-                              <span className="text-[9px] font-black text-orange-400 uppercase tracking-widest pr-1">Dự kiến xong</span>
-                              <div className="flex items-center gap-2 bg-orange-50/50 px-2.5 py-1.5 rounded-lg border border-orange-50">
-                                <span className="text-xs font-black text-orange-700">
-                                  {plan.expectedCompletionTime ? format(new Date(plan.expectedCompletionTime), 'HH:mm - dd/MM') : '--:-- - --/--'}
-                                </span>
-                              </div>
-                            </div>
                           </div>
-                          
-                          <div className="flex justify-between items-center border-t border-gray-50 pt-3">
-                            <div className="flex flex-col">
-                              <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest pl-1">Hạn hoàn thành (Target)</span>
-                              <span className="text-[10px] font-bold text-gray-500 italic">
-                                {format(new Date(plan.targetCompletionTime), 'HH:mm - dd/MM/yyyy')}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <button 
-                                onClick={() => {
-                                  if (confirm('Đánh dấu kế hoạch này đã hoàn thành? Kế hoạch sẽ được chuyển sang mục Đã hoàn thành.')) {
-                                    storageService.completeGlazingPlan(plan.id);
-                                    setGlazingPlans(storageService.getGlazingPlans());
-                                    refreshData();
-                                  }
-                                }}
-                                className="p-2 text-blue-500 hover:text-white hover:bg-blue-500 rounded-lg transition-all font-bold text-[10px] uppercase tracking-widest flex items-center gap-1"
-                              >
-                                <CheckCircle2 size={16} /> 
-                                Xong
-                              </button>
-                              <button 
-                                onClick={() => {
-                                  if (confirm('Xóa kế hoạch dán kính này?')) {
-                                    storageService.deleteGlazingPlan(plan.id);
-                                    setGlazingPlans(storageService.getGlazingPlans());
-                                    refreshData();
-                                  }
-                                }}
-                                className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="py-20 flex flex-col items-center justify-center text-gray-300 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
-                  <ClipboardList size={64} strokeWidth={1} />
-                  <p className="text-lg font-bold mt-4 uppercase tracking-widest opacity-50">Chưa có kế hoạch dán kính</p>
-                  <p className="text-sm opacity-50">Sử dụng form bên trên để tạo kế hoạch mới</p>
-                </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="py-20 flex flex-col items-center justify-center text-gray-300 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
+                      <ClipboardList size={64} strokeWidth={1} />
+                      <p className="text-lg font-bold mt-4 uppercase tracking-widest opacity-50">Chưa có kế hoạch dán kính</p>
+                      <p className="text-sm opacity-50">Sử dụng form bên trên để tạo kế hoạch mới</p>
+                    </div>
+                  )}
+                </>
               )}
 
-              {completedGlazingPlans.length > 0 && (
-                <div className="mt-8 space-y-4">
-                  <div className="flex justify-between items-center px-2">
-                    <h4 className="font-black text-gray-900 uppercase tracking-tight flex items-center gap-2">
-                      <div className="w-2 h-6 bg-green-500 rounded-full" />
-                      Kế hoạch đã hoàn thành
-                    </h4>
-                    <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-100 px-3 py-1 rounded-full">
-                      Tổng cộng: {completedGlazingPlans.length} kế hoạch
-                    </div>
-                  </div>
+              {planSubTab === 'COMPLETED' && (
+                <div className="space-y-4">
+                  {completedGlazingPlans.length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {completedGlazingPlans.map((plan) => {
                        const modelName = parts.find((p: any) => p.id === plan.modelId)?.name || plan.modelId;
@@ -5102,7 +5122,7 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                              <div className="flex gap-1">
                               <button 
                                 onClick={() => {
-                                  storageService.updateGlazingPlanProgress(plan.id, '', 0); // Hack to trigger status change safely? No, better add restore
+                                  // Hack to trigger status change safely
                                   const plans = storageService.getGlazingPlans();
                                   const planIndex = plans.findIndex(p => p.id === plan.id);
                                   if(planIndex !== -1) {
@@ -5135,6 +5155,12 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                        );
                     })}
                   </div>
+                  ) : (
+                    <div className="py-20 flex flex-col items-center justify-center text-gray-300 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
+                      <CheckCircle2 size={64} strokeWidth={1} />
+                      <p className="text-lg font-bold mt-4 uppercase tracking-widest opacity-50">Chưa có kế hoạch nào hoàn thành</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -5192,42 +5218,7 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                   </div>
                 )}
               </div>
-              
-              {completedGlazingPlans.length > 0 && (
-                <div className="mt-8 pt-6 border-t border-gray-100">
-                  <h4 className="font-black text-gray-900 uppercase tracking-tight flex items-center gap-2 mb-4 opacity-50">
-                    <div className="w-1.5 h-4 bg-green-500 rounded-full" />
-                    Kế hoạch đã hoàn thành
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {completedGlazingPlans.map(plan => (
-                      <button
-                        key={plan.id}
-                        onClick={() => setSelectedPlanIdForPrint(plan.id)}
-                        className={cn(
-                          "p-4 rounded-xl border-2 transition-all text-left flex flex-col gap-1 relative group bg-green-50/30 opacity-80 hover:opacity-100",
-                          selectedPlanIdForPrint === plan.id 
-                            ? "border-green-500 bg-green-50 shadow-lg" 
-                            : "border-green-100 hover:border-green-300"
-                        )}
-                      >
-                        {selectedPlanIdForPrint === plan.id && (
-                          <div className="absolute -top-3 -right-3 w-8 h-8 bg-green-500 text-white rounded-full flex items-center justify-center shadow-lg border-4 border-white">
-                            <Check size={16} strokeWidth={3} />
-                          </div>
-                        )}
-                        <span className="text-[9px] font-black text-green-600/50 uppercase tracking-widest">{plan.modelId}</span>
-                        <div className="flex justify-between items-center w-full">
-                           <span className="font-bold text-gray-700">Hạn: {format(new Date(plan.targetCompletionTime), 'dd/MM')}</span>
-                           <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full text-green-700 bg-green-100/50 flex flex-center gap-1">
-                              <CheckCircle2 size={10}/> XONG
-                           </span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+
             </div>
 
             {/* Step 2: Show Components if Plan selected */}
