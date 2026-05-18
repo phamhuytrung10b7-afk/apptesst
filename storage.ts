@@ -598,9 +598,11 @@ export const storageService = {
         const inventory = this.getInventory();
         const matchingStocks = inventory.filter(i => {
           const itPartId = i.partId.toUpperCase();
+          const itEffectiveId = this.getEffectivePartId(i.partId, 'LASER', poId).toUpperCase();
           const itBaseId = itPartId.split(' - ')[0].trim();
+          const itEffectiveBaseId = itEffectiveId.split(' - ')[0].trim();
           const targetId = bomDef.parentPartId.toUpperCase();
-          return (itPartId === targetId || itBaseId === targetId) && i.stageId === 'LASER' && i.location === 'IN';
+          return (itPartId === targetId || itBaseId === targetId || itEffectiveId === targetId || itEffectiveBaseId === targetId) && i.stageId === 'LASER' && i.location === 'IN';
         });
         const totalStock = matchingStocks.reduce((sum, i) => sum + i.quantity, 0);
         
@@ -641,9 +643,11 @@ export const storageService = {
           
           const matchingStocks = inventory.filter(i => {
             const itPartId = i.partId.toUpperCase();
+            const itEffectiveId = this.getEffectivePartId(i.partId, 'WELDING', poId).toUpperCase();
             const itBaseId = itPartId.split(' - ')[0].trim();
+            const itEffectiveBaseId = itEffectiveId.split(' - ')[0].trim();
             const targetId = effectiveIngId.toUpperCase();
-            return (itPartId === targetId || itBaseId === targetId) && i.stageId === 'WELDING' && i.location === 'IN';
+            return (itPartId === targetId || itBaseId === targetId || itEffectiveId === targetId || itEffectiveBaseId === targetId) && i.stageId === 'WELDING' && i.location === 'IN';
           });
           const totalStock = matchingStocks.reduce((sum, i) => sum + i.quantity, 0);
 
@@ -656,9 +660,11 @@ export const storageService = {
           const effectiveIngId = this.getEffectivePartId(ing.ingredientPartId, 'WELDING', poId);
           const matchingStocks = inventory.filter(i => {
             const itPartId = i.partId.toUpperCase();
+            const itEffectiveId = this.getEffectivePartId(i.partId, 'WELDING', poId).toUpperCase();
             const itBaseId = itPartId.split(' - ')[0].trim();
+            const itEffectiveBaseId = itEffectiveId.split(' - ')[0].trim();
             const targetId = effectiveIngId.toUpperCase();
-            return (itPartId === targetId || itBaseId === targetId) && i.stageId === 'WELDING' && i.location === 'IN';
+            return (itPartId === targetId || itBaseId === targetId || itEffectiveId === targetId || itEffectiveBaseId === targetId) && i.stageId === 'WELDING' && i.location === 'IN';
           });
 
           let remainingToDeduct = quantity * ing.quantity;
@@ -726,9 +732,14 @@ export const storageService = {
         const targetId = effectiveId.toUpperCase();
         const sourceId = cleanId.toUpperCase();
 
+        const itEffectiveId = this.getEffectivePartId(item.partId, stageId, linkedPoId).toUpperCase();
         const itBaseId = itPartId.split(' - ')[0].trim();
+        const itEffectiveBaseId = itEffectiveId.split(' - ')[0].trim();
+
         const mainMatch = itPartId === targetId || 
                          itBaseId === targetId ||
+                         itEffectiveId === targetId ||
+                         itEffectiveBaseId === targetId ||
                          (selectedPartName && itPartId === selectedPartName);
         
         if (mainMatch) {
@@ -1058,10 +1069,12 @@ export const storageService = {
     const matchingStocks = inventory.filter((item) => {
       if (item.stageId === stageId && item.location === 'IN') {
         const itPartId = item.partId.toUpperCase();
+        const itEffectiveId = this.getEffectivePartId(item.partId, stageId, poId).toUpperCase();
         const itBaseId = itPartId.split(' - ')[0].trim();
+        const itEffectiveBaseId = itEffectiveId.split(' - ')[0].trim();
         const targetId = effectiveId.toUpperCase();
         
-        return itPartId === targetId || itBaseId === targetId;
+        return itPartId === targetId || itBaseId === targetId || itEffectiveId === targetId || itEffectiveBaseId === targetId;
       }
       return false;
     });
@@ -1126,9 +1139,11 @@ export const storageService = {
     const effectiveId = this.getEffectivePartId(cleanId, stageId);
     const matchingStocks = inventory.filter(i => {
       const itPartId = i.partId.toUpperCase();
+      const itEffectiveId = this.getEffectivePartId(i.partId, stageId).toUpperCase();
       const itBaseId = itPartId.split(' - ')[0].trim();
+      const itEffectiveBaseId = itEffectiveId.split(' - ')[0].trim();
       const targetId = effectiveId.toUpperCase();
-      return (itPartId === targetId || itBaseId === targetId) && i.stageId === stageId && i.location === 'DEFECT';
+      return (itPartId === targetId || itBaseId === targetId || itEffectiveId === targetId || itEffectiveBaseId === targetId) && i.stageId === stageId && i.location === 'DEFECT';
     });
     const totalStock = matchingStocks.reduce((sum, i) => sum + i.quantity, 0);
 

@@ -2952,7 +2952,12 @@ function ProduceView({
         // Do not require a PO for GLAZING, or for PAINTING IN -> OUT
         const isPaintingExempt = selectedStage === 'PAINTING' && sourceLocation === 'IN';
         // Allow if they have stock manually added or left over
-        const hasInventory = inventory.some((i: any) => i.partId === p.id && i.stageId === selectedStage && i.location === sourceLocation && i.quantity > 0);
+        const hasInventory = inventory.some((i: any) => {
+          if (i.stageId !== selectedStage || i.location !== sourceLocation || i.quantity <= 0) return false;
+          const itEffectiveId = storageService.getEffectivePartId(i.partId, selectedStage, selectedPoId).toUpperCase();
+          const targetId = p.id.toUpperCase();
+          return i.partId.toUpperCase() === targetId || itEffectiveId === targetId;
+        });
         if (!hasAvailablePo && selectedStage !== 'GLAZING' && !isPaintingExempt && !hasInventory) return false; 
       }
 
@@ -3047,9 +3052,15 @@ function ProduceView({
         const targetId = effectiveId.toUpperCase();
         const sourceId = cleanId.toUpperCase();
 
+        // Check if the item in inventory (after transformation) matches our target
+        const itEffectiveId = storageService.getEffectivePartId(item.partId, selectedStage, selectedPoId).toUpperCase();
         const itBaseId = itPartId.split(' - ')[0].trim();
+        const itEffectiveBaseId = itEffectiveId.split(' - ')[0].trim();
+
         const mainMatch = itPartId === targetId || 
                          itBaseId === targetId ||
+                         itEffectiveId === targetId ||
+                         itEffectiveBaseId === targetId ||
                          (selectedPartName && itPartId === selectedPartName);
         
         if (mainMatch) {
