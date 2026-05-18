@@ -319,6 +319,15 @@ export const storageService = {
     this.saveGlazingPlans(plans);
   },
 
+  completeGlazingPlan(id: string) {
+    const plans = this.getGlazingPlans();
+    const planIndex = plans.findIndex(p => p.id === id);
+    if (planIndex !== -1) {
+      plans[planIndex].status = 'COMPLETED';
+      this.saveGlazingPlans(plans);
+    }
+  },
+
   updateGlazingPlanProgress(planId: string, partId: string, quantity: number) {
     const plans = this.getGlazingPlans();
     const planIndex = plans.findIndex(p => p.id === planId);

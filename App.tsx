@@ -458,6 +458,26 @@ export default function App() {
                   </span>
                 </div>
               </div>
+              
+              {/* Optional Glazing Times */}
+              {(lastTransaction as any).planId && (() => {
+                const plan = storageService.getGlazingPlans().find(p => p.id === (lastTransaction as any).planId);
+                if (plan) {
+                  return (
+                    <div className="w-full flex justify-between font-mono font-bold text-black border-t border-b border-black py-1 mb-2" style={{ fontSize: `${labelSettings.fontSize - 4}px` }}>
+                       <div className="flex flex-col text-left">
+                         <span className="text-[9px] uppercase font-black">HT Dự Kiến</span>
+                         <span>{plan.expectedCompletionTime ? format(plan.expectedCompletionTime, 'HH:mm dd/MM') : '--:--'}</span>
+                       </div>
+                       <div className="flex flex-col text-right">
+                         <span className="text-[9px] uppercase font-black">HT Thực Tế</span>
+                         <span>{format(lastTransaction.timestamp, 'HH:mm dd/MM')}</span>
+                       </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
 
               {/* PO Details Section (NEW) */}
               <div className="mt-auto mb-2 w-full space-y-1 text-[11px] font-black border-2 border-black p-2 rounded text-black">
@@ -2346,7 +2366,7 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {stageSummaries.filter(s => s.id !== 'DCLR' && s.id !== 'GLAZING').map((summary, idx) => {
           const isActive = selectedStageDetail === summary.id;
 
@@ -4714,12 +4734,13 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
 
       const headers = rows[0].map((h: any) => String(h || '').toLowerCase().trim());
       const nameIdx = headers.findIndex((h: any) => h.includes('tên linh kiện'));
+      const idIdx = headers.findIndex((h: any) => h.includes('mã linh kiện') || h.includes('part id'));
       const normIdx = headers.findIndex((h: any) => h.includes('định mức'));
       const modelIdx = headers.findIndex((h: any) => h.includes('tên model'));
       const appliedIdx = headers.findIndex((h: any) => h.includes('model áp dụng') || h.includes('model sx'));
 
       if (nameIdx === -1 || normIdx === -1 || modelIdx === -1) {
-        alert('Không tìm thấy các cột: Tên linh kiện, Định mức, Tên Model. Cột "Model áp dụng" là tùy chọn.');
+        alert('Không tìm thấy các cột: Tên linh kiện, Định mức, Tên Model. Cột "Mã linh kiện" và "Model áp dụng" là tùy chọn.');
         return;
       }
 
@@ -4730,9 +4751,13 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
         const appliedModel = appliedIdx > -1 ? String(row[appliedIdx] || '').trim() : modelName;
         
         let partId = '';
-        const foundPart = parts.find((p: any) => p.name.toLowerCase() === partName.toLowerCase());
-        if (foundPart) partId = foundPart.id;
-        else partId = `GLZ-PLAN-${idx}-${Date.now()}`;
+        if (idIdx > -1 && row[idIdx]) {
+          partId = String(row[idIdx]).trim();
+        } else {
+          const foundPart = parts.find((p: any) => p.name.toLowerCase() === partName.toLowerCase());
+          if (foundPart) partId = foundPart.id;
+          else partId = `GLZ-PLAN-${idx}-${Date.now()}`;
+        }
 
         return {
           id: partId,
@@ -4770,6 +4795,10 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
 
   const currentGlazingPlans = useMemo(() => {
     return glazingPlans.filter(p => p.status !== 'COMPLETED');
+  }, [glazingPlans]);
+
+  const completedGlazingPlans = useMemo(() => {
+    return glazingPlans.filter(p => p.status === 'COMPLETED');
   }, [glazingPlans]);
 
   const filteredQuickPrintParts = useMemo(() => {
@@ -4996,18 +5025,33 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                                 {format(new Date(plan.targetCompletionTime), 'HH:mm - dd/MM/yyyy')}
                               </span>
                             </div>
-                            <button 
-                              onClick={() => {
-                                if (confirm('Xóa kế hoạch dán kính này?')) {
-                                  storageService.deleteGlazingPlan(plan.id);
-                                  setGlazingPlans(storageService.getGlazingPlans());
-                                  refreshData();
-                                }
-                              }}
-                              className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                            >
-                              <Trash2 size={16} />
-                            </button>
+                            <div className="flex items-center gap-1">
+                              <button 
+                                onClick={() => {
+                                  if (confirm('Đánh dấu kế hoạch này đã hoàn thành? Kế hoạch sẽ được chuyển sang mục Đã hoàn thành.')) {
+                                    storageService.completeGlazingPlan(plan.id);
+                                    setGlazingPlans(storageService.getGlazingPlans());
+                                    refreshData();
+                                  }
+                                }}
+                                className="p-2 text-blue-500 hover:text-white hover:bg-blue-500 rounded-lg transition-all font-bold text-[10px] uppercase tracking-widest flex items-center gap-1"
+                              >
+                                <CheckCircle2 size={16} /> 
+                                Xong
+                              </button>
+                              <button 
+                                onClick={() => {
+                                  if (confirm('Xóa kế hoạch dán kính này?')) {
+                                    storageService.deleteGlazingPlan(plan.id);
+                                    setGlazingPlans(storageService.getGlazingPlans());
+                                    refreshData();
+                                  }
+                                }}
+                                className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -5019,6 +5063,78 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                   <ClipboardList size={64} strokeWidth={1} />
                   <p className="text-lg font-bold mt-4 uppercase tracking-widest opacity-50">Chưa có kế hoạch dán kính</p>
                   <p className="text-sm opacity-50">Sử dụng form bên trên để tạo kế hoạch mới</p>
+                </div>
+              )}
+
+              {completedGlazingPlans.length > 0 && (
+                <div className="mt-8 space-y-4">
+                  <div className="flex justify-between items-center px-2">
+                    <h4 className="font-black text-gray-900 uppercase tracking-tight flex items-center gap-2">
+                      <div className="w-2 h-6 bg-green-500 rounded-full" />
+                      Kế hoạch đã hoàn thành
+                    </h4>
+                    <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-100 px-3 py-1 rounded-full">
+                      Tổng cộng: {completedGlazingPlans.length} kế hoạch
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {completedGlazingPlans.map((plan) => {
+                       const modelName = parts.find((p: any) => p.id === plan.modelId)?.name || plan.modelId;
+                       return (
+                         <div key={plan.id} className="bg-green-50 border-2 border-green-100 rounded-2xl p-5 hover:border-green-200 transition-all group flex flex-col justify-between opacity-80 hover:opacity-100">
+                           <div className="flex justify-between items-start mb-4">
+                             <div>
+                               <div className="text-[10px] font-black text-green-600 uppercase tracking-widest mb-1">{plan.id}</div>
+                               <h5 className="font-bold text-gray-900 leading-tight">{modelName}</h5>
+                               <div className="mt-1 text-xs text-green-700 font-medium">Đã in đủ: {plan.targetQuantity} MÁY</div>
+                             </div>
+                             <div className="px-3 py-1 rounded-full text-[10px] bg-green-100 text-green-700 font-black uppercase tracking-widest flex items-center gap-1">
+                               <CheckCircle2 size={12}/> XONG
+                             </div>
+                           </div>
+                           <div className="flex justify-between items-center border-t border-green-200 pt-3 mt-4">
+                             <div className="flex flex-col">
+                               <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest pl-1">Target</span>
+                               <span className="text-[10px] font-bold text-gray-600 italic">
+                                 {format(new Date(plan.targetCompletionTime), 'HH:mm - dd/MM/yyyy')}
+                               </span>
+                             </div>
+                             <div className="flex gap-1">
+                              <button 
+                                onClick={() => {
+                                  storageService.updateGlazingPlanProgress(plan.id, '', 0); // Hack to trigger status change safely? No, better add restore
+                                  const plans = storageService.getGlazingPlans();
+                                  const planIndex = plans.findIndex(p => p.id === plan.id);
+                                  if(planIndex !== -1) {
+                                    plans[planIndex].status = 'IN_PROGRESS';
+                                    storageService.saveGlazingPlans(plans);
+                                    setGlazingPlans(storageService.getGlazingPlans());
+                                    refreshData();
+                                  }
+                                }}
+                                className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-all"
+                                title="Khôi phục"
+                              >
+                                <RotateCcw size={16} />
+                              </button>
+                               <button 
+                                 onClick={() => {
+                                   if (confirm('Xóa vĩnh viễn kế hoạch này?')) {
+                                     storageService.deleteGlazingPlan(plan.id);
+                                     setGlazingPlans(storageService.getGlazingPlans());
+                                     refreshData();
+                                   }
+                                 }}
+                                 className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                               >
+                                 <Trash2 size={16} />
+                               </button>
+                             </div>
+                           </div>
+                         </div>
+                       );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
@@ -5033,7 +5149,7 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                   <ClipboardList size={24} />
                 </div>
                 <div>
-                  <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">Chọn Kế Hoạch Đán Kính</h3>
+                  <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">Chọn Kế Hoạch Dán Kính</h3>
                   <p className="text-sm text-gray-500 font-bold italic">* Bạn cần chọn một kế hoạch đang thực hiện để in nhãn</p>
                 </div>
               </div>
@@ -5076,6 +5192,42 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                   </div>
                 )}
               </div>
+              
+              {completedGlazingPlans.length > 0 && (
+                <div className="mt-8 pt-6 border-t border-gray-100">
+                  <h4 className="font-black text-gray-900 uppercase tracking-tight flex items-center gap-2 mb-4 opacity-50">
+                    <div className="w-1.5 h-4 bg-green-500 rounded-full" />
+                    Kế hoạch đã hoàn thành
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {completedGlazingPlans.map(plan => (
+                      <button
+                        key={plan.id}
+                        onClick={() => setSelectedPlanIdForPrint(plan.id)}
+                        className={cn(
+                          "p-4 rounded-xl border-2 transition-all text-left flex flex-col gap-1 relative group bg-green-50/30 opacity-80 hover:opacity-100",
+                          selectedPlanIdForPrint === plan.id 
+                            ? "border-green-500 bg-green-50 shadow-lg" 
+                            : "border-green-100 hover:border-green-300"
+                        )}
+                      >
+                        {selectedPlanIdForPrint === plan.id && (
+                          <div className="absolute -top-3 -right-3 w-8 h-8 bg-green-500 text-white rounded-full flex items-center justify-center shadow-lg border-4 border-white">
+                            <Check size={16} strokeWidth={3} />
+                          </div>
+                        )}
+                        <span className="text-[9px] font-black text-green-600/50 uppercase tracking-widest">{plan.modelId}</span>
+                        <div className="flex justify-between items-center w-full">
+                           <span className="font-bold text-gray-700">Hạn: {format(new Date(plan.targetCompletionTime), 'dd/MM')}</span>
+                           <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full text-green-700 bg-green-100/50 flex flex-center gap-1">
+                              <CheckCircle2 size={10}/> XONG
+                           </span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Step 2: Show Components if Plan selected */}
