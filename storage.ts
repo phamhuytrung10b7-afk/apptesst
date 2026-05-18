@@ -872,9 +872,10 @@ export const storageService = {
       
     const currentPoId = poIndex !== -1 ? pos[poIndex].id : poId;
 
-    // Do NOT apply BOM logic for manual inbound, because this is for existing physical stock adjustments
-    // We only update PO progress if applicable
+    // Apply BOM logic if entering into OUT (Production result)
     if (location === 'OUT') {
+      this.applyBOMDeduction(cleanId, stageId, quantity, currentPoId);
+
       // Update PO progress
       if (poIndex !== -1) {
         const po = pos[poIndex];
