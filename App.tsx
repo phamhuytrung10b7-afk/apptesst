@@ -3052,20 +3052,29 @@ function ProduceView({
         const targetId = effectiveId.toUpperCase();
         const sourceId = cleanId.toUpperCase();
 
-        // Check if the item in inventory (after transformation) matches our target
         const itEffectiveId = storageService.getEffectivePartId(item.partId, selectedStage, selectedPoId).toUpperCase();
         const itBaseId = itPartId.split(' - ')[0].trim();
         const itEffectiveBaseId = itEffectiveId.split(' - ')[0].trim();
+
+        const nItPartId = storageService.normalize(itPartId);
+        const nTargetId = storageService.normalize(targetId);
+        const nSelectedPartName = storageService.normalize(selectedPartName || '');
+        const nItOrigId = storageService.normalize(itOrigId);
+        const nSourceId = storageService.normalize(sourceId);
 
         const mainMatch = itPartId === targetId || 
                          itBaseId === targetId ||
                          itEffectiveId === targetId ||
                          itEffectiveBaseId === targetId ||
+                         nItPartId === nTargetId ||
+                         (nSelectedPartName && nItPartId === nSelectedPartName) ||
                          (selectedPartName && itPartId === selectedPartName);
         
         if (mainMatch) {
           const originMatch = !itOrigId || 
                              itOrigId === sourceId || 
+                             nItOrigId === nSourceId ||
+                             (nSelectedPartName && nItOrigId === nSelectedPartName) ||
                              (selectedPartName && itOrigId === selectedPartName) ||
                              (selectedPartId && itOrigId === selectedPartId) ||
                              itBaseId === sourceId ||

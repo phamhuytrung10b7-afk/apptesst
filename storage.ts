@@ -42,6 +42,16 @@ function clearCache(key?: string) {
 }
 
 export const storageService = {
+  normalize(s: string): string {
+    if (!s) return '';
+    let res = s.toUpperCase().normalize('NFC');
+    // Strip common prefixes
+    res = res.replace(/^(TẤM|CHI TIẾT|PHỤ TÙNG|BẢN|KHO|THÀNH PHẨM|L-)\s+/g, '');
+    // Strip common suffixes
+    res = res.replace(/\s*-\s*(CD|H|C|P|G|W|B|L|CT|BD)$/g, ''); 
+    return res.split('(')[0].trim();
+  },
+
   getLabelSettings() {
     return getCached(STORAGE_KEYS.LABEL_SETTINGS, () => {
       const data = localStorage.getItem(STORAGE_KEYS.LABEL_SETTINGS);
@@ -602,7 +612,14 @@ export const storageService = {
           const itBaseId = itPartId.split(' - ')[0].trim();
           const itEffectiveBaseId = itEffectiveId.split(' - ')[0].trim();
           const targetId = bomDef.parentPartId.toUpperCase();
-          return (itPartId === targetId || itBaseId === targetId || itEffectiveId === targetId || itEffectiveBaseId === targetId) && i.stageId === 'LASER' && i.location === 'IN';
+          
+          const mainMatch = itPartId === targetId || 
+                           itBaseId === targetId || 
+                           itEffectiveId === targetId || 
+                           itEffectiveBaseId === targetId ||
+                           this.normalize(itPartId) === this.normalize(targetId);
+
+          return mainMatch && i.stageId === 'LASER' && i.location === 'IN';
         });
         const totalStock = matchingStocks.reduce((sum, i) => sum + i.quantity, 0);
         
@@ -647,7 +664,14 @@ export const storageService = {
             const itBaseId = itPartId.split(' - ')[0].trim();
             const itEffectiveBaseId = itEffectiveId.split(' - ')[0].trim();
             const targetId = effectiveIngId.toUpperCase();
-            return (itPartId === targetId || itBaseId === targetId || itEffectiveId === targetId || itEffectiveBaseId === targetId) && i.stageId === 'WELDING' && i.location === 'IN';
+            
+            const mainMatch = itPartId === targetId || 
+                             itBaseId === targetId || 
+                             itEffectiveId === targetId || 
+                             itEffectiveBaseId === targetId ||
+                             this.normalize(itPartId) === this.normalize(targetId);
+
+            return mainMatch && i.stageId === 'WELDING' && i.location === 'IN';
           });
           const totalStock = matchingStocks.reduce((sum, i) => sum + i.quantity, 0);
 
@@ -664,7 +688,14 @@ export const storageService = {
             const itBaseId = itPartId.split(' - ')[0].trim();
             const itEffectiveBaseId = itEffectiveId.split(' - ')[0].trim();
             const targetId = effectiveIngId.toUpperCase();
-            return (itPartId === targetId || itBaseId === targetId || itEffectiveId === targetId || itEffectiveBaseId === targetId) && i.stageId === 'WELDING' && i.location === 'IN';
+            
+            const mainMatch = itPartId === targetId || 
+                             itBaseId === targetId || 
+                             itEffectiveId === targetId || 
+                             itEffectiveBaseId === targetId ||
+                             this.normalize(itPartId) === this.normalize(targetId);
+
+            return mainMatch && i.stageId === 'WELDING' && i.location === 'IN';
           });
 
           let remainingToDeduct = quantity * ing.quantity;
@@ -736,15 +767,25 @@ export const storageService = {
         const itBaseId = itPartId.split(' - ')[0].trim();
         const itEffectiveBaseId = itEffectiveId.split(' - ')[0].trim();
 
+        const nItPartId = this.normalize(itPartId);
+        const nTargetId = this.normalize(targetId);
+        const nSelectedPartName = this.normalize(selectedPartName || '');
+        const nItOrigId = this.normalize(itOrigId);
+        const nSourceId = this.normalize(sourceId);
+
         const mainMatch = itPartId === targetId || 
                          itBaseId === targetId ||
                          itEffectiveId === targetId ||
                          itEffectiveBaseId === targetId ||
+                         nItPartId === nTargetId ||
+                         (nSelectedPartName && nItPartId === nSelectedPartName) ||
                          (selectedPartName && itPartId === selectedPartName);
         
         if (mainMatch) {
           const originMatch = !itOrigId || 
                              itOrigId === sourceId || 
+                             nItOrigId === nSourceId ||
+                             (nSelectedPartName && nItOrigId === nSelectedPartName) ||
                              (selectedPartName && itOrigId === selectedPartName) ||
                              (selectedPartId && itOrigId === selectedPartId) ||
                              itBaseId === sourceId ||
@@ -1066,17 +1107,20 @@ export const storageService = {
     const inventory = this.getInventory();
     const effectiveId = this.getEffectivePartId(cleanId, stageId, poId);
     
-    const matchingStocks = inventory.filter((item) => {
-      if (item.stageId === stageId && item.location === 'IN') {
-        const itPartId = item.partId.toUpperCase();
-        const itEffectiveId = this.getEffectivePartId(item.partId, stageId, poId).toUpperCase();
-        const itBaseId = itPartId.split(' - ')[0].trim();
-        const itEffectiveBaseId = itEffectiveId.split(' - ')[0].trim();
-        const targetId = effectiveId.toUpperCase();
-        
-        return itPartId === targetId || itBaseId === targetId || itEffectiveId === targetId || itEffectiveBaseId === targetId;
-      }
-      return false;
+    const matchingStocks = inventory.filter(i => {
+      const itPartId = i.partId.toUpperCase();
+      const itEffectiveId = this.getEffectivePartId(i.partId, stageId, poId).toUpperCase();
+      const itBaseId = itPartId.split(' - ')[0].trim();
+      const itEffectiveBaseId = itEffectiveId.split(' - ')[0].trim();
+      const targetId = effectiveId.toUpperCase();
+      
+      const mainMatch = itPartId === targetId || 
+                       itBaseId === targetId || 
+                       itEffectiveId === targetId || 
+                       itEffectiveBaseId === targetId ||
+                       this.normalize(itPartId) === this.normalize(targetId);
+
+      return mainMatch && i.stageId === stageId && i.location === 'IN';
     });
     const totalStock = matchingStocks.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -1143,7 +1187,14 @@ export const storageService = {
       const itBaseId = itPartId.split(' - ')[0].trim();
       const itEffectiveBaseId = itEffectiveId.split(' - ')[0].trim();
       const targetId = effectiveId.toUpperCase();
-      return (itPartId === targetId || itBaseId === targetId || itEffectiveId === targetId || itEffectiveBaseId === targetId) && i.stageId === stageId && i.location === 'DEFECT';
+      
+      const mainMatch = itPartId === targetId || 
+                       itBaseId === targetId || 
+                       itEffectiveId === targetId || 
+                       itEffectiveBaseId === targetId ||
+                       this.normalize(itPartId) === this.normalize(targetId);
+
+      return mainMatch && i.stageId === stageId && i.location === 'DEFECT';
     });
     const totalStock = matchingStocks.reduce((sum, i) => sum + i.quantity, 0);
 
