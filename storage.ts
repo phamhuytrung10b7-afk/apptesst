@@ -596,14 +596,26 @@ export const storageService = {
         const totalScrap = quantity * bomDef.scrapWeight;
         
         const inventory = this.getInventory();
-        const parentStock = inventory.find(i => i.partId === bomDef.parentPartId && i.stageId === 'LASER' && i.location === 'IN');
+        const matchingStocks = inventory.filter(i => {
+          const itPartId = i.partId.toUpperCase();
+          const itBaseId = itPartId.split(' - ')[0].trim();
+          const targetId = bomDef.parentPartId.toUpperCase();
+          return (itPartId === targetId || itBaseId === targetId) && i.stageId === 'LASER' && i.location === 'IN';
+        });
+        const totalStock = matchingStocks.reduce((sum, i) => sum + i.quantity, 0);
         
-        if (!parentStock || parentStock.quantity < totalConsumption) {
+        if (totalStock < totalConsumption) {
           const parentPart = parts.find(p => p.id === bomDef.parentPartId);
-          throw new Error(`Lỗi: Không đủ tồn kho ${parentPart?.name || bomDef.parentPartId} tại LASER_IN. Cần ${totalConsumption.toFixed(4)} kg, hiện có ${parentStock?.quantity || 0} kg`);
+          throw new Error(`Lỗi: Không đủ tồn kho ${parentPart?.name || bomDef.parentPartId} tại LASER_IN. Cần ${totalConsumption.toFixed(4)} kg, hiện có ${totalStock} kg`);
         }
         
-        this.updateInventory(bomDef.parentPartId, 'LASER', 'IN', -totalConsumption);
+        let remainingToDeduct = totalConsumption;
+        for (const stock of matchingStocks) {
+          if (remainingToDeduct <= 0) break;
+          const toTake = Math.min(stock.quantity, remainingToDeduct);
+          this.updateInventory(stock.partId, 'LASER', 'IN', -toTake, stock.originalPartId);
+          remainingToDeduct -= toTake;
+        }
         const scrapPart = parts.find(p => p.id === 'PL-TON-SX' || p.name.toLowerCase().includes('phế liệu'));
         if (scrapPart) {
           this.updateInventory(scrapPart.id, 'LASER', 'OUT', totalScrap);
@@ -626,15 +638,36 @@ export const storageService = {
         for (const ing of ingredients) {
           const needed = quantity * ing.quantity;
           const effectiveIngId = this.getEffectivePartId(ing.ingredientPartId, 'WELDING', poId);
-          const stock = inventory.find(i => i.partId === effectiveIngId && i.stageId === 'WELDING' && i.location === 'IN');
-          if (!stock || stock.quantity < needed) {
+          
+          const matchingStocks = inventory.filter(i => {
+            const itPartId = i.partId.toUpperCase();
+            const itBaseId = itPartId.split(' - ')[0].trim();
+            const targetId = effectiveIngId.toUpperCase();
+            return (itPartId === targetId || itBaseId === targetId) && i.stageId === 'WELDING' && i.location === 'IN';
+          });
+          const totalStock = matchingStocks.reduce((sum, i) => sum + i.quantity, 0);
+
+          if (totalStock < needed) {
             const ingPart = parts.find(p => p.id === effectiveIngId);
-            throw new Error(`Lỗi: Không đủ tồn kho ${ingPart?.name || effectiveIngId} tại WELDING_IN. Cần ${needed} ${ingPart?.unit || ''}, hiện có ${stock?.quantity || 0}`);
+            throw new Error(`Lỗi: Không đủ tồn kho ${ingPart?.name || effectiveIngId} tại WELDING_IN. Cần ${needed} ${ingPart?.unit || ''}, hiện có ${totalStock}`);
           }
         }
         for (const ing of ingredients) {
           const effectiveIngId = this.getEffectivePartId(ing.ingredientPartId, 'WELDING', poId);
-          this.updateInventory(effectiveIngId, 'WELDING', 'IN', -(quantity * ing.quantity));
+          const matchingStocks = inventory.filter(i => {
+            const itPartId = i.partId.toUpperCase();
+            const itBaseId = itPartId.split(' - ')[0].trim();
+            const targetId = effectiveIngId.toUpperCase();
+            return (itPartId === targetId || itBaseId === targetId) && i.stageId === 'WELDING' && i.location === 'IN';
+          });
+
+          let remainingToDeduct = quantity * ing.quantity;
+          for (const stock of matchingStocks) {
+            if (remainingToDeduct <= 0) break;
+            const toTake = Math.min(stock.quantity, remainingToDeduct);
+            this.updateInventory(stock.partId, 'WELDING', 'IN', -toTake, stock.originalPartId);
+            remainingToDeduct -= toTake;
+          }
         }
       }
     }
@@ -693,12 +726,17 @@ export const storageService = {
         const targetId = effectiveId.toUpperCase();
         const sourceId = cleanId.toUpperCase();
 
-        const mainMatch = itPartId === targetId || (selectedPartName && itPartId === selectedPartName);
+        const itBaseId = itPartId.split(' - ')[0].trim();
+        const mainMatch = itPartId === targetId || 
+                         itBaseId === targetId ||
+                         (selectedPartName && itPartId === selectedPartName);
+        
         if (mainMatch) {
           const originMatch = !itOrigId || 
                              itOrigId === sourceId || 
                              (selectedPartName && itOrigId === selectedPartName) ||
                              (selectedPartId && itOrigId === selectedPartId) ||
+                             itBaseId === sourceId ||
                              (itOrigId.includes(sourceId)) || (sourceId.includes(itOrigId));
           return originMatch;
         }
@@ -1017,9 +1055,16 @@ export const storageService = {
     const inventory = this.getInventory();
     const effectiveId = this.getEffectivePartId(cleanId, stageId, poId);
     
-    const matchingStocks = inventory.filter(
-      (item) => item.partId.toUpperCase() === effectiveId.toUpperCase() && item.stageId === stageId && item.location === 'IN'
-    );
+    const matchingStocks = inventory.filter((item) => {
+      if (item.stageId === stageId && item.location === 'IN') {
+        const itPartId = item.partId.toUpperCase();
+        const itBaseId = itPartId.split(' - ')[0].trim();
+        const targetId = effectiveId.toUpperCase();
+        
+        return itPartId === targetId || itBaseId === targetId;
+      }
+      return false;
+    });
     const totalStock = matchingStocks.reduce((sum, item) => sum + item.quantity, 0);
 
     if (totalStock < quantity) {
@@ -1079,17 +1124,27 @@ export const storageService = {
     // 1. Validation
     const inventory = this.getInventory();
     const effectiveId = this.getEffectivePartId(cleanId, stageId);
-    const stock = inventory.find(
-      (item) => item.partId === effectiveId && item.stageId === stageId && item.location === 'DEFECT'
-    );
+    const matchingStocks = inventory.filter(i => {
+      const itPartId = i.partId.toUpperCase();
+      const itBaseId = itPartId.split(' - ')[0].trim();
+      const targetId = effectiveId.toUpperCase();
+      return (itPartId === targetId || itBaseId === targetId) && i.stageId === stageId && i.location === 'DEFECT';
+    });
+    const totalStock = matchingStocks.reduce((sum, i) => sum + i.quantity, 0);
 
-    if (!stock || stock.quantity < quantity) {
+    if (totalStock < quantity) {
       const part = this.getParts().find(p => p.id === effectiveId);
-      throw new Error(`Lỗi: Số lượng xuất hủy (${quantity}) lớn hơn tồn kho DEFECT của ${part?.name || effectiveId} tại ${STAGES.find(s => s.id === stageId)?.name} (Hiện có ${stock?.quantity || 0})`);
+      throw new Error(`Lỗi: Số lượng xuất hủy (${quantity}) lớn hơn tồn kho DEFECT của ${part?.name || effectiveId} tại ${STAGES.find(s => s.id === stageId)?.name} (Hiện có ${totalStock})`);
     }
 
     // 2. Inventory move: Deduct from DEFECT
-    this.updateInventory(effectiveId, stageId, 'DEFECT', -quantity);
+    let remainingToDeduct = quantity;
+    for (const stock of matchingStocks) {
+      if (remainingToDeduct <= 0) break;
+      const toTake = Math.min(stock.quantity, remainingToDeduct);
+      this.updateInventory(stock.partId, stageId, 'DEFECT', -toTake, stock.originalPartId);
+      remainingToDeduct -= toTake;
+    }
 
     // 3. Record transaction
     const transactions = this.getTransactions();

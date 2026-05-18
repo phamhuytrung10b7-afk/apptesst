@@ -3047,13 +3047,17 @@ function ProduceView({
         const targetId = effectiveId.toUpperCase();
         const sourceId = cleanId.toUpperCase();
 
-        const mainMatch = itPartId === targetId || (selectedPartName && itPartId === selectedPartName);
+        const itBaseId = itPartId.split(' - ')[0].trim();
+        const mainMatch = itPartId === targetId || 
+                         itBaseId === targetId ||
+                         (selectedPartName && itPartId === selectedPartName);
         
         if (mainMatch) {
           const originMatch = !itOrigId || 
                              itOrigId === sourceId || 
                              (selectedPartName && itOrigId === selectedPartName) ||
                              (selectedPartId && itOrigId === selectedPartId) ||
+                             itBaseId === sourceId ||
                              (itOrigId.includes(sourceId)) || (sourceId.includes(itOrigId));
           
           if (originMatch) {
