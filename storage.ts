@@ -433,43 +433,47 @@ export const storageService = {
     if (!partId) return '';
     
     const transformationsList = this.getTransformations();
-    // Lọc theo công đoạn đích
     const stageTransformations = transformationsList.filter(t => t.targetStageId === stageId);
     if (stageTransformations.length === 0) return partId;
 
-    // Chuẩn hóa chuỗi (NFC) để xử lý tiếng Việt đồng nhất và xóa khoảng trắng dư thừa
-    const std = (s: string) => {
-      if (!s) return '';
-      return s.normalize('NFC').trim();
-    };
+    const std = (s: string) => s ? s.normalize('NFC').trim() : '';
+    const inputStd = std(partId);
+    const inputUpper = inputStd.toUpperCase();
 
-    const targetPartId = std(partId);
-    const targetPartIdUpper = targetPartId.toUpperCase();
+    // Lấy thông tin từ danh mục để có Tên đầy đủ (vì Quy tắc thường lưu theo Tên)
+    const parts = this.getParts();
+    const partInCatalog = parts.find(p => p.id === partId || p.name === partId);
+    const partIdInCatalog = partInCatalog ? std(partInCatalog.id) : '';
+    const partNameInCatalog = partInCatalog ? std(partInCatalog.name) : '';
 
-    // 1. Tìm khớp chính xác (Ưu tiên hàng đầu)
     let candidates = stageTransformations.filter(t => {
       const sId = std(t.sourcePartId);
-      return sId === targetPartId || sId.toUpperCase() === targetPartIdUpper;
-    });
+      const sIdUpper = sId.toUpperCase();
+      
+      // 1. So khớp trực tiếp với chuỗi đầu vào
+      if (sId === inputStd || sIdUpper === inputUpper) return true;
+      
+      // 2. So khớp với ID hoặc Tên từ danh mục linh kiện
+      if (partIdInCatalog && (sId === partIdInCatalog || sIdUpper === partIdInCatalog.toUpperCase())) return true;
+      if (partNameInCatalog && (sId === partNameInCatalog || sIdUpper === partNameInCatalog.toUpperCase())) return true;
 
-    // 2. Nếu không khớp chính xác, thử chuẩn hóa bằng cách bỏ tiền tố "Tấm", "Chi tiết"...
-    if (candidates.length === 0) {
-      const normalize = (s: string) => {
-        let res = std(s).toUpperCase();
-        // Bỏ hậu tố công đoạn nếu có
-        res = res.split(' - ')[0].split('(')[0].trim();
-        // Bỏ tiền tố nhiễu
+      // 3. Chuẩn hóa nâng cao (bỏ tiền tố, hậu tố nhiễu)
+      const normalize = (str: string) => {
+        let res = str.toUpperCase().normalize('NFC');
         res = res.replace(/^(TẤM|CHI TIẾT|PHỤ TÙNG|BẢN|KHO|THÀNH PHẨM|L-)\s+/g, '');
-        return res;
+        res = res.replace(/\s*-\s*(CD|H|C|P|G|W|B|L)$/g, ''); 
+        return res.split(' (')[0].split('(')[0].trim();
       };
+      
+      const normRule = normalize(sId);
+      if (normRule === normalize(inputStd)) return true;
+      if (partNameInCatalog && normRule === normalize(partNameInCatalog)) return true;
 
-      const normInput = normalize(targetPartId);
-      candidates = stageTransformations.filter(t => normalize(t.sourcePartId) === normInput);
-    }
+      return false;
+    });
 
     if (candidates.length === 0) return partId;
 
-    // 3. Quyết định ứng viên (Ưu tiên theo Model nếu có nhiều lựa chọn)
     let bestMatch = candidates[0];
     if (poId) {
       const orders = this.getProductionOrders();
@@ -862,9 +866,12 @@ export const storageService = {
     // FORCE targetLocation to 'IN' when scanning QR code as per user request
     const finalTargetLocation = 'IN';
     
-    // Part Transformation Logic: Only check for transformation at the moment of entry (IN)
+    // Part Transformation Logic
     const finalPartId = this.getEffectivePartId(partId, currentStageId, linkedPoId);
-    const originalPartId = (finalPartId !== partId.trim().toUpperCase()) ? partId : undefined;
+    
+    // So khớp chuẩn hóa để xác định xem có sự thay đổi thực sự không
+    const std = (s: string) => s ? s.normalize('NFC').trim().toUpperCase() : '';
+    const originalPartId = (std(finalPartId) !== std(partId)) ? partId : undefined;
 
     this.updateInventory(finalPartId, currentStageId, finalTargetLocation, quantity, originalPartId);
 
@@ -939,11 +946,10 @@ export const storageService = {
     }
 
     // Part Transformation Logic
-    const finalPartId = (location === 'IN') 
-      ? this.getEffectivePartId(cleanId, stageId, currentPoId)
-      : cleanId;
-      
-    const originalPartId = (location === 'IN' && finalPartId !== cleanId) ? cleanId : undefined;
+    const finalPartId = this.getEffectivePartId(cleanId, stageId, currentPoId);
+    
+    const std = (s: string) => s ? s.normalize('NFC').trim().toUpperCase() : '';
+    const originalPartId = (std(finalPartId) !== std(cleanId)) ? cleanId : undefined;
 
     this.updateInventory(finalPartId, stageId, location, quantity, originalPartId);
     
