@@ -819,7 +819,7 @@ export const storageService = {
     const txId = Math.random().toString(36).substring(2, 12).toUpperCase();
     const timestamp = Date.now();
     const qrData = sourceLocation === 'OUT' 
-      ? `${linkedPoId || effectiveId}|${quantity}|${stageId}|${timestamp}|${txId}|${targetStageId || ''}||${masterPoId}|${subPoTargetQty}|${masterPoTargetQty}`
+      ? `${linkedPoId || effectiveId}|${quantity}|${stageId}|${timestamp}|${txId}|${targetStageId || ''}|${effectiveId}|${masterPoId}|${subPoTargetQty}|${masterPoTargetQty}`
       : undefined;
 
     const newTransaction: Transaction = {
