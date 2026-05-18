@@ -826,6 +826,7 @@ export const storageService = {
       id: txId,
       type: 'STAGE_OUT',
       partId: effectiveId,
+      partName: this.getParts().find(p => p.id === effectiveId)?.name || effectiveId,
       originalPartId: lastOriginalId,
       quantity,
       stageId,

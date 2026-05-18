@@ -29,6 +29,7 @@ export interface Transaction {
   id: string;
   type: 'STAGE_OUT' | 'STAGE_IN' | 'DEFECT' | 'DISPOSAL';
   partId: string;
+  partName?: string; // Cache the name at time of transaction
   originalPartId?: string; // If part was transformed upon entry
   quantity: number;
   stageId: StageId;
