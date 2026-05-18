@@ -2490,27 +2490,36 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
       </tr>
     </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {parts
-                          .filter(part => {
-                            const qty = inventory.find(i => i.partId === part.id && i.stageId === selectedStageDetail && i.location === 'IN')?.quantity || 0;
-                            const matchesSearch = part.id.toLowerCase().includes(searchTerm.toLowerCase()) || part.name.toLowerCase().includes(searchTerm.toLowerCase());
-                            return qty > 0 && matchesSearch;
+                        {inventory
+                          .filter(item => item.stageId === selectedStageDetail && item.location === 'IN' && item.quantity > 0)
+                          .reduce((acc, current) => {
+                            const existing = acc.find(a => a.partId === current.partId);
+                            if (existing) existing.quantity += current.quantity;
+                            else acc.push({ ...current });
+                            return acc;
+                          }, [] as InventoryItem[])
+                          .filter(item => {
+                            const part = parts.find(p => p.id === item.partId);
+                            const matchesSearch = item.partId.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                                                 (part && part.name.toLowerCase().includes(searchTerm.toLowerCase()));
+                            return matchesSearch;
                           })
-                          .map(part => {
-                            const qty = inventory.find(i => i.partId === part.id && i.stageId === selectedStageDetail && i.location === 'IN')?.quantity || 0;
-                            const displayQty = part.level === 3 ? qty.toFixed(4) : qty;
+                          .map(item => {
+                            const part = parts.find(p => p.id === item.partId);
+                            const qty = item.quantity;
+                            const displayQty = part?.level === 3 ? qty.toFixed(4) : qty;
                             return (
-                              <tr key={part.id} className="hover:bg-white transition-colors">
+                              <tr key={item.partId} className="hover:bg-white transition-colors">
                                 <td className="p-4">
-                                  <div className="font-bold text-base">{getProcessValue(part.id, part, selectedStageDetail, 'IN')}</div>
-                                  <div className="text-xs opacity-50">{getProcessValue(part.name, part, selectedStageDetail, 'IN')}</div>
+                                  <div className="font-bold text-base">{getProcessValue(item.partId, part, selectedStageDetail, 'IN')}</div>
+                                  <div className="text-xs opacity-50">{getProcessValue(part?.name || item.partId, part, selectedStageDetail, 'IN')}</div>
                                 </td>
                                 <td className="p-4 text-right">
                                   <div className="flex items-center justify-end gap-3">
                                     <span className="font-mono font-bold text-xl">{displayQty}</span>
-                                    <span className="text-xs font-mono opacity-40 uppercase mr-4">{part.unit}</span>
+                                    <span className="text-xs font-mono opacity-40 uppercase mr-4">{part?.unit || 'L/K'}</span>
                                     <button 
-                                      onClick={() => setDefectModal({ partId: part.id, stageId: selectedStageDetail })}
+                                      onClick={() => setDefectModal({ partId: item.partId, stageId: selectedStageDetail })}
                                       className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-colors"
                                       title="Báo lỗi (NG)"
                                     >
@@ -2520,9 +2529,9 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                                       onClick={() => {
                                         const pwd = prompt('Nhập mật khẩu để sửa tồn kho:');
                                         if (pwd === 'admin123') {
-                                          const newQty = prompt(`Nhập số lượng tồn mới cho ${part.id}:`, String(qty));
+                                          const newQty = prompt(`Nhập số lượng tồn mới cho ${item.partId}:`, String(qty));
                                           if (newQty !== null) {
-                                            storageService.setInventoryQuantity(part.id, selectedStageDetail, 'IN', parseFloat(newQty) || 0);
+                                            storageService.setInventoryQuantity(item.partId, selectedStageDetail, 'IN', parseFloat(newQty) || 0);
                                             refreshData();
                                           }
                                         } else if (pwd !== null) {
@@ -2538,8 +2547,8 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                                       onClick={() => {
                                         const pwd = prompt('Nhập mật khẩu để xóa tồn kho:');
                                         if (pwd === 'admin123') {
-                                          if (confirm(`Bạn có chắc chắn muốn xóa tồn kho của ${part.id} tại ${STAGES.find(s => s.id === selectedStageDetail)?.name} (Kho IN)?`)) {
-                                            storageService.deleteInventoryItem(part.id, selectedStageDetail, 'IN');
+                                          if (confirm(`Bạn có chắc chắn muốn xóa tồn kho của ${item.partId} tại ${STAGES.find(s => s.id === selectedStageDetail)?.name} (Kho IN)?`)) {
+                                            storageService.deleteInventoryItem(item.partId, selectedStageDetail, 'IN');
                                             refreshData();
                                           }
                                         } else if (pwd !== null) {
@@ -2576,27 +2585,36 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
       </tr>
     </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {parts
-                          .filter(part => {
-                            const qty = inventory.find(i => i.partId === part.id && i.stageId === selectedStageDetail && i.location === 'OUT')?.quantity || 0;
-                            const matchesSearch = part.id.toLowerCase().includes(searchTerm.toLowerCase()) || part.name.toLowerCase().includes(searchTerm.toLowerCase());
-                            return qty > 0 && matchesSearch;
+                        {inventory
+                          .filter(item => item.stageId === selectedStageDetail && item.location === 'OUT' && item.quantity > 0)
+                          .reduce((acc, current) => {
+                            const existing = acc.find(a => a.partId === current.partId);
+                            if (existing) existing.quantity += current.quantity;
+                            else acc.push({ ...current });
+                            return acc;
+                          }, [] as InventoryItem[])
+                          .filter(item => {
+                            const part = parts.find(p => p.id === item.partId);
+                            const matchesSearch = item.partId.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                                                 (part && part.name.toLowerCase().includes(searchTerm.toLowerCase()));
+                            return matchesSearch;
                           })
-                          .map(part => {
-                            const qty = inventory.find(i => i.partId === part.id && i.stageId === selectedStageDetail && i.location === 'OUT')?.quantity || 0;
-                            const displayQty = part.level === 3 ? qty.toFixed(4) : qty;
+                          .map(item => {
+                            const part = parts.find(p => p.id === item.partId);
+                            const qty = item.quantity;
+                            const displayQty = part?.level === 3 ? qty.toFixed(4) : qty;
                             return (
-                              <tr key={part.id} className="hover:bg-white transition-colors">
+                              <tr key={item.partId} className="hover:bg-white transition-colors">
                                 <td className="p-4">
-                                  <div className="font-bold text-base">{getProcessValue(part.id, part, selectedStageDetail, 'OUT')}</div>
-                                  <div className="text-xs opacity-50">{getProcessValue(part.name, part, selectedStageDetail, 'OUT')}</div>
+                                  <div className="font-bold text-base">{getProcessValue(item.partId, part, selectedStageDetail, 'OUT')}</div>
+                                  <div className="text-xs opacity-50">{getProcessValue(part?.name || item.partId, part, selectedStageDetail, 'OUT')}</div>
                                 </td>
                                 <td className="p-4 text-right">
                                   <div className="flex items-center justify-end gap-3">
                                     <span className="font-mono font-bold text-xl text-[#F27D26]">{displayQty}</span>
-                                    <span className="text-xs font-mono opacity-40 uppercase mr-4">{part.unit}</span>
+                                    <span className="text-xs font-mono opacity-40 uppercase mr-4">{part?.unit || 'L/K'}</span>
                                     <button 
-                                      onClick={() => setDefectModal({ partId: part.id, stageId: selectedStageDetail })}
+                                      onClick={() => setDefectModal({ partId: item.partId, stageId: selectedStageDetail })}
                                       className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-colors"
                                       title="Báo lỗi (NG)"
                                     >
@@ -2606,9 +2624,9 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                                       onClick={() => {
                                         const pwd = prompt('Nhập mật khẩu để sửa tồn kho:');
                                         if (pwd === 'admin123') {
-                                          const newQty = prompt(`Nhập số lượng tồn mới cho ${part.id}:`, String(qty));
+                                          const newQty = prompt(`Nhập số lượng tồn mới cho ${item.partId}:`, String(qty));
                                           if (newQty !== null) {
-                                            storageService.setInventoryQuantity(part.id, selectedStageDetail, 'OUT', parseFloat(newQty) || 0);
+                                            storageService.setInventoryQuantity(item.partId, selectedStageDetail, 'OUT', parseFloat(newQty) || 0);
                                             refreshData();
                                           }
                                         } else if (pwd !== null) {
@@ -2624,8 +2642,8 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                                       onClick={() => {
                                         const pwd = prompt('Nhập mật khẩu để xóa tồn kho:');
                                         if (pwd === 'admin123') {
-                                          if (confirm(`Bạn có chắc chắn muốn xóa tồn kho của ${part.id} tại ${STAGES.find(s => s.id === selectedStageDetail)?.name} (Kho OUT)?`)) {
-                                            storageService.deleteInventoryItem(part.id, selectedStageDetail, 'OUT');
+                                          if (confirm(`Bạn có chắc chắn muốn xóa tồn kho của ${item.partId} tại ${STAGES.find(s => s.id === selectedStageDetail)?.name} (Kho OUT)?`)) {
+                                            storageService.deleteInventoryItem(item.partId, selectedStageDetail, 'OUT');
                                             refreshData();
                                           }
                                         } else if (pwd !== null) {
@@ -2662,32 +2680,41 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {parts
-                          .filter(part => {
-                            const qty = inventory.find(i => i.partId === part.id && i.stageId === selectedStageDetail && i.location === 'DEFECT')?.quantity || 0;
-                            const matchesSearch = part.id.toLowerCase().includes(searchTerm.toLowerCase()) || part.name.toLowerCase().includes(searchTerm.toLowerCase());
-                            return qty > 0 && matchesSearch;
+                        {inventory
+                          .filter(item => item.stageId === selectedStageDetail && item.location === 'DEFECT' && item.quantity > 0)
+                          .reduce((acc, current) => {
+                            const existing = acc.find(a => a.partId === current.partId);
+                            if (existing) existing.quantity += current.quantity;
+                            else acc.push({ ...current });
+                            return acc;
+                          }, [] as InventoryItem[])
+                          .filter(item => {
+                            const part = parts.find(p => p.id === item.partId);
+                            const matchesSearch = item.partId.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                                                 (part && part.name.toLowerCase().includes(searchTerm.toLowerCase()));
+                            return matchesSearch;
                           })
-                          .map(part => {
-                            const qty = inventory.find(i => i.partId === part.id && i.stageId === selectedStageDetail && i.location === 'DEFECT')?.quantity || 0;
-                            const displayQty = part.level === 3 ? qty.toFixed(4) : qty;
+                          .map(item => {
+                            const part = parts.find(p => p.id === item.partId);
+                            const qty = item.quantity;
+                            const displayQty = part?.level === 3 ? qty.toFixed(4) : qty;
                             return (
-                              <tr key={part.id} className="hover:bg-white transition-colors">
+                              <tr key={item.partId} className="hover:bg-white transition-colors">
                                 <td className="p-4">
-                                  <div className="font-bold text-base text-gray-900">{getProcessValue(part.id, part, selectedStageDetail || STAGES[0].id, 'OUT')}</div>
-                                  <div className="text-xs opacity-50 text-gray-900">{getProcessValue(part.name, part, selectedStageDetail || STAGES[0].id, 'OUT')}</div>
+                                  <div className="font-bold text-base text-gray-900">{getProcessValue(item.partId, part, selectedStageDetail || STAGES[0].id, 'OUT')}</div>
+                                  <div className="text-xs opacity-50 text-gray-900">{getProcessValue(part?.name || item.partId, part, selectedStageDetail || STAGES[0].id, 'OUT')}</div>
                                 </td>
                                 <td className="p-4 text-right">
                                   <div className="flex items-center justify-end gap-3">
                                     <span className="font-mono font-bold text-xl text-red-600">{displayQty}</span>
-                                    <span className="text-xs font-mono opacity-40 uppercase mr-4 text-gray-900">{part.unit}</span>
+                                    <span className="text-xs font-mono opacity-40 uppercase mr-4 text-gray-900">{part?.unit || 'L/K'}</span>
                                     <button 
                                       onClick={() => {
                                         const pwd = prompt('Nhập mật khẩu để sửa tồn kho lỗi:');
                                         if (pwd === 'admin123') {
-                                          const newQty = prompt(`Nhập số lượng tồn mới cho ${part.id} (Lỗi):`, String(qty));
+                                          const newQty = prompt(`Nhập số lượng tồn mới cho ${item.partId} (Lỗi):`, String(qty));
                                           if (newQty !== null) {
-                                            storageService.setInventoryQuantity(part.id, selectedStageDetail || STAGES[0].id, 'DEFECT', parseFloat(newQty) || 0);
+                                            storageService.setInventoryQuantity(item.partId, selectedStageDetail || STAGES[0].id, 'DEFECT', parseFloat(newQty) || 0);
                                             refreshData();
                                           }
                                         } else if (pwd !== null) {
@@ -2704,7 +2731,7 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                               </tr>
                             );
                           })}
-                        {parts.filter(part => (inventory.find(i => i.partId === part.id && i.stageId === selectedStageDetail && i.location === 'DEFECT')?.quantity || 0) > 0).length === 0 && (
+                        {inventory.filter(item => item.stageId === selectedStageDetail && item.location === 'DEFECT' && item.quantity > 0).length === 0 && (
                           <tr>
                             <td colSpan={2} className="p-8 text-center text-gray-400 italic text-sm">Không có hàng lỗi tại công đoạn này.</td>
                           </tr>
