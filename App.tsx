@@ -3020,9 +3020,19 @@ function ProduceView({
     }
   }, [selectedStage, selectedPart, sourceLocation, parts]);
 
-  const currentStock = inventory.find(
-    (i: any) => i.partId.toUpperCase() === selectedPart.split(' - ')[0].trim().toUpperCase() && i.stageId === selectedStage && i.location === sourceLocation
-  )?.quantity || 0;
+  const currentStock = useMemo(() => {
+    const cleanId = selectedPart.split(' - ')[0].trim().toUpperCase();
+    const effectiveId = storageService.getEffectivePartId(cleanId, selectedStage, selectedPoId);
+    
+    return inventory.reduce((sum: number, item: any) => {
+      if (item.partId.toUpperCase() === effectiveId.toUpperCase() && 
+          item.stageId === selectedStage && 
+          item.location === sourceLocation) {
+        return sum + item.quantity;
+      }
+      return sum;
+    }, 0);
+  }, [inventory, selectedPart, selectedStage, sourceLocation, selectedPoId]);
 
   const activePo = availablePos.find(p => p.id === selectedPoId) || availablePos[0];
 
