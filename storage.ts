@@ -500,13 +500,15 @@ export const storageService = {
   updateInventory(partId: string, stageId: StageId, location: 'IN' | 'OUT' | 'DEFECT', delta: number, originalPartId?: string) {
     const inventory = this.getInventory();
     
-    // So khớp chính xác giá trị gốc
+    const cleanId = partId.trim();
+    const cleanOrigId = originalPartId?.trim();
+
     const index = inventory.findIndex(
       (item) => 
-        item.partId === partId && 
+        item.partId.toUpperCase() === cleanId.toUpperCase() && 
         item.stageId === stageId && 
         item.location === location &&
-        item.originalPartId === originalPartId
+        (item.originalPartId || '').toUpperCase() === (cleanOrigId || '').toUpperCase()
     );
 
     if (index >= 0) {
@@ -514,13 +516,15 @@ export const storageService = {
       inventory[index].quantity = Math.round(inventory[index].quantity * 10000) / 10000;
       if (inventory[index].quantity < 0) inventory[index].quantity = 0;
     } else {
-      inventory.push({ 
-        partId, 
-        originalPartId,
-        stageId, 
-        location, 
-        quantity: Math.max(0, delta) 
-      });
+      if (delta > 0) {
+        inventory.push({ 
+          partId: cleanId, 
+          originalPartId: cleanOrigId,
+          stageId, 
+          location, 
+          quantity: Math.max(0, delta) 
+        });
+      }
     }
 
     this.saveInventory(inventory);
@@ -528,21 +532,23 @@ export const storageService = {
 
   setInventoryQuantity(partId: string, stageId: StageId, location: 'IN' | 'OUT' | 'DEFECT', quantity: number, originalPartId?: string) {
     const inventory = this.getInventory();
+    const cleanId = partId.trim();
+    const cleanOrigId = originalPartId?.trim();
     
     const index = inventory.findIndex(
       (item) => 
-        item.partId === partId && 
+        item.partId.toUpperCase() === cleanId.toUpperCase() && 
         item.stageId === stageId && 
         item.location === location &&
-        item.originalPartId === originalPartId
+        (item.originalPartId || '').toUpperCase() === (cleanOrigId || '').toUpperCase()
     );
 
     if (index >= 0) {
       inventory[index].quantity = Math.max(0, quantity);
     } else {
       inventory.push({ 
-        partId, 
-        originalPartId,
+        partId: cleanId, 
+        originalPartId: cleanOrigId,
         stageId, 
         location, 
         quantity: Math.max(0, quantity) 
@@ -554,12 +560,15 @@ export const storageService = {
 
   deleteInventoryItem(partId: string, stageId: StageId, location: 'IN' | 'OUT' | 'DEFECT', originalPartId?: string) {
     const inventory = this.getInventory();
+    const cleanId = partId.trim();
+    const cleanOrigId = originalPartId?.trim();
+
     const filtered = inventory.filter(
       (item) => !(
-        item.partId === partId && 
+        item.partId.toUpperCase() === cleanId.toUpperCase() && 
         item.stageId === stageId && 
         item.location === location &&
-        item.originalPartId === originalPartId
+        (item.originalPartId || '').toUpperCase() === (cleanOrigId || '').toUpperCase()
       )
     );
     this.saveInventory(filtered);

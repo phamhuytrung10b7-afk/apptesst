@@ -2494,8 +2494,12 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                           .filter(item => item.stageId === selectedStageDetail && item.location === 'IN' && item.quantity > 0)
                           .filter(item => {
                             const part = parts.find(p => p.id === item.partId);
-                            const matchesSearch = item.partId.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                                                 (part && part.name.toLowerCase().includes(searchTerm.toLowerCase()));
+                            const originalPart = item.originalPartId ? parts.find(p => p.id === item.originalPartId) : null;
+                            const searchLower = searchTerm.toLowerCase();
+                            const matchesSearch = item.partId.toLowerCase().includes(searchLower) || 
+                                                 (part && part.name.toLowerCase().includes(searchLower)) ||
+                                                 (item.originalPartId && item.originalPartId.toLowerCase().includes(searchLower)) ||
+                                                 (originalPart && originalPart.name.toLowerCase().includes(searchLower));
                             return matchesSearch;
                           })
                           .map((item, idx) => {
@@ -2511,9 +2515,9 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                                   <div className="font-bold text-base">{getProcessValue(item.partId, part, selectedStageDetail, 'IN')}</div>
                                   <div className="text-xs opacity-50 flex flex-wrap gap-2 items-center">
                                     {getProcessValue(part?.name || item.partId, part, selectedStageDetail, 'IN')}
-                                    {originalPart && (
+                                    {item.originalPartId && (
                                       <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-medium border border-blue-100">
-                                        Nguồn: {originalPart.name}
+                                        Nguồn: {originalPart?.name || item.originalPartId}
                                       </span>
                                     )}
                                   </div>
@@ -2593,8 +2597,12 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                           .filter(item => item.stageId === selectedStageDetail && item.location === 'OUT' && item.quantity > 0)
                           .filter(item => {
                             const part = parts.find(p => p.id === item.partId);
-                            const matchesSearch = item.partId.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                                                 (part && part.name.toLowerCase().includes(searchTerm.toLowerCase()));
+                            const originalPart = item.originalPartId ? parts.find(p => p.id === item.originalPartId) : null;
+                            const searchLower = searchTerm.toLowerCase();
+                            const matchesSearch = item.partId.toLowerCase().includes(searchLower) || 
+                                                 (part && part.name.toLowerCase().includes(searchLower)) ||
+                                                 (item.originalPartId && item.originalPartId.toLowerCase().includes(searchLower)) ||
+                                                 (originalPart && originalPart.name.toLowerCase().includes(searchLower));
                             return matchesSearch;
                           })
                           .map((item, idx) => {
@@ -2610,9 +2618,9 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                                   <div className="font-bold text-base">{getProcessValue(item.partId, part, selectedStageDetail, 'OUT')}</div>
                                   <div className="text-xs opacity-50 flex flex-wrap gap-2 items-center">
                                     {getProcessValue(part?.name || item.partId, part, selectedStageDetail, 'OUT')}
-                                    {originalPart && (
+                                    {item.originalPartId && (
                                       <span className="px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded text-[10px] font-medium border border-orange-100">
-                                        Nguồn: {originalPart.name}
+                                        Nguồn: {originalPart?.name || item.originalPartId}
                                       </span>
                                     )}
                                   </div>
@@ -2692,8 +2700,12 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                           .filter(item => item.stageId === selectedStageDetail && item.location === 'DEFECT' && item.quantity > 0)
                           .filter(item => {
                             const part = parts.find(p => p.id === item.partId);
-                            const matchesSearch = item.partId.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                                                 (part && part.name.toLowerCase().includes(searchTerm.toLowerCase()));
+                            const originalPart = item.originalPartId ? parts.find(p => p.id === item.originalPartId) : null;
+                            const searchLower = searchTerm.toLowerCase();
+                            const matchesSearch = item.partId.toLowerCase().includes(searchLower) || 
+                                                 (part && part.name.toLowerCase().includes(searchLower)) ||
+                                                 (item.originalPartId && item.originalPartId.toLowerCase().includes(searchLower)) ||
+                                                 (originalPart && originalPart.name.toLowerCase().includes(searchLower));
                             return matchesSearch;
                           })
                           .map((item, idx) => {
@@ -2709,9 +2721,9 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                                   <div className="font-bold text-base text-gray-900">{getProcessValue(item.partId, part, selectedStageDetail || STAGES[0].id, 'OUT')}</div>
                                   <div className="text-xs opacity-50 text-gray-900 flex flex-wrap gap-2 items-center">
                                     {getProcessValue(part?.name || item.partId, part, selectedStageDetail || STAGES[0].id, 'OUT')}
-                                    {originalPart && (
+                                    {item.originalPartId && (
                                       <span className="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[10px] font-medium border border-red-200">
-                                        Nguồn: {originalPart.name}
+                                        Nguồn: {originalPart?.name || item.originalPartId}
                                       </span>
                                     )}
                                   </div>
