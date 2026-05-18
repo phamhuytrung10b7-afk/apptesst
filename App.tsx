@@ -439,7 +439,7 @@ export default function App() {
                 <h1 className="font-black uppercase leading-tight text-balance break-words" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
                   {parts.find(p => p.id === lastTransaction.partId)?.name || lastTransaction.partId}
                 </h1>
-                <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize - 2}px` }}>
+                <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
                   Mã LK: {lastTransaction.partId}
                 </p>
               </div>
@@ -493,7 +493,7 @@ export default function App() {
                 <h1 className="font-black uppercase leading-tight text-balance break-words" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
                   {lastTransaction.partName || getProcessValue(parts.find(p => p.id === lastTransaction.partId)?.name, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
                 </h1>
-                <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize - 2}px` }}>
+                <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
                   Mã LK: {lastTransaction.id?.startsWith('QUICK-') ? lastTransaction.partId : (lastTransaction.partId)}
                 </p>
               </div>
@@ -532,13 +532,13 @@ export default function App() {
                 const plan = storageService.getGlazingPlans().find(p => p.id === (lastTransaction as any).planId);
                 if (plan) {
                   return (
-                    <div className="w-full flex justify-between font-mono font-bold text-black border-t border-b border-black py-1 mb-2" style={{ fontSize: `${labelSettings.fontSize - 4}px` }}>
+                    <div className="w-full flex justify-between font-mono font-bold text-black border-t border-b border-black py-2 mb-2" style={{ fontSize: `${labelSettings.fontSize}px` }}>
                        <div className="flex flex-col text-left">
-                         <span className="text-[9px] uppercase font-black">HT Dự Kiến</span>
+                         <span className="text-[12px] uppercase font-black">HT Dự Kiến</span>
                          <span>{plan.expectedCompletionTime ? format(plan.expectedCompletionTime, 'HH:mm dd/MM') : '--:--'}</span>
                        </div>
                        <div className="flex flex-col text-right">
-                         <span className="text-[9px] uppercase font-black">HT Thực Tế</span>
+                         <span className="text-[12px] uppercase font-black">HT Thực Tế</span>
                          <span>{format(lastTransaction.timestamp, 'HH:mm dd/MM')}</span>
                        </div>
                     </div>
@@ -1907,7 +1907,7 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                       ? (selectedLabel.partName || parts.find(p => p.id === selectedLabel.partId)?.name || selectedLabel.partId)
                       : getProcessValue(selectedLabel.partName || parts.find(p => p.id === selectedLabel.partId)?.name, parts.find(p => p.id === selectedLabel.partId), selectedLabel.stageId, 'OUT')}
                   </h2>
-                  <p className="font-mono text-sm font-black text-black">
+                  <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
                     Mã LK: {selectedLabel.type === 'DISPOSAL' 
                       ? selectedLabel.partId 
                       : getProcessValue(selectedLabel.partId, parts.find(p => p.id === selectedLabel.partId), selectedLabel.stageId, 'OUT')}
@@ -3323,7 +3323,7 @@ function ProduceView({
                   <h2 className="text-4xl font-black uppercase tracking-tight leading-none mb-2 text-black">
                     {lastTransaction.partName || getProcessValue(parts.find(p => p.id === lastTransaction.partId)?.name, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
                   </h2>
-                  <p className="font-mono text-sm font-black text-black">
+                  <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
                     Mã LK: {lastTransaction.partId}
                   </p>
                 </div>
