@@ -439,7 +439,7 @@ export default function App() {
                 <h1 className="font-black uppercase leading-tight text-balance break-words" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
                   {parts.find(p => p.id === lastTransaction.partId)?.name || lastTransaction.partId}
                 </h1>
-                <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
+                <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize + 4}px` }}>
                   Mã LK: {lastTransaction.partId}
                 </p>
               </div>
@@ -493,7 +493,7 @@ export default function App() {
                 <h1 className="font-black uppercase leading-tight text-balance break-words" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
                   {lastTransaction.partName || getProcessValue(parts.find(p => p.id === lastTransaction.partId)?.name, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
                 </h1>
-                <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
+                <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize + 4}px` }}>
                   Mã LK: {lastTransaction.id?.startsWith('QUICK-') ? lastTransaction.partId : (lastTransaction.partId)}
                 </p>
               </div>
@@ -532,13 +532,13 @@ export default function App() {
                 const plan = storageService.getGlazingPlans().find(p => p.id === (lastTransaction as any).planId);
                 if (plan) {
                   return (
-                    <div className="w-full flex justify-between font-mono font-bold text-black border-t border-b border-black py-2 mb-2" style={{ fontSize: `${labelSettings.fontSize}px` }}>
+                    <div className="w-full flex justify-between font-mono font-bold text-black border-t border-b border-black py-2 mb-2" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
                        <div className="flex flex-col text-left">
-                         <span className="text-[12px] uppercase font-black">HT Dự Kiến</span>
+                         <span className="text-[14px] uppercase font-black">HT Dự Kiến</span>
                          <span>{plan.expectedCompletionTime ? format(plan.expectedCompletionTime, 'HH:mm dd/MM') : '--:--'}</span>
                        </div>
                        <div className="flex flex-col text-right">
-                         <span className="text-[12px] uppercase font-black">HT Thực Tế</span>
+                         <span className="text-[14px] uppercase font-black">HT Thực Tế</span>
                          <span>{format(lastTransaction.timestamp, 'HH:mm dd/MM')}</span>
                        </div>
                     </div>
@@ -796,6 +796,7 @@ export default function App() {
                   onPrint={handlePrint}
                   onCopy={copyToClipboard}
                   setDefectModal={setDefectModal}
+                  labelSettings={labelSettings}
                 />
               )}
               {currentView === 'inbound' && (
@@ -853,6 +854,7 @@ export default function App() {
                   onCopy={copyToClipboard}
                   onRollback={refreshData}
                   onManualInboundQR={(qr, stage) => onScanSuccess(qr, 'IN', stage)}
+                  labelSettings={labelSettings}
                 />
               )}
               {currentView === 'po' && (
@@ -1523,7 +1525,7 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
   );
 }
 
-function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRollback, onManualInboundQR }: { parts: Part[], labels: Transaction[], onPrint: (l: Transaction) => void, onCopy: (t: string) => void, onRollback: () => void, onManualInboundQR: (qrData: string, targetStageId: StageId) => void, key?: string }) {
+function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRollback, onManualInboundQR, labelSettings }: { parts: Part[], labels: Transaction[], onPrint: (l: Transaction) => void, onCopy: (t: string) => void, onRollback: () => void, onManualInboundQR: (qrData: string, targetStageId: StageId) => void, labelSettings: any, key?: string }) {
   const [labels, setLabels] = useState<Transaction[]>(initialLabels);
   const [scannedIds, setScannedIds] = useState<Set<string>>(new Set());
   const [printedIds, setPrintedIds] = useState<Set<string>>(new Set());
@@ -1907,7 +1909,7 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                       ? (selectedLabel.partName || parts.find(p => p.id === selectedLabel.partId)?.name || selectedLabel.partId)
                       : getProcessValue(selectedLabel.partName || parts.find(p => p.id === selectedLabel.partId)?.name, parts.find(p => p.id === selectedLabel.partId), selectedLabel.stageId, 'OUT')}
                   </h2>
-                  <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
+                  <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize + 4}px` }}>
                     Mã LK: {selectedLabel.type === 'DISPOSAL' 
                       ? selectedLabel.partId 
                       : getProcessValue(selectedLabel.partId, parts.find(p => p.id === selectedLabel.partId), selectedLabel.stageId, 'OUT')}
@@ -1946,6 +1948,26 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                     </div>
                   </div>
                 )}
+
+                {/* Optional Glazing Times */}
+                {(selectedLabel as any).planId && (() => {
+                  const plan = storageService.getGlazingPlans().find(p => p.id === (selectedLabel as any).planId);
+                  if (plan) {
+                    return (
+                      <div className="w-full flex justify-between font-mono font-bold text-black border-t border-b border-black py-2 mb-2" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
+                         <div className="flex flex-col text-left">
+                           <span className="text-[14px] uppercase font-black">HT Dự Kiến</span>
+                           <span>{plan.expectedCompletionTime ? format(plan.expectedCompletionTime, 'HH:mm dd/MM') : '--:--'}</span>
+                         </div>
+                         <div className="flex flex-col text-right">
+                           <span className="text-[14px] uppercase font-black">HT Thực Tế</span>
+                           <span>{format(selectedLabel.timestamp, 'HH:mm dd/MM')}</span>
+                         </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
 
                 {/* PO Details Section */}
                 <div className="mb-2 w-full space-y-1 text-[11px] font-black bg-transparent p-3 border-2 border-black rounded text-black">
@@ -2899,7 +2921,8 @@ function ProduceView({
   parts,
   onPrint,
   onCopy,
-  setDefectModal
+  setDefectModal,
+  labelSettings
 }: any) {
   const [sourceLocation, setSourceLocation] = useState<'IN' | 'OUT'>('IN');
   const [selectedPoId, setSelectedPoId] = useState<string>("");
@@ -3323,7 +3346,7 @@ function ProduceView({
                   <h2 className="text-4xl font-black uppercase tracking-tight leading-none mb-2 text-black">
                     {lastTransaction.partName || getProcessValue(parts.find(p => p.id === lastTransaction.partId)?.name, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
                   </h2>
-                  <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
+                  <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize + 4}px` }}>
                     Mã LK: {lastTransaction.partId}
                   </p>
                 </div>
@@ -3352,6 +3375,26 @@ function ProduceView({
                            ((lastTransaction.targetStageId || lastTransaction.qrData?.split('|')?.[5]) === 'DCLR' ? 'Lắp ráp (DCLR)' : 'HOÀN THÀNH')}</span>
                   </div>
                 </div>
+
+                {/* Optional Glazing Times */}
+                {(lastTransaction as any).planId && (() => {
+                  const plan = storageService.getGlazingPlans().find(p => p.id === (lastTransaction as any).planId);
+                  if (plan) {
+                    return (
+                      <div className="w-full flex justify-between font-mono font-bold text-black border-t border-b border-black py-2 mb-2" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
+                         <div className="flex flex-col text-left">
+                           <span className="text-[14px] uppercase font-black">HT Dự Kiến</span>
+                           <span>{plan.expectedCompletionTime ? format(plan.expectedCompletionTime, 'HH:mm dd/MM') : '--:--'}</span>
+                         </div>
+                         <div className="flex flex-col text-right">
+                           <span className="text-[14px] uppercase font-black">HT Thực Tế</span>
+                           <span>{format(lastTransaction.timestamp, 'HH:mm dd/MM')}</span>
+                         </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
 
                 {/* PO Details Section */}
                 <div className="mb-2 w-full space-y-1 text-[11px] font-black bg-transparent p-3 border-2 border-black rounded text-black">
