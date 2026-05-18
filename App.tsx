@@ -239,6 +239,12 @@ export default function App() {
       return;
     }
 
+    // Validate against current stock
+    if (quantity > currentStock + 0.0001) { // small epsilon for float precision
+      setError(`Số lượng xuất (${quantity}) vượt quá tồn kho hiện tại (${currentStock})`);
+      return;
+    }
+
     try {
       const tx = storageService.recordStageOut(selectedPart, selectedStage, quantity, sourceLocation, targetStageId, poId);
       setLastTransaction(tx);
@@ -247,6 +253,11 @@ export default function App() {
       const locationName = sourceLocation === 'IN' ? 'KHO_IN' : 'KHO_OUT';
       setSuccess(`Đã xuất từ ${locationName} ${quantity} ${partName} tại ${STAGES.find(s => s.id === selectedStage)?.name}`);
       setQuantity(0);
+      
+      // Force immediate update of state
+      const updatedInventory = storageService.getInventory();
+      setInventory(updatedInventory);
+      
       refreshData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Đã xảy ra lỗi');
@@ -3009,7 +3020,12 @@ function ProduceView({
     });
 
     if (nextAvailableStage) {
-      setTargetStageId(nextAvailableStage.id);
+      // Special case: Painting OUT goes directly to DCLR as requested by user
+      if (selectedStage === 'PAINTING' && sourceLocation === 'OUT') {
+        setTargetStageId('DCLR');
+      } else {
+        setTargetStageId(nextAvailableStage.id);
+      }
     } else {
       setTargetStageId('DCLR');
     }
@@ -3025,10 +3041,24 @@ function ProduceView({
     const effectiveId = storageService.getEffectivePartId(cleanId, selectedStage, selectedPoId);
     
     return inventory.reduce((sum: number, item: any) => {
-      if (item.partId.toUpperCase() === effectiveId.toUpperCase() && 
-          item.stageId === selectedStage && 
-          item.location === sourceLocation) {
-        return sum + item.quantity;
+      // Inventory entries may use either the catalog ID or the transformed ID
+      const itPartId = item.partId.toUpperCase();
+      const itOrigId = (item.originalPartId || '').toUpperCase();
+      const targetId = effectiveId.toUpperCase();
+      const sourceId = cleanId.toUpperCase();
+
+      if (item.stageId === selectedStage && item.location === sourceLocation) {
+        // If it was stored under the transformed name
+        if (itPartId === targetId) {
+          // AND it matches the original source part (to prevent cross-contamination of similar named transformations)
+          if (!itOrigId || itOrigId === sourceId) {
+             return sum + item.quantity;
+          }
+        }
+        // If it was stored under original name but we are looking for it
+        else if (itPartId === sourceId && targetId === sourceId) {
+          return sum + item.quantity;
+        }
       }
       return sum;
     }, 0);
