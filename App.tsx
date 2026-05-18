@@ -211,9 +211,43 @@ export default function App() {
   const [defectModal, setDefectModal] = useState<{ partId: string, stageId: StageId, poId?: string } | null>(null);
 
   useEffect(() => {
+    // Migration: ensure transformations use part IDs instead of part names
+    const existingParts = storageService.getParts();
+    const transformations = storageService.getTransformations();
+    let migrated = false;
+    const stdSearch = (val: string) => val ? val.toUpperCase().normalize('NFC').trim() : '';
+
+    const newTransformations = transformations.map(t => {
+      let finalSource = t.sourcePartId;
+      let finalTarget = t.targetPartId;
+      
+      const ptSrc = existingParts.find(p => p.id === t.sourcePartId);
+      if (!ptSrc) {
+        const ptSrcByName = existingParts.find(p => stdSearch(p.name) === stdSearch(t.sourcePartId));
+        if (ptSrcByName) {
+          finalSource = ptSrcByName.id;
+          migrated = true;
+        }
+      }
+
+      const ptTgt = existingParts.find(p => p.id === t.targetPartId);
+      if (!ptTgt) {
+        const ptTgtByName = existingParts.find(p => stdSearch(p.name) === stdSearch(t.targetPartId));
+        if (ptTgtByName) {
+          finalTarget = ptTgtByName.id;
+          migrated = true;
+        }
+      }
+
+      return { ...t, sourcePartId: finalSource, targetPartId: finalTarget };
+    });
+
+    if (migrated) {
+      storageService.saveTransformations(newTransformations);
+    }
+    
     // Initialize with some dummy data if empty
     const existing = storageService.getInventory();
-    const existingParts = storageService.getParts();
     
     if (existingParts.length > 0 && !selectedPart) {
       setSelectedPart(existingParts[0].id);
@@ -2497,8 +2531,9 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                         {inventory
                           .filter(item => item.stageId === selectedStageDetail && item.location === 'IN' && item.quantity > 0)
                           .filter(item => {
-                            const part = parts.find(p => p.id === item.partId);
-                            const originalPart = item.originalPartId ? parts.find(p => p.id === item.originalPartId) : null;
+                            const partStr = item.partId;
+                            const part = parts.find(p => p.id === partStr || p.name === partStr);
+                            const originalPart = item.originalPartId ? parts.find(p => p.id === item.originalPartId || p.name === item.originalPartId) : null;
                             const searchLower = searchTerm.toLowerCase();
                             const matchesSearch = item.partId.toLowerCase().includes(searchLower) || 
                                                  (part && part.name.toLowerCase().includes(searchLower)) ||
@@ -2507,8 +2542,9 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                             return matchesSearch;
                           })
                           .map((item, idx) => {
-                            const part = parts.find(p => p.id === item.partId);
-                            const originalPart = item.originalPartId ? parts.find(p => p.id === item.originalPartId) : null;
+                            const partStr = item.partId;
+                            const part = parts.find(p => p.id === partStr || p.name === partStr);
+                            const originalPart = item.originalPartId ? parts.find(p => p.id === item.originalPartId || p.name === item.originalPartId) : null;
                             const qty = item.quantity;
                             const displayQty = (part?.level === 3 || originalPart?.level === 3) ? qty.toFixed(4) : qty;
                             const displayUnit = part?.unit || originalPart?.unit || 'Bộ';
@@ -2516,12 +2552,12 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                             return (
                               <tr key={`${item.partId}-${item.originalPartId}-${idx}`} className="hover:bg-white transition-colors">
                                 <td className="p-4">
-                                  <div className="font-bold text-base">{getProcessValue(item.partId, part, selectedStageDetail, 'IN')}</div>
+                                  <div className="font-bold text-base">{getProcessValue(part?.name || item.partId, part, selectedStageDetail, 'IN')}</div>
                                   <div className="text-xs opacity-50 flex flex-wrap gap-2 items-center">
-                                    {getProcessValue(part?.name || item.partId, part, selectedStageDetail, 'IN')}
+                                    {getProcessValue(part?.id || item.partId, part, selectedStageDetail, 'IN')}
                                     {item.originalPartId && (
                                       <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-medium border border-blue-100">
-                                        Nguồn: {originalPart?.name || item.originalPartId}
+                                        Nguồn: {originalPart?.name || item.originalPartId} ({originalPart?.id || item.originalPartId})
                                       </span>
                                     )}
                                   </div>
@@ -2600,8 +2636,9 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                         {inventory
                           .filter(item => item.stageId === selectedStageDetail && item.location === 'OUT' && item.quantity > 0)
                           .filter(item => {
-                            const part = parts.find(p => p.id === item.partId);
-                            const originalPart = item.originalPartId ? parts.find(p => p.id === item.originalPartId) : null;
+                            const partStr = item.partId;
+                            const part = parts.find(p => p.id === partStr || p.name === partStr);
+                            const originalPart = item.originalPartId ? parts.find(p => p.id === item.originalPartId || p.name === item.originalPartId) : null;
                             const searchLower = searchTerm.toLowerCase();
                             const matchesSearch = item.partId.toLowerCase().includes(searchLower) || 
                                                  (part && part.name.toLowerCase().includes(searchLower)) ||
@@ -2610,8 +2647,9 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                             return matchesSearch;
                           })
                           .map((item, idx) => {
-                            const part = parts.find(p => p.id === item.partId);
-                            const originalPart = item.originalPartId ? parts.find(p => p.id === item.originalPartId) : null;
+                            const partStr = item.partId;
+                            const part = parts.find(p => p.id === partStr || p.name === partStr);
+                            const originalPart = item.originalPartId ? parts.find(p => p.id === item.originalPartId || p.name === item.originalPartId) : null;
                             const qty = item.quantity;
                             const displayQty = (part?.level === 3 || originalPart?.level === 3) ? qty.toFixed(4) : qty;
                             const displayUnit = part?.unit || originalPart?.unit || 'Bộ';
@@ -2619,12 +2657,12 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                             return (
                               <tr key={`${item.partId}-${item.originalPartId}-${idx}`} className="hover:bg-white transition-colors">
                                 <td className="p-4">
-                                  <div className="font-bold text-base">{getProcessValue(item.partId, part, selectedStageDetail, 'OUT')}</div>
+                                  <div className="font-bold text-base">{getProcessValue(part?.name || item.partId, part, selectedStageDetail, 'OUT')}</div>
                                   <div className="text-xs opacity-50 flex flex-wrap gap-2 items-center">
-                                    {getProcessValue(part?.name || item.partId, part, selectedStageDetail, 'OUT')}
+                                    {getProcessValue(part?.id || item.partId, part, selectedStageDetail, 'OUT')}
                                     {item.originalPartId && (
                                       <span className="px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded text-[10px] font-medium border border-orange-100">
-                                        Nguồn: {originalPart?.name || item.originalPartId}
+                                        Nguồn: {originalPart?.name || item.originalPartId} ({originalPart?.id || item.originalPartId})
                                       </span>
                                     )}
                                   </div>
@@ -2703,8 +2741,9 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                         {inventory
                           .filter(item => item.stageId === selectedStageDetail && item.location === 'DEFECT' && item.quantity > 0)
                           .filter(item => {
-                            const part = parts.find(p => p.id === item.partId);
-                            const originalPart = item.originalPartId ? parts.find(p => p.id === item.originalPartId) : null;
+                            const partStr = item.partId;
+                            const part = parts.find(p => p.id === partStr || p.name === partStr);
+                            const originalPart = item.originalPartId ? parts.find(p => p.id === item.originalPartId || p.name === item.originalPartId) : null;
                             const searchLower = searchTerm.toLowerCase();
                             const matchesSearch = item.partId.toLowerCase().includes(searchLower) || 
                                                  (part && part.name.toLowerCase().includes(searchLower)) ||
@@ -2713,8 +2752,9 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                             return matchesSearch;
                           })
                           .map((item, idx) => {
-                            const part = parts.find(p => p.id === item.partId);
-                            const originalPart = item.originalPartId ? parts.find(p => p.id === item.originalPartId) : null;
+                            const partStr = item.partId;
+                            const part = parts.find(p => p.id === partStr || p.name === partStr);
+                            const originalPart = item.originalPartId ? parts.find(p => p.id === item.originalPartId || p.name === item.originalPartId) : null;
                             const qty = item.quantity;
                             const displayQty = (part?.level === 3 || originalPart?.level === 3) ? qty.toFixed(4) : qty;
                             const displayUnit = part?.unit || originalPart?.unit || 'Bộ';
@@ -2722,12 +2762,12 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                             return (
                               <tr key={`${item.partId}-${item.originalPartId}-${idx}`} className="hover:bg-white transition-colors">
                                 <td className="p-4">
-                                  <div className="font-bold text-base text-gray-900">{getProcessValue(item.partId, part, selectedStageDetail || STAGES[0].id, 'OUT')}</div>
+                                  <div className="font-bold text-base text-gray-900">{getProcessValue(part?.name || item.partId, part, selectedStageDetail || STAGES[0].id, 'OUT')}</div>
                                   <div className="text-xs opacity-50 text-gray-900 flex flex-wrap gap-2 items-center">
-                                    {getProcessValue(part?.name || item.partId, part, selectedStageDetail || STAGES[0].id, 'OUT')}
+                                    {getProcessValue(part?.id || item.partId, part, selectedStageDetail || STAGES[0].id, 'OUT')}
                                     {item.originalPartId && (
                                       <span className="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[10px] font-medium border border-red-200">
-                                        Nguồn: {originalPart?.name || item.originalPartId}
+                                        Nguồn: {originalPart?.name || item.originalPartId} ({originalPart?.id || item.originalPartId})
                                       </span>
                                     )}
                                   </div>
@@ -3043,8 +3083,10 @@ function ProduceView({
       if (item.stageId === selectedStage && item.location === sourceLocation) {
         const itPartId = item.partId.toUpperCase();
         const targetId = effectiveId.toUpperCase();
+        const partInCatalog = parts.find((p: any) => p.id.toUpperCase() === targetId);
+        const targetName = partInCatalog ? partInCatalog.name.toUpperCase() : '';
 
-        if (itPartId === targetId) {
+        if (itPartId === targetId || (targetName && itPartId === targetName)) {
           return sum + item.quantity;
         }
       }
@@ -6854,9 +6896,20 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                             if (found) stageId = found.id;
                           }
 
+                          let finalSource = source;
+                          let finalTarget = target;
+                          const normSource = source.toUpperCase().normalize('NFC').trim();
+                          const normTarget = target.toUpperCase().normalize('NFC').trim();
+
+                          const ptSrc = parts.find(p => p.id.toUpperCase().normalize('NFC').trim() === normSource || p.name.toUpperCase().normalize('NFC').trim() === normSource);
+                          if (ptSrc) finalSource = ptSrc.id;
+
+                          const ptTgt = parts.find(p => p.id.toUpperCase().normalize('NFC').trim() === normTarget || p.name.toUpperCase().normalize('NFC').trim() === normTarget);
+                          if (ptTgt) finalTarget = ptTgt.id;
+
                           return {
-                            sourcePartId: source, // Keep case but will handle insensitively in storage
-                            targetPartId: target,
+                            sourcePartId: finalSource, // Keep case but will handle insensitively in storage
+                            targetPartId: finalTarget,
                             targetStageId: stageId,
                             applicableModel: applicableModel
                           };
@@ -6902,11 +6955,14 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                       <td colSpan={6} className="p-20 text-center text-gray-400 italic">Chưa có quy tắc chuyển đổi nào.</td>
                     </tr>
                   ) : (
-                    storageService.getTransformations().map((t, i) => (
+                    storageService.getTransformations().map((t, i) => {
+                      const matchSource = parts.find(p => p.id.toUpperCase() === t.sourcePartId.toUpperCase() || p.name.toUpperCase() === t.sourcePartId.toUpperCase());
+                      const matchTarget = parts.find(p => p.id.toUpperCase() === t.targetPartId.toUpperCase() || p.name.toUpperCase() === t.targetPartId.toUpperCase());
+                      return (
                       <tr key={i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                         <td className="p-6">
-                           <div className="font-bold">{parts.find(p => p.id === t.sourcePartId)?.name || t.sourcePartId}</div>
-                           <div className="text-xs font-mono opacity-50">{t.sourcePartId}</div>
+                           <div className="font-bold">{matchSource?.name || t.sourcePartId}</div>
+                           <div className="text-xs font-mono opacity-50">{matchSource?.id || t.sourcePartId}</div>
                         </td>
                         <td className="p-6 font-mono text-sm text-center">
                           {t.applicableModel ? (
@@ -6919,8 +6975,8 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                            <ArrowRight size={20} className="mx-auto" />
                         </td>
                         <td className="p-6">
-                           <div className="font-bold">{parts.find(p => p.id === t.targetPartId)?.name || t.targetPartId}</div>
-                           <div className="text-xs font-mono opacity-50">{t.targetPartId}</div>
+                           <div className="font-bold">{matchTarget?.name || t.targetPartId}</div>
+                           <div className="text-xs font-mono opacity-50">{matchTarget?.id || t.targetPartId}</div>
                         </td>
                         <td className="p-6">
                            <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-[10px] font-bold uppercase">
@@ -6941,7 +6997,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                            </button>
                         </td>
                       </tr>
-                    ))
+                    )})
                   )}
                 </tbody>
               </table>
