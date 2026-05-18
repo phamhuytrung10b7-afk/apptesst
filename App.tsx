@@ -6801,13 +6801,13 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="p-6 text-xs font-bold uppercase opacity-50">Linh kiện Nguồn (Từ Chấn/Dập)</th>
+                    <th className="p-6 text-xs font-bold uppercase opacity-50">Linh kiện Nguồn (Gốc)</th>
                     <th className="p-6 text-xs font-bold uppercase opacity-50">Model áp dụng</th>
                     <th className="p-6 text-xs font-bold uppercase opacity-50 text-center">
                       <ArrowRight size={16} className="mx-auto" />
                     </th>
-                    <th className="p-6 text-xs font-bold uppercase opacity-50">Tên mới (Tại Sơn)</th>
-                    <th className="p-6 text-xs font-bold uppercase opacity-50">Công đoạn áp dụng</th>
+                    <th className="p-6 text-xs font-bold uppercase opacity-50">Tên mới (Đích)</th>
+                    <th className="p-6 text-xs font-bold uppercase opacity-50">Công đoạn Đích</th>
                     <th className="p-6 text-xs font-bold uppercase opacity-50 text-right">Thao tác</th>
                   </tr>
                 </thead>

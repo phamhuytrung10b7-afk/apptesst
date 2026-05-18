@@ -432,36 +432,61 @@ export const storageService = {
   getEffectivePartId(partId: string, stageId: StageId, poId?: string): string {
     if (!partId) return '';
     
-    // 1. Clean the incoming partId
-    // Standardize: Uppercase, trim, remove stage suffixes like " - CD", " (BD)", etc.
-    const normalize = (s: string) => {
-      if (!s) return '';
-      let res = s.split(' - ')[0].trim().toUpperCase();
-      // Remove common Vietnamese prefixes
-      // This handles the user's issue where "Tấm Nắp" needs to match "Nắp"
-      res = res.replace(/^(TẤM|CHI TIẾT|PHỤ TÙNG|BẢN)\s+/g, '');
-      // Remove stage suffixes in parentheses
-      res = res.replace(/\s*\([^)]*\)$/g, '');
-      return res;
-    };
-
-    const cleanId = normalize(partId);
     const transformationsList = this.getTransformations();
-    
-    // Filter by target stage
+    // Lọc theo công đoạn đích
     const stageTransformations = transformationsList.filter(t => t.targetStageId === stageId);
     if (stageTransformations.length === 0) return partId;
 
-    // 2. Find candidates using normalized IDs
+    // 1. Chuẩn hóa nâng cao: Giữ nguyên tiếng Việt, chỉ xóa tiền tố nhiễu và hậu tố công đoạn
+    const normalize = (s: string) => {
+      if (!s) return '';
+      // Tách bỏ hậu tố công đoạn (ví dụ: " - CD", " (BD)")
+      let res = s.split(' - ')[0].split('(')[0].trim().toUpperCase();
+      // Xóa các tiền tố phổ biến
+      res = res.replace(/^(TẤM|CHI TIẾT|PHỤ TÙNG|BẢN|KHO|THÀNH PHẨM|L-)\s+/g, '');
+      return res;
+    };
+
+    const cleanInput = normalize(partId);
+    const parts = this.getParts();
+    const inputPart = parts.find(p => p.id === partId || p.name === partId);
+    const inputNameNormalized = inputPart ? normalize(inputPart.name) : '';
+    
+    // Tìm các đoạn mã (ví dụ SHA76222KL) trong tên linh kiện
+    const extractCodes = (s: string) => {
+      // Tìm các chuỗi chữ-số có độ dài từ 5 trở lên (thường là mã cốt)
+      return s.match(/[A-Z0-9]{5,}/g) || [];
+    };
+    const inputCodes = extractCodes(cleanInput);
+
+    // 2. Tìm kiếm ứng viên dựa trên nhiều chiến lược
     let candidates = stageTransformations.filter(t => {
       const tSourceNormalized = normalize(t.sourcePartId);
       
-      // Exact match after normalization
-      if (cleanId === tSourceNormalized) return true;
+      // A. Khớp chính xác sau khi chuẩn hóa
+      if (cleanInput === tSourceNormalized) return true;
+      if (inputNameNormalized && inputNameNormalized === tSourceNormalized) return true;
 
-      // Partial match: If one is a substring of the other (helpful for long names)
-      if (cleanId.length > 5 && tSourceNormalized.length > 5) {
-        if (cleanId.includes(tSourceNormalized) || tSourceNormalized.includes(cleanId)) return true;
+      // B. Khớp dựa trên mã cốt (SHA...)
+      const sourceCodes = extractCodes(tSourceNormalized);
+      for (const code of inputCodes) {
+        if (tSourceNormalized.includes(code)) return true;
+      }
+      for (const code of sourceCodes) {
+        if (cleanInput.includes(code)) return true;
+      }
+
+      // C. Khớp một phần (Nếu một cái là con của cái kia)
+      if (cleanInput.length > 8 && tSourceNormalized.length > 8) {
+        if (cleanInput.includes(tSourceNormalized) || tSourceNormalized.includes(cleanInput)) return true;
+      }
+
+      // D. Khớp thông qua danh mục linh kiện (Parts Catalog)
+      const sourceInCatalog = parts.find(p => p.id === t.sourcePartId || p.name === t.sourcePartId);
+      if (sourceInCatalog) {
+        const sIdNorm = normalize(sourceInCatalog.id);
+        const sNameNorm = normalize(sourceInCatalog.name);
+        if (sIdNorm === cleanInput || sNameNorm === inputNameNormalized) return true;
       }
 
       return false;
@@ -469,7 +494,7 @@ export const storageService = {
 
     if (candidates.length === 0) return partId;
 
-    // 3. Resolve among candidates (Priority: Model-specific > Generic)
+    // 3. Ưu tiên theo Model hoặc mặc định
     let bestMatch = candidates[0];
     if (poId) {
       const orders = this.getProductionOrders();
@@ -479,14 +504,15 @@ export const storageService = {
       
       if (modelPo) {
         const modelId = modelPo.partId.toUpperCase();
+        // Ưu tiên khớp chính xác Model
         const modelMatch = candidates.find(t => 
           t.applicableModel && 
-          (modelId.includes(t.applicableModel.trim().toUpperCase()))
+          (modelId === t.applicableModel.trim().toUpperCase() || modelId.includes(t.applicableModel.trim().toUpperCase()))
         );
         if (modelMatch) bestMatch = modelMatch;
       }
     } else {
-      // If no PO, prefer generic one (no model)
+      // Nếu không có PO, ưu tiên bản ghi không chỉ định Model (generic)
       const generic = candidates.find(t => !t.applicableModel || t.applicableModel.trim() === '');
       if (generic) bestMatch = generic;
     }
