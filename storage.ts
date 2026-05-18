@@ -437,64 +437,39 @@ export const storageService = {
     const stageTransformations = transformationsList.filter(t => t.targetStageId === stageId);
     if (stageTransformations.length === 0) return partId;
 
-    // 1. Chuẩn hóa nâng cao: Giữ nguyên tiếng Việt, chỉ xóa tiền tố nhiễu và hậu tố công đoạn
-    const normalize = (s: string) => {
+    // Chuẩn hóa chuỗi (NFC) để xử lý tiếng Việt đồng nhất và xóa khoảng trắng dư thừa
+    const std = (s: string) => {
       if (!s) return '';
-      // Tách bỏ hậu tố công đoạn (ví dụ: " - CD", " (BD)")
-      let res = s.split(' - ')[0].split('(')[0].trim().toUpperCase();
-      // Xóa các tiền tố phổ biến
-      res = res.replace(/^(TẤM|CHI TIẾT|PHỤ TÙNG|BẢN|KHO|THÀNH PHẨM|L-)\s+/g, '');
-      return res;
+      return s.normalize('NFC').trim();
     };
 
-    const cleanInput = normalize(partId);
-    const parts = this.getParts();
-    const inputPart = parts.find(p => p.id === partId || p.name === partId);
-    const inputNameNormalized = inputPart ? normalize(inputPart.name) : '';
-    
-    // Tìm các đoạn mã (ví dụ SHA76222KL) trong tên linh kiện
-    const extractCodes = (s: string) => {
-      // Tìm các chuỗi chữ-số có độ dài từ 5 trở lên (thường là mã cốt)
-      return s.match(/[A-Z0-9]{5,}/g) || [];
-    };
-    const inputCodes = extractCodes(cleanInput);
+    const targetPartId = std(partId);
+    const targetPartIdUpper = targetPartId.toUpperCase();
 
-    // 2. Tìm kiếm ứng viên dựa trên nhiều chiến lược
+    // 1. Tìm khớp chính xác (Ưu tiên hàng đầu)
     let candidates = stageTransformations.filter(t => {
-      const tSourceNormalized = normalize(t.sourcePartId);
-      
-      // A. Khớp chính xác sau khi chuẩn hóa
-      if (cleanInput === tSourceNormalized) return true;
-      if (inputNameNormalized && inputNameNormalized === tSourceNormalized) return true;
-
-      // B. Khớp dựa trên mã cốt (SHA...)
-      const sourceCodes = extractCodes(tSourceNormalized);
-      for (const code of inputCodes) {
-        if (tSourceNormalized.includes(code)) return true;
-      }
-      for (const code of sourceCodes) {
-        if (cleanInput.includes(code)) return true;
-      }
-
-      // C. Khớp một phần (Nếu một cái là con của cái kia)
-      if (cleanInput.length > 8 && tSourceNormalized.length > 8) {
-        if (cleanInput.includes(tSourceNormalized) || tSourceNormalized.includes(cleanInput)) return true;
-      }
-
-      // D. Khớp thông qua danh mục linh kiện (Parts Catalog)
-      const sourceInCatalog = parts.find(p => p.id === t.sourcePartId || p.name === t.sourcePartId);
-      if (sourceInCatalog) {
-        const sIdNorm = normalize(sourceInCatalog.id);
-        const sNameNorm = normalize(sourceInCatalog.name);
-        if (sIdNorm === cleanInput || sNameNorm === inputNameNormalized) return true;
-      }
-
-      return false;
+      const sId = std(t.sourcePartId);
+      return sId === targetPartId || sId.toUpperCase() === targetPartIdUpper;
     });
+
+    // 2. Nếu không khớp chính xác, thử chuẩn hóa bằng cách bỏ tiền tố "Tấm", "Chi tiết"...
+    if (candidates.length === 0) {
+      const normalize = (s: string) => {
+        let res = std(s).toUpperCase();
+        // Bỏ hậu tố công đoạn nếu có
+        res = res.split(' - ')[0].split('(')[0].trim();
+        // Bỏ tiền tố nhiễu
+        res = res.replace(/^(TẤM|CHI TIẾT|PHỤ TÙNG|BẢN|KHO|THÀNH PHẨM|L-)\s+/g, '');
+        return res;
+      };
+
+      const normInput = normalize(targetPartId);
+      candidates = stageTransformations.filter(t => normalize(t.sourcePartId) === normInput);
+    }
 
     if (candidates.length === 0) return partId;
 
-    // 3. Ưu tiên theo Model hoặc mặc định
+    // 3. Quyết định ứng viên (Ưu tiên theo Model nếu có nhiều lựa chọn)
     let bestMatch = candidates[0];
     if (poId) {
       const orders = this.getProductionOrders();
@@ -504,7 +479,6 @@ export const storageService = {
       
       if (modelPo) {
         const modelId = modelPo.partId.toUpperCase();
-        // Ưu tiên khớp chính xác Model
         const modelMatch = candidates.find(t => 
           t.applicableModel && 
           (modelId === t.applicableModel.trim().toUpperCase() || modelId.includes(t.applicableModel.trim().toUpperCase()))
@@ -512,7 +486,6 @@ export const storageService = {
         if (modelMatch) bestMatch = modelMatch;
       }
     } else {
-      // Nếu không có PO, ưu tiên bản ghi không chỉ định Model (generic)
       const generic = candidates.find(t => !t.applicableModel || t.applicableModel.trim() === '');
       if (generic) bestMatch = generic;
     }
@@ -520,47 +493,70 @@ export const storageService = {
     return bestMatch.targetPartId;
   },
 
-  updateInventory(partId: string, stageId: StageId, location: 'IN' | 'OUT' | 'DEFECT', delta: number) {
+  updateInventory(partId: string, stageId: StageId, location: 'IN' | 'OUT' | 'DEFECT', delta: number, originalPartId?: string) {
     const inventory = this.getInventory();
-    // Clean partId
-    const cleanId = partId.split(' - ')[0].trim().toUpperCase();
+    
+    // So khớp chính xác giá trị gốc
     const index = inventory.findIndex(
-      (item) => item.partId.toUpperCase() === cleanId && item.stageId === stageId && item.location === location
+      (item) => 
+        item.partId === partId && 
+        item.stageId === stageId && 
+        item.location === location &&
+        item.originalPartId === originalPartId
     );
 
     if (index >= 0) {
       inventory[index].quantity += delta;
-      // Precision handling: round to 4 decimal places to avoid floating point issues
       inventory[index].quantity = Math.round(inventory[index].quantity * 10000) / 10000;
       if (inventory[index].quantity < 0) inventory[index].quantity = 0;
     } else {
-      inventory.push({ partId: cleanId, stageId, location, quantity: Math.max(0, delta) });
+      inventory.push({ 
+        partId, 
+        originalPartId,
+        stageId, 
+        location, 
+        quantity: Math.max(0, delta) 
+      });
     }
 
     this.saveInventory(inventory);
   },
 
-  setInventoryQuantity(partId: string, stageId: StageId, location: 'IN' | 'OUT' | 'DEFECT', quantity: number) {
+  setInventoryQuantity(partId: string, stageId: StageId, location: 'IN' | 'OUT' | 'DEFECT', quantity: number, originalPartId?: string) {
     const inventory = this.getInventory();
-    const cleanId = partId.split(' - ')[0].trim().toUpperCase();
+    
     const index = inventory.findIndex(
-      (item) => item.partId.toUpperCase() === cleanId && item.stageId === stageId && item.location === location
+      (item) => 
+        item.partId === partId && 
+        item.stageId === stageId && 
+        item.location === location &&
+        item.originalPartId === originalPartId
     );
 
     if (index >= 0) {
       inventory[index].quantity = Math.max(0, quantity);
     } else {
-      inventory.push({ partId: cleanId, stageId, location, quantity: Math.max(0, quantity) });
+      inventory.push({ 
+        partId, 
+        originalPartId,
+        stageId, 
+        location, 
+        quantity: Math.max(0, quantity) 
+      });
     }
 
     this.saveInventory(inventory);
   },
 
-  deleteInventoryItem(partId: string, stageId: StageId, location: 'IN' | 'OUT' | 'DEFECT') {
+  deleteInventoryItem(partId: string, stageId: StageId, location: 'IN' | 'OUT' | 'DEFECT', originalPartId?: string) {
     const inventory = this.getInventory();
-    const cleanId = partId.split(' - ')[0].trim().toUpperCase();
     const filtered = inventory.filter(
-      (item) => !(item.partId.toUpperCase() === cleanId && item.stageId === stageId && item.location === location)
+      (item) => !(
+        item.partId === partId && 
+        item.stageId === stageId && 
+        item.location === location &&
+        item.originalPartId === originalPartId
+      )
     );
     this.saveInventory(filtered);
   },
@@ -671,127 +667,94 @@ export const storageService = {
     // Validation: Check if source location has enough quantity
     const inventory = this.getInventory();
     const effectiveId = this.getEffectivePartId(cleanId, stageId, linkedPoId);
-    const stock = inventory.find(
+    
+    const matchingStocks = inventory.filter(
       (item) => item.partId.toUpperCase() === effectiveId.toUpperCase() && item.stageId === stageId && item.location === sourceLocation
     );
+    const totalStock = matchingStocks.reduce((sum, item) => sum + item.quantity, 0);
 
-    if (!stock || stock.quantity < quantity) {
+    if (totalStock < quantity) {
       const part = this.getParts().find(p => p.id.toUpperCase() === effectiveId.toUpperCase());
-      throw new Error(`Lỗi: Số lượng xuất (${quantity}) lớn hơn tồn kho ${part?.name || effectiveId} tại ${STAGES.find(s => s.id === stageId)?.name}_${sourceLocation} (${stock?.quantity || 0})`);
+      throw new Error(`Lỗi: Số lượng xuất (${quantity}) lớn hơn tổng tồn kho ${part?.name || effectiveId} tại ${STAGES.find(s => s.id === stageId)?.name}_${sourceLocation} (Hiện có ${totalStock})`);
     }
 
-    // 0. Update Production Order progress if producing (IN -> OUT)
-    const isGlazingStage = stageId === 'GLAZING';
+    // 0. Update Production Order progress
     const isPaintingExempt = stageId === 'PAINTING' && sourceLocation === 'IN';
-
-    if (sourceLocation === 'IN') {
-      // allow manual processing without PO if user forces it 
-
-      if (poIndex !== -1) {
-        const po = pos[poIndex];
-        if (po.producedQuantity + quantity > po.targetQuantity && !isPaintingExempt) {
-          throw new Error(`Lỗi: Số lượng sản xuất (${po.producedQuantity + quantity}) vượt quá mục tiêu PO (${po.targetQuantity}) cho ${cleanId} tại ${stageId}`);
-        }
-        
-        po.producedQuantity += quantity;
-        const isProduced = po.producedQuantity >= po.targetQuantity;
-        const isExported = (po.exportedQuantity || 0) >= po.targetQuantity;
-        po.status = (isProduced && isExported) ? 'COMPLETED' : 'IN_PROGRESS';
-        linkedPoId = po.id;
-
-        // Check if all sub-POs for this master are completed
-        if (po.masterPoId) {
-          const masterPo = pos.find(p => p.id === po.masterPoId);
-          if (masterPo) {
-            const otherSubs = pos.filter(p => p.masterPoId === po.masterPoId && p.id !== po.id);
-            const allSubsCompleted = po.status === 'COMPLETED' && otherSubs.every(s => s.status === 'COMPLETED');
-            if (allSubsCompleted) {
-              masterPo.status = 'COMPLETED';
-              // masterPo.producedQuantity = masterPo.targetQuantity; 
-            } else {
-              masterPo.status = 'IN_PROGRESS';
-            }
-          }
-        }
-
-        this.saveProductionOrders(pos);
+    if (sourceLocation === 'IN' && poIndex !== -1) {
+      const po = pos[poIndex];
+      if (po.producedQuantity + quantity > po.targetQuantity && !isPaintingExempt) {
+        throw new Error(`Lỗi: Số lượng sản xuất (${po.producedQuantity + quantity}) vượt quá mục tiêu PO (${po.targetQuantity}) cho ${cleanId} tại ${stageId}`);
       }
-    } else if (sourceLocation === 'OUT') {
-      // EXPORTING: Update exportedQuantity
-      const pos = this.getProductionOrders();
-      const poIndex = poId ? pos.findIndex(p => p.id === poId) : pos.findIndex(p => p.partId === cleanId && p.stageId === stageId && p.status !== 'COMPLETED');
-      
-      if (poIndex !== -1) {
-        const po = pos[poIndex];
-        // Relax check to allow exporting manually imported stock
-        // if ((po.exportedQuantity || 0) + quantity > po.producedQuantity) {
-        //   throw new Error(`Lỗi: Số lượng xuất (${(po.exportedQuantity || 0) + quantity}) vượt quá số lượng đã sản xuất (${po.producedQuantity}) cho PO ${po.id}`);
-        // }
-        
-        // If we export stock that was manually imported, auto-adjust the producedQuantity 
-        // to reflect reality, since the stock in OUT must have been "produced" somehow.
-        if ((po.exportedQuantity || 0) + quantity > po.producedQuantity) {
-           po.producedQuantity = (po.exportedQuantity || 0) + quantity;
-        }
-        po.exportedQuantity = (po.exportedQuantity || 0) + quantity;
-        
-        // PO is completed only if both production and export are done
-        const isProduced = po.producedQuantity >= po.targetQuantity;
-        const isExported = po.exportedQuantity >= po.targetQuantity;
-        const newStatus = (isProduced && isExported) ? 'COMPLETED' : 'IN_PROGRESS';
-        if (newStatus === 'COMPLETED' && po.status !== 'COMPLETED') {
-          po.completedAt = Date.now();
-        }
-        po.status = newStatus;
-        
-        // Update master PO status if needed
-        if (po.masterPoId) {
-          const masterPo = pos.find(p => p.id === po.masterPoId);
-          if (masterPo) {
-            const allSubPos = pos.filter(p => p.masterPoId === po.masterPoId);
-            const allCompleted = allSubPos.every(p => p.status === 'COMPLETED');
-            if (allCompleted) {
-              if (masterPo.status !== 'COMPLETED') masterPo.completedAt = Date.now();
-              masterPo.status = 'COMPLETED';
-            } else {
-              masterPo.status = 'IN_PROGRESS';
-            }
-          }
-        }
+      po.producedQuantity += quantity;
+      const isProduced = po.producedQuantity >= po.targetQuantity;
+      const isExported = (po.exportedQuantity || 0) >= po.targetQuantity;
+      po.status = (isProduced && isExported) ? 'COMPLETED' : 'IN_PROGRESS';
+      linkedPoId = po.id;
 
-        this.saveProductionOrders(pos);
+      if (po.masterPoId) {
+        const masterPo = pos.find(p => p.id === po.masterPoId);
+        if (masterPo) {
+          const allSubsCompleted = po.status === 'COMPLETED' && pos.filter(p => p.masterPoId === po.masterPoId && p.id !== po.id).every(s => s.status === 'COMPLETED');
+          masterPo.status = allSubsCompleted ? 'COMPLETED' : 'IN_PROGRESS';
+        }
       }
+      this.saveProductionOrders(pos);
+    } else if (sourceLocation === 'OUT' && poIndex !== -1) {
+      const po = pos[poIndex];
+      if ((po.exportedQuantity || 0) + quantity > po.producedQuantity) {
+        po.producedQuantity = (po.exportedQuantity || 0) + quantity;
+      }
+      po.exportedQuantity = (po.exportedQuantity || 0) + quantity;
+      const isProduced = po.producedQuantity >= po.targetQuantity;
+      const isExported = po.exportedQuantity >= po.targetQuantity;
+      if (isProduced && isExported && po.status !== 'COMPLETED') po.completedAt = Date.now();
+      po.status = (isProduced && isExported) ? 'COMPLETED' : 'IN_PROGRESS';
+
+      if (po.masterPoId) {
+        const masterPo = pos.find(p => p.id === po.masterPoId);
+        if (masterPo && pos.filter(p => p.masterPoId === po.masterPoId).every(p => p.status === 'COMPLETED')) {
+          if (masterPo.status !== 'COMPLETED') masterPo.completedAt = Date.now();
+          masterPo.status = 'COMPLETED';
+        }
+      }
+      this.saveProductionOrders(pos);
     }
 
     // 1. Inventory movement
+    let remainingToDeduct = quantity;
+    let lastOriginalId: string | undefined;
+    matchingStocks.sort((a, b) => (a.originalPartId || '').localeCompare(b.originalPartId || ''));
+
     if (sourceLocation === 'IN') {
-      // Move IN -> OUT (Finish production)
-      // Apply BOM deduction before updating inventory
-      // We use cleanId for BOM lookup as the BOM schema uses the original IDs
-      this.applyBOMDeduction(cleanId, stageId, quantity, poId);
-      
-      this.updateInventory(effectiveId, stageId, 'IN', -quantity);
-      this.updateInventory(effectiveId, stageId, 'OUT', quantity);
+      this.applyBOMDeduction(cleanId, stageId, quantity, linkedPoId);
+      for (const stock of matchingStocks) {
+        if (remainingToDeduct <= 0) break;
+        const toTake = Math.min(stock.quantity, remainingToDeduct);
+        this.updateInventory(effectiveId, stageId, 'IN', -toTake, stock.originalPartId);
+        this.updateInventory(effectiveId, stageId, 'OUT', toTake, stock.originalPartId);
+        lastOriginalId = stock.originalPartId;
+        remainingToDeduct -= toTake;
+      }
     } else {
-      // Deduct from OUT (Export already finished items)
-      this.updateInventory(effectiveId, stageId, 'OUT', -quantity);
+      for (const stock of matchingStocks) {
+        if (remainingToDeduct <= 0) break;
+        const toTake = Math.min(stock.quantity, remainingToDeduct);
+        this.updateInventory(effectiveId, stageId, 'OUT', -toTake, stock.originalPartId);
+        lastOriginalId = stock.originalPartId;
+        remainingToDeduct -= toTake;
+      }
     }
 
     // 2. Record transaction
     const transactions = this.getTransactions();
-    const parts = this.getParts();
-    // Get master PO ID and target quantities if exists
     const po = pos.find(p => p.id === linkedPoId);
     const masterPoId = po?.masterPoId || '';
     const subPoTargetQty = po?.targetQuantity || 0;
     const masterPo = masterPoId ? pos.find(p => p.id === masterPoId) : undefined;
     const masterPoTargetQty = masterPo?.targetQuantity || 0;
     
-    // Generate a shorter unique ID: 10 chars should be enough for local context
     const txId = Math.random().toString(36).substring(2, 12).toUpperCase();
     const timestamp = Date.now();
-    
-    // ONLY generate QR data if exporting from OUT
     const qrData = sourceLocation === 'OUT' 
       ? `${linkedPoId || effectiveId}|${quantity}|${stageId}|${timestamp}|${txId}|${targetStageId || ''}||${masterPoId}|${subPoTargetQty}|${masterPoTargetQty}`
       : undefined;
@@ -800,7 +763,7 @@ export const storageService = {
       id: txId,
       type: 'STAGE_OUT',
       partId: effectiveId,
-      originalPartId: (effectiveId !== cleanId) ? cleanId : undefined,
+      originalPartId: lastOriginalId,
       quantity,
       stageId,
       targetStageId,
@@ -812,7 +775,6 @@ export const storageService = {
     transactions.unshift(newTransaction);
     this.saveTransactions(transactions);
 
-    // Save to label history if it's a QR label
     if (qrData) {
       this.saveLabel(newTransaction);
     }
@@ -902,16 +864,16 @@ export const storageService = {
     
     // Part Transformation Logic: Only check for transformation at the moment of entry (IN)
     const finalPartId = this.getEffectivePartId(partId, currentStageId, linkedPoId);
-    const isTransformed = finalPartId !== partId.trim().toUpperCase();
+    const originalPartId = (finalPartId !== partId.trim().toUpperCase()) ? partId : undefined;
 
-    this.updateInventory(finalPartId, currentStageId, finalTargetLocation, quantity);
+    this.updateInventory(finalPartId, currentStageId, finalTargetLocation, quantity, originalPartId);
 
     // 4. Record transaction
     const newTransaction: Transaction = {
       id: Math.random().toString(36).substring(2, 12).toUpperCase(),
       type: 'STAGE_IN',
       partId: finalPartId,
-      originalPartId: isTransformed ? partId : undefined, // Track original if transformed
+      originalPartId: originalPartId, // Track original if transformed
       quantity,
       stageId: currentStageId,
       sourceStageId: sourceStageId as StageId,
@@ -981,16 +943,16 @@ export const storageService = {
       ? this.getEffectivePartId(cleanId, stageId, currentPoId)
       : cleanId;
       
-    const isTransformed = (location === 'IN' && finalPartId !== cleanId);
+    const originalPartId = (location === 'IN' && finalPartId !== cleanId) ? cleanId : undefined;
 
-    this.updateInventory(finalPartId, stageId, location, quantity);
+    this.updateInventory(finalPartId, stageId, location, quantity, originalPartId);
     
     const transactions = this.getTransactions();
     const newTransaction: Transaction = {
       id: Math.random().toString(36).substring(2, 12).toUpperCase(),
       type: 'STAGE_IN',
       partId: finalPartId,
-      originalPartId: isTransformed ? cleanId : undefined,
+      originalPartId: originalPartId,
       quantity,
       stageId,
       timestamp: Date.now(),
@@ -1018,18 +980,31 @@ export const storageService = {
     // 1. Validation: Ensure we have enough stock in IN to mark as defect
     const inventory = this.getInventory();
     const effectiveId = this.getEffectivePartId(cleanId, stageId, poId);
-    const stock = inventory.find(
-      (item) => item.partId === effectiveId && item.stageId === stageId && item.location === 'IN'
+    
+    const matchingStocks = inventory.filter(
+      (item) => item.partId.toUpperCase() === effectiveId.toUpperCase() && item.stageId === stageId && item.location === 'IN'
     );
+    const totalStock = matchingStocks.reduce((sum, item) => sum + item.quantity, 0);
 
-    if (!stock || stock.quantity < quantity) {
+    if (totalStock < quantity) {
       const part = this.getParts().find(p => p.id === effectiveId);
-      throw new Error(`Lỗi: Số lượng báo lỗi (${quantity}) lớn hơn tồn kho IN của ${part?.name || effectiveId} tại ${STAGES.find(s => s.id === stageId)?.name} (Hiện có ${stock?.quantity || 0})`);
+      throw new Error(`Lỗi: Số lượng báo lỗi (${quantity}) lớn hơn tổng tồn kho IN của ${part?.name || effectiveId} tại ${STAGES.find(s => s.id === stageId)?.name} (Hiện có ${totalStock})`);
     }
 
     // 2. Inventory movement: Deduct from IN, Add to DEFECT
-    this.updateInventory(effectiveId, stageId, 'IN', -quantity);
-    this.updateInventory(effectiveId, stageId, 'DEFECT', quantity);
+    let remainingToDeduct = quantity;
+    let deductedFromOriginalId: string | undefined;
+
+    matchingStocks.sort((a, b) => (a.originalPartId || '').localeCompare(b.originalPartId || ''));
+
+    for (const stock of matchingStocks) {
+      if (remainingToDeduct <= 0) break;
+      const toTake = Math.min(stock.quantity, remainingToDeduct);
+      this.updateInventory(effectiveId, stageId, 'IN', -toTake, stock.originalPartId);
+      this.updateInventory(effectiveId, stageId, 'DEFECT', toTake, stock.originalPartId);
+      deductedFromOriginalId = stock.originalPartId;
+      remainingToDeduct -= toTake;
+    }
 
     // 3. Record transaction
     const transactions = this.getTransactions();
@@ -1039,7 +1014,7 @@ export const storageService = {
       id: txId,
       type: 'DEFECT',
       partId: effectiveId,
-      originalPartId: (effectiveId !== cleanId) ? cleanId : undefined,
+      originalPartId: deductedFromOriginalId,
       quantity,
       stageId,
       timestamp: Date.now(),

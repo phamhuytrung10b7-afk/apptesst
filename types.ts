@@ -19,6 +19,7 @@ export interface Part {
 
 export interface InventoryItem {
   partId: string;
+  originalPartId?: string; // Tracks the source identity if transformed
   stageId: StageId;
   location: 'IN' | 'OUT' | 'DEFECT';
   quantity: number;
