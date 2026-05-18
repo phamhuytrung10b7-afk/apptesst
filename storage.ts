@@ -430,25 +430,68 @@ export const storageService = {
   },
 
   getEffectivePartId(partId: string, stageId: StageId, poId?: string): string {
-    const cleanId = partId.split(' - ')[0].trim().toUpperCase();
-    const transformations = this.getTransformations();
+    if (!partId) return '';
     
-    let validTransformations = transformations.filter(t => t.sourcePartId === cleanId && t.targetStageId === stageId);
-    if (validTransformations.length === 0) return cleanId;
+    // 1. Clean the incoming partId
+    // Standardize: Uppercase, trim, remove stage suffixes like " - CD", " (BD)", etc.
+    const normalize = (s: string) => {
+      if (!s) return '';
+      let res = s.split(' - ')[0].trim().toUpperCase();
+      // Remove common Vietnamese prefixes
+      // This handles the user's issue where "Tấm Nắp" needs to match "Nắp"
+      res = res.replace(/^(TẤM|CHI TIẾT|PHỤ TÙNG|BẢN)\s+/g, '');
+      // Remove stage suffixes in parentheses
+      res = res.replace(/\s*\([^)]*\)$/g, '');
+      return res;
+    };
 
-    if (poId) {
-      const parentPoId = this.getProductionOrders().find(p => p.id === poId)?.masterPoId || poId;
-      const modelPo = this.getProductionOrders().find(p => p.id === parentPoId);
-      if (modelPo) {
-        const modelId = modelPo.partId;
-        const matchedModelT = validTransformations.find(t => t.applicableModel && t.applicableModel === modelId);
-        if (matchedModelT) return matchedModelT.targetPartId;
+    const cleanId = normalize(partId);
+    const transformationsList = this.getTransformations();
+    
+    // Filter by target stage
+    const stageTransformations = transformationsList.filter(t => t.targetStageId === stageId);
+    if (stageTransformations.length === 0) return partId;
+
+    // 2. Find candidates using normalized IDs
+    let candidates = stageTransformations.filter(t => {
+      const tSourceNormalized = normalize(t.sourcePartId);
+      
+      // Exact match after normalization
+      if (cleanId === tSourceNormalized) return true;
+
+      // Partial match: If one is a substring of the other (helpful for long names)
+      if (cleanId.length > 5 && tSourceNormalized.length > 5) {
+        if (cleanId.includes(tSourceNormalized) || tSourceNormalized.includes(cleanId)) return true;
       }
+
+      return false;
+    });
+
+    if (candidates.length === 0) return partId;
+
+    // 3. Resolve among candidates (Priority: Model-specific > Generic)
+    let bestMatch = candidates[0];
+    if (poId) {
+      const orders = this.getProductionOrders();
+      const po = orders.find(p => p.id === poId);
+      const parentPoId = po?.masterPoId || poId;
+      const modelPo = orders.find(p => p.id === parentPoId);
+      
+      if (modelPo) {
+        const modelId = modelPo.partId.toUpperCase();
+        const modelMatch = candidates.find(t => 
+          t.applicableModel && 
+          (modelId.includes(t.applicableModel.trim().toUpperCase()))
+        );
+        if (modelMatch) bestMatch = modelMatch;
+      }
+    } else {
+      // If no PO, prefer generic one (no model)
+      const generic = candidates.find(t => !t.applicableModel || t.applicableModel.trim() === '');
+      if (generic) bestMatch = generic;
     }
 
-    // fallback to generic transformation if available
-    const genericTransformation = validTransformations.find(t => !t.applicableModel || t.applicableModel.trim() === '');
-    return genericTransformation ? genericTransformation.targetPartId : cleanId;
+    return bestMatch.targetPartId;
   },
 
   updateInventory(partId: string, stageId: StageId, location: 'IN' | 'OUT' | 'DEFECT', delta: number) {

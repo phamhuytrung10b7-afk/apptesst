@@ -6716,6 +6716,24 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                 </div>
               </div>
               <div className="flex gap-4">
+                <button 
+                  onClick={() => {
+                    if (!confirm('Bạn có chắc chắn muốn đảo ngược tất cả dữ liệu Nguồn và Đích trong bảng này không?')) return;
+                    const current = storageService.getTransformations();
+                    const swapped = current.map(t => ({
+                      ...t,
+                      sourcePartId: t.targetPartId,
+                      targetPartId: t.sourcePartId
+                    }));
+                    storageService.saveTransformations(swapped);
+                    onPartsChange();
+                    alert('Đã đảo ngược dữ liệu thành công!');
+                  }}
+                  className="bg-white border-2 border-orange-500 text-orange-500 px-6 py-3 rounded-xl font-bold uppercase hover:bg-orange-50 transition-all flex items-center gap-2"
+                >
+                  <RotateCcw size={20} />
+                  Đảo ngược Nguồn/Đích
+                </button>
                 <label className="bg-white border-2 border-cyan-600 text-cyan-600 px-6 py-3 rounded-xl font-bold uppercase cursor-pointer hover:bg-cyan-100 transition-all flex items-center gap-2">
                   <FileUp size={20} />
                   {isImportingTransformations ? 'Đang xử lý...' : 'Nhập Excel Chuyển đổi'}
@@ -6747,13 +6765,12 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                           else if (stageStr.includes('LASER') || stageStr.includes('CẮT')) stageId = 'LASER';
                           else if (stageStr.includes('LẮP') || stageStr.includes('GÓI') || stageStr.includes('DCLR')) stageId = 'DCLR';
                           else {
-                            // Try to find by ID if direct match
                             const found = STAGES.find(s => s.id === stageStr || s.name.toUpperCase() === stageStr);
                             if (found) stageId = found.id;
                           }
 
                           return {
-                            sourcePartId: source,
+                            sourcePartId: source, // Keep case but will handle insensitively in storage
                             targetPartId: target,
                             targetStageId: stageId,
                             applicableModel: applicableModel
@@ -6784,12 +6801,12 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="p-6 text-xs font-bold uppercase opacity-50">Linh kiện nguồn (L2)</th>
+                    <th className="p-6 text-xs font-bold uppercase opacity-50">Linh kiện Nguồn (Từ Chấn/Dập)</th>
                     <th className="p-6 text-xs font-bold uppercase opacity-50">Model áp dụng</th>
                     <th className="p-6 text-xs font-bold uppercase opacity-50 text-center">
                       <ArrowRight size={16} className="mx-auto" />
                     </th>
-                    <th className="p-6 text-xs font-bold uppercase opacity-50">Linh kiện đích (L1)</th>
+                    <th className="p-6 text-xs font-bold uppercase opacity-50">Tên mới (Tại Sơn)</th>
                     <th className="p-6 text-xs font-bold uppercase opacity-50">Công đoạn áp dụng</th>
                     <th className="p-6 text-xs font-bold uppercase opacity-50 text-right">Thao tác</th>
                   </tr>
