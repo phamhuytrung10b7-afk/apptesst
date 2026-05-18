@@ -510,12 +510,21 @@ export const storageService = {
 
     const targetPartIdStr = bestMatch.targetPartId;
     // Map targetPartIdStr to catalog ID if catalog has it
-    const targetCatalogPart = parts.find(p => 
-      p.id === targetPartIdStr || 
-      p.name === targetPartIdStr || 
-      p.id.toUpperCase() === targetPartIdStr.toUpperCase() ||
-      p.name.toUpperCase() === targetPartIdStr.toUpperCase()
-    );
+    const upperTargetStr = targetPartIdStr.toUpperCase().normalize('NFC').replace(/\s+/g, '');
+    const targetCatalogPart = parts.find(p => {
+      const pId = p.id.toUpperCase();
+      const pName = p.name.toUpperCase();
+      if (p.id === targetPartIdStr || p.name === targetPartIdStr || pId === targetPartIdStr.toUpperCase() || pName === targetPartIdStr.toUpperCase()) return true;
+      
+      const combined1 = (pName + pId).normalize('NFC').replace(/\s+/g, '');
+      const combined2 = (pId + pName).normalize('NFC').replace(/\s+/g, '');
+      if (upperTargetStr === combined1 || upperTargetStr === combined2) return true;
+      
+      // If the target string contains the ID (which is usually highly specific) and it's longer than 5 chars
+      if (pId.length > 5 && upperTargetStr.includes(pId.normalize('NFC').replace(/\s+/g, ''))) return true;
+      
+      return false;
+    });
     return targetCatalogPart ? targetCatalogPart.id : targetPartIdStr;
   },
 
@@ -523,18 +532,23 @@ export const storageService = {
     const inventory = this.getInventory();
     const parts = this.getParts();
     
-    const cleanId = partId.trim().toUpperCase();
-    const cleanOrigId = originalPartId?.trim().toUpperCase() || '';
+    // Find absolute correct case in catalog if exists
+    const cleanIdUpper = partId.trim().toUpperCase();
+    const cleanOrigIdUpper = originalPartId?.trim().toUpperCase() || '';
     
-    const partInCatalog = parts.find(p => p.id.toUpperCase() === cleanId);
-    const targetName = partInCatalog ? partInCatalog.name.toUpperCase().trim() : '';
+    const partInCatalog = parts.find(p => p.id.toUpperCase() === cleanIdUpper || p.name.toUpperCase().trim() === cleanIdUpper);
+    const targetId = partInCatalog ? partInCatalog.id : partId.trim();
+    const targetNameUpper = partInCatalog ? partInCatalog.name.toUpperCase().trim() : '';
+    
+    const origPartInCatalog = originalPartId ? parts.find(p => p.id.toUpperCase() === cleanOrigIdUpper || p.name.toUpperCase().trim() === cleanOrigIdUpper) : undefined;
+    const targetOrigId = origPartInCatalog ? origPartInCatalog.id : (originalPartId?.trim() || '');
 
     const index = inventory.findIndex(
       (item) => {
         const itemPartId = item.partId.toUpperCase().trim();
         const itemOrigId = (item.originalPartId || '').toUpperCase().trim();
-        const matchesPart = itemPartId === cleanId || (targetName && itemPartId === targetName);
-        return matchesPart && item.stageId === stageId && item.location === location && itemOrigId === cleanOrigId;
+        const matchesPart = itemPartId === cleanIdUpper || (targetNameUpper && itemPartId === targetNameUpper);
+        return matchesPart && item.stageId === stageId && item.location === location && itemOrigId === cleanOrigIdUpper;
       }
     );
 
@@ -542,11 +556,14 @@ export const storageService = {
       inventory[index].quantity += delta;
       inventory[index].quantity = Math.round(inventory[index].quantity * 10000) / 10000;
       if (inventory[index].quantity < 0) inventory[index].quantity = 0;
+      // Option: update it to the proper case if it was wrong
+      inventory[index].partId = targetId; 
+      if (targetOrigId) inventory[index].originalPartId = targetOrigId;
     } else {
       if (delta > 0) {
         inventory.push({ 
-          partId: cleanId, 
-          originalPartId: cleanOrigId,
+          partId: targetId, 
+          originalPartId: targetOrigId || undefined,
           stageId, 
           location, 
           quantity: Math.max(0, delta) 
@@ -560,27 +577,35 @@ export const storageService = {
   setInventoryQuantity(partId: string, stageId: StageId, location: 'IN' | 'OUT' | 'DEFECT', quantity: number, originalPartId?: string) {
     const inventory = this.getInventory();
     const parts = this.getParts();
-    const cleanId = partId.trim().toUpperCase();
-    const cleanOrigId = originalPartId?.trim().toUpperCase() || '';
     
-    const partInCatalog = parts.find(p => p.id.toUpperCase() === cleanId);
-    const targetName = partInCatalog ? partInCatalog.name.toUpperCase().trim() : '';
+    // Find absolute correct case in catalog if exists
+    const cleanIdUpper = partId.trim().toUpperCase();
+    const cleanOrigIdUpper = originalPartId?.trim().toUpperCase() || '';
+    
+    const partInCatalog = parts.find(p => p.id.toUpperCase() === cleanIdUpper || p.name.toUpperCase().trim() === cleanIdUpper);
+    const targetId = partInCatalog ? partInCatalog.id : partId.trim();
+    const targetNameUpper = partInCatalog ? partInCatalog.name.toUpperCase().trim() : '';
+
+    const origPartInCatalog = originalPartId ? parts.find(p => p.id.toUpperCase() === cleanOrigIdUpper || p.name.toUpperCase().trim() === cleanOrigIdUpper) : undefined;
+    const targetOrigId = origPartInCatalog ? origPartInCatalog.id : (originalPartId?.trim() || '');
 
     const index = inventory.findIndex(
       (item) => {
         const itemPartId = item.partId.toUpperCase().trim();
         const itemOrigId = (item.originalPartId || '').toUpperCase().trim();
-        const matchesPart = itemPartId === cleanId || (targetName && itemPartId === targetName);
-        return matchesPart && item.stageId === stageId && item.location === location && itemOrigId === cleanOrigId;
+        const matchesPart = itemPartId === cleanIdUpper || (targetNameUpper && itemPartId === targetNameUpper);
+        return matchesPart && item.stageId === stageId && item.location === location && itemOrigId === cleanOrigIdUpper;
       }
     );
 
     if (index >= 0) {
       inventory[index].quantity = Math.max(0, quantity);
+      inventory[index].partId = targetId;
+      if (targetOrigId) inventory[index].originalPartId = targetOrigId;
     } else {
       inventory.push({ 
-        partId: cleanId, 
-        originalPartId: cleanOrigId,
+        partId: targetId, 
+        originalPartId: targetOrigId || undefined,
         stageId, 
         location, 
         quantity: Math.max(0, quantity) 
@@ -593,18 +618,18 @@ export const storageService = {
   deleteInventoryItem(partId: string, stageId: StageId, location: 'IN' | 'OUT' | 'DEFECT', originalPartId?: string) {
     const inventory = this.getInventory();
     const parts = this.getParts();
-    const cleanId = partId.trim().toUpperCase();
-    const cleanOrigId = originalPartId?.trim().toUpperCase() || '';
+    const cleanIdUpper = partId.trim().toUpperCase();
+    const cleanOrigIdUpper = originalPartId?.trim().toUpperCase() || '';
 
-    const partInCatalog = parts.find(p => p.id.toUpperCase() === cleanId);
-    const targetName = partInCatalog ? partInCatalog.name.toUpperCase().trim() : '';
+    const partInCatalog = parts.find(p => p.id.toUpperCase() === cleanIdUpper || p.name.toUpperCase().trim() === cleanIdUpper);
+    const targetNameUpper = partInCatalog ? partInCatalog.name.toUpperCase().trim() : '';
 
     const filtered = inventory.filter(
       (item) => {
         const itemPartId = item.partId.toUpperCase().trim();
         const itemOrigId = (item.originalPartId || '').toUpperCase().trim();
-        const matchesPart = itemPartId === cleanId || (targetName && itemPartId === targetName);
-        return !(matchesPart && item.stageId === stageId && item.location === location && itemOrigId === cleanOrigId);
+        const matchesPart = itemPartId === cleanIdUpper || (targetNameUpper && itemPartId === targetNameUpper);
+        return !(matchesPart && item.stageId === stageId && item.location === location && itemOrigId === cleanOrigIdUpper);
       }
     );
     this.saveInventory(filtered);

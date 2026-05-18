@@ -246,8 +246,32 @@ export default function App() {
       storageService.saveTransformations(newTransformations);
     }
     
+    // Migration: ensure inventory partIds match catalog case
+    const existingInv = storageService.getInventory();
+    let invMigrated = false;
+    const migratedInv = existingInv.map(i => {
+      let fPart = i.partId;
+      let fOrig = i.originalPartId;
+      const mPart = existingParts.find(p => p.id.toUpperCase() === i.partId.toUpperCase() || p.name.toUpperCase() === i.partId.toUpperCase());
+      if (mPart && i.partId !== mPart.id) {
+        fPart = mPart.id;
+        invMigrated = true;
+      }
+      if (i.originalPartId) {
+        const mOrig = existingParts.find(p => p.id.toUpperCase() === i.originalPartId?.toUpperCase() || p.name.toUpperCase() === i.originalPartId?.toUpperCase());
+        if (mOrig && i.originalPartId !== mOrig.id) {
+          fOrig = mOrig.id;
+          invMigrated = true;
+        }
+      }
+      return { ...i, partId: fPart, originalPartId: fOrig };
+    });
+    if (invMigrated) {
+      storageService.saveInventory(migratedInv);
+    }
+
     // Initialize with some dummy data if empty
-    const existing = storageService.getInventory();
+    const existing = migratedInv;
     
     if (existingParts.length > 0 && !selectedPart) {
       setSelectedPart(existingParts[0].id);
@@ -291,10 +315,7 @@ export default function App() {
       
       refreshData();
 
-      // Trigger automatic print for OUT transactions
-      if (sourceLocation === 'OUT') {
-        handlePrintConfirm();
-      }
+      // Ensure we don't automatically trigger print, just show preview
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Đã xảy ra lỗi');
     }
@@ -335,12 +356,22 @@ export default function App() {
       storageService.setTransactionPrinted(label.id, true);
     }
     refreshData();
+    // Auto trigger print when handlePrint is called (except from produce view form submit)
+    handlePrintConfirm();
+  };
+
+  const handlePreviewOnly = (label: Transaction) => {
+    setLastTransaction(label);
+    if (label.id && !label.id.startsWith('QUICK-')) {
+      storageService.setTransactionPrinted(label.id, true);
+    }
+    refreshData();
   };
 
   const handlePrintConfirm = () => {
     setTimeout(() => {
       window.print();
-    }, 300);
+    }, 200);
   };
 
   const copyToClipboard = (text: string) => {
@@ -517,7 +548,7 @@ export default function App() {
               })()}
 
               {/* PO Details Section (NEW) */}
-              <div className="mt-auto mb-2 w-full space-y-1 text-[11px] font-black border-2 border-black p-2 rounded text-black">
+              <div className="mb-2 w-full space-y-1 text-[11px] font-black border-2 border-black p-2 rounded text-black">
                 <div className="flex justify-between items-center">
                   <span className="uppercase">LOẠI PO:</span>
                   {(() => {
@@ -868,74 +899,6 @@ export default function App() {
         </footer>
       </div>
 
-      {/* Visible Global Print Modal */}
-      {lastTransaction && currentView !== 'produce' && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[150] flex items-center justify-center p-4 no-print overflow-y-auto">
-          <motion.div 
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="bg-white rounded-3xl p-8 max-w-[500px] w-full shadow-2xl relative flex flex-col items-center"
-          >
-            <button 
-              onClick={() => setLastTransaction(null)}
-              className="absolute right-6 top-6 text-gray-400 hover:text-black transition-colors"
-            >
-              <X size={32} />
-            </button>
-
-            <div className="text-center mb-8">
-              <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <Printer size={32} />
-              </div>
-              <h2 className="text-2xl font-black uppercase tracking-tight">Xác nhận in nhãn phẩm</h2>
-              <p className="text-gray-500 font-medium italic mt-1">Vui lòng kiểm tra thông tin trước khi in</p>
-            </div>
-
-            <div className="w-full bg-gray-100 p-2 rounded-2xl mb-8 border-2 border-gray-200">
-               <div className="bg-white p-6 rounded-xl shadow-inner flex flex-col items-center border border-gray-100">
-                  <QRCodeSVG value={lastTransaction.qrData || ''} size={180} level="H" />
-                  <div className="mt-4 text-center text-black">
-                    <div className="font-black text-xl uppercase leading-tight text-black">
-                      {(lastTransaction as any).partName || parts.find(p => p.id === lastTransaction.partId)?.name || lastTransaction.partId}
-                    </div>
-                    <div className="font-mono text-sm font-bold text-gray-500 mt-1 uppercase">
-                      Mã: {lastTransaction.partId}
-                    </div>
-                  </div>
-                  <div className="w-full mt-6 grid grid-cols-2 gap-4 border-t border-gray-100 pt-6">
-                    <div className="text-center">
-                      <div className="text-[10px] font-black text-gray-400 uppercase">Số lượng</div>
-                      <div className="text-2xl font-black text-blue-600">{lastTransaction.quantity}</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-[10px] font-black text-gray-400 uppercase text-black">Công đoạn</div>
-                      <div className="text-sm font-black uppercase text-black">
-                        {STAGES.find(s => s.id === lastTransaction.stageId)?.name}
-                      </div>
-                    </div>
-                  </div>
-               </div>
-            </div>
-
-            <div className="flex gap-4 w-full">
-              <button 
-                onClick={() => {
-                  handlePrintConfirm();
-                }}
-                className="flex-1 bg-blue-600 text-white py-5 rounded-2xl font-black text-xl uppercase shadow-xl shadow-blue-200 hover:bg-blue-700 transition-all flex items-center justify-center gap-3"
-              >
-                <Printer size={28} /> IN NGAY (PDF)
-              </button>
-              <button 
-                onClick={() => setLastTransaction(null)}
-                className="px-8 bg-gray-100 text-gray-600 rounded-2xl font-bold uppercase text-xs hover:bg-gray-200 text-gray-600"
-              >
-                Hủy
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
 
       {/* Defect Modal */}
       {defectModal && (
@@ -1985,7 +1948,7 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                 )}
 
                 {/* PO Details Section */}
-                <div className="mt-auto mb-2 w-full space-y-1 text-[11px] font-black bg-transparent p-3 border-2 border-black rounded text-black">
+                <div className="mb-2 w-full space-y-1 text-[11px] font-black bg-transparent p-3 border-2 border-black rounded text-black">
                   <div className="flex justify-between items-center">
                     <span className="uppercase text-black">LOẠI PO:</span>
                     {(() => {
@@ -3391,7 +3354,7 @@ function ProduceView({
                 </div>
 
                 {/* PO Details Section */}
-                <div className="mt-auto mb-2 w-full space-y-1 text-[11px] font-black bg-transparent p-3 border-2 border-black rounded text-black">
+                <div className="mb-2 w-full space-y-1 text-[11px] font-black bg-transparent p-3 border-2 border-black rounded text-black">
                   <div className="flex justify-between items-center text-black">
                     <span className="uppercase text-black">LOẠI PO:</span>
                     {(() => {
@@ -6904,7 +6867,8 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                           const ptSrc = parts.find(p => p.id.toUpperCase().normalize('NFC').trim() === normSource || p.name.toUpperCase().normalize('NFC').trim() === normSource);
                           if (ptSrc) finalSource = ptSrc.id;
 
-                          const ptTgt = parts.find(p => p.id.toUpperCase().normalize('NFC').trim() === normTarget || p.name.toUpperCase().normalize('NFC').trim() === normTarget);
+                          const ptTgt = parts.find(p => p.id.toUpperCase().normalize('NFC').trim() === normTarget || p.name.toUpperCase().normalize('NFC').trim() === normTarget || 
+                                           (p.id.length > 5 && normTarget.replace(/\s+/g, '').includes(p.id.toUpperCase().normalize('NFC').replace(/\s+/g, ''))));
                           if (ptTgt) finalTarget = ptTgt.id;
 
                           return {
