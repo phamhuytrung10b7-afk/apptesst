@@ -65,10 +65,11 @@ export const storageService = {
   },
 
   getParts(): Part[] {
-    return getCached(STORAGE_KEYS.PARTS, () => {
+    const data = getCached(STORAGE_KEYS.PARTS, () => {
       const data = localStorage.getItem(STORAGE_KEYS.PARTS);
       return data ? JSON.parse(data) : INITIAL_PARTS;
     });
+    return [...data];
   },
 
   saveParts(parts: Part[]) {
@@ -355,17 +356,19 @@ export const storageService = {
   },
 
   getInventory(): InventoryItem[] {
-    return getCached(STORAGE_KEYS.INVENTORY, () => {
+    const data = getCached(STORAGE_KEYS.INVENTORY, () => {
       const data = localStorage.getItem(STORAGE_KEYS.INVENTORY);
       return data ? JSON.parse(data) : [];
     });
+    return [...data];
   },
 
   getTransactions(): Transaction[] {
-    return getCached(STORAGE_KEYS.TRANSACTIONS, () => {
+    const data = getCached(STORAGE_KEYS.TRANSACTIONS, () => {
       const data = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
       return data ? JSON.parse(data) : [];
     });
+    return [...data];
   },
 
   saveInventory(inventory: InventoryItem[]) {
@@ -384,10 +387,11 @@ export const storageService = {
   },
 
   getLabels(): Transaction[] {
-    return getCached('wip_labels', () => {
+    const data = getCached('wip_labels', () => {
       const data = localStorage.getItem('wip_labels');
       return data ? JSON.parse(data) : [];
     });
+    return [...data];
   },
 
   saveLabel(label: Transaction) {
@@ -608,18 +612,8 @@ export const storageService = {
         const inventory = this.getInventory();
         const matchingStocks = inventory.filter(i => {
           const itPartId = i.partId.toUpperCase();
-          const itEffectiveId = this.getEffectivePartId(i.partId, 'LASER', poId).toUpperCase();
-          const itBaseId = itPartId.split(' - ')[0].trim();
-          const itEffectiveBaseId = itEffectiveId.split(' - ')[0].trim();
           const targetId = bomDef.parentPartId.toUpperCase();
-          
-          const mainMatch = itPartId === targetId || 
-                           itBaseId === targetId || 
-                           itEffectiveId === targetId || 
-                           itEffectiveBaseId === targetId ||
-                           this.normalize(itPartId) === this.normalize(targetId);
-
-          return mainMatch && i.stageId === 'LASER' && i.location === 'IN';
+          return itPartId === targetId && i.stageId === 'LASER' && i.location === 'IN';
         });
         const totalStock = matchingStocks.reduce((sum, i) => sum + i.quantity, 0);
         
@@ -659,19 +653,7 @@ export const storageService = {
           const effectiveIngId = this.getEffectivePartId(ing.ingredientPartId, 'WELDING', poId);
           
           const matchingStocks = inventory.filter(i => {
-            const itPartId = i.partId.toUpperCase();
-            const itEffectiveId = this.getEffectivePartId(i.partId, 'WELDING', poId).toUpperCase();
-            const itBaseId = itPartId.split(' - ')[0].trim();
-            const itEffectiveBaseId = itEffectiveId.split(' - ')[0].trim();
-            const targetId = effectiveIngId.toUpperCase();
-            
-            const mainMatch = itPartId === targetId || 
-                             itBaseId === targetId || 
-                             itEffectiveId === targetId || 
-                             itEffectiveBaseId === targetId ||
-                             this.normalize(itPartId) === this.normalize(targetId);
-
-            return mainMatch && i.stageId === 'WELDING' && i.location === 'IN';
+            return i.partId.toUpperCase() === effectiveIngId.toUpperCase() && i.stageId === 'WELDING' && i.location === 'IN';
           });
           const totalStock = matchingStocks.reduce((sum, i) => sum + i.quantity, 0);
 
@@ -683,19 +665,7 @@ export const storageService = {
         for (const ing of ingredients) {
           const effectiveIngId = this.getEffectivePartId(ing.ingredientPartId, 'WELDING', poId);
           const matchingStocks = inventory.filter(i => {
-            const itPartId = i.partId.toUpperCase();
-            const itEffectiveId = this.getEffectivePartId(i.partId, 'WELDING', poId).toUpperCase();
-            const itBaseId = itPartId.split(' - ')[0].trim();
-            const itEffectiveBaseId = itEffectiveId.split(' - ')[0].trim();
-            const targetId = effectiveIngId.toUpperCase();
-            
-            const mainMatch = itPartId === targetId || 
-                             itBaseId === targetId || 
-                             itEffectiveId === targetId || 
-                             itEffectiveBaseId === targetId ||
-                             this.normalize(itPartId) === this.normalize(targetId);
-
-            return mainMatch && i.stageId === 'WELDING' && i.location === 'IN';
+            return i.partId.toUpperCase() === effectiveIngId.toUpperCase() && i.stageId === 'WELDING' && i.location === 'IN';
           });
 
           let remainingToDeduct = quantity * ing.quantity;
@@ -759,39 +729,8 @@ export const storageService = {
     const matchingStocks = inventory.filter((item) => {
       if (item.stageId === stageId && item.location === sourceLocation) {
         const itPartId = item.partId.toUpperCase();
-        const itOrigId = (item.originalPartId || '').toUpperCase();
         const targetId = effectiveId.toUpperCase();
-        const sourceId = cleanId.toUpperCase();
-
-        const itEffectiveId = this.getEffectivePartId(item.partId, stageId, linkedPoId).toUpperCase();
-        const itBaseId = itPartId.split(' - ')[0].trim();
-        const itEffectiveBaseId = itEffectiveId.split(' - ')[0].trim();
-
-        const nItPartId = this.normalize(itPartId);
-        const nTargetId = this.normalize(targetId);
-        const nSelectedPartName = this.normalize(selectedPartName || '');
-        const nItOrigId = this.normalize(itOrigId);
-        const nSourceId = this.normalize(sourceId);
-
-        const mainMatch = itPartId === targetId || 
-                         itBaseId === targetId ||
-                         itEffectiveId === targetId ||
-                         itEffectiveBaseId === targetId ||
-                         nItPartId === nTargetId ||
-                         (nSelectedPartName && nItPartId === nSelectedPartName) ||
-                         (selectedPartName && itPartId === selectedPartName);
-        
-        if (mainMatch) {
-          const originMatch = !itOrigId || 
-                             itOrigId === sourceId || 
-                             nItOrigId === nSourceId ||
-                             (nSelectedPartName && nItOrigId === nSelectedPartName) ||
-                             (selectedPartName && itOrigId === selectedPartName) ||
-                             (selectedPartId && itOrigId === selectedPartId) ||
-                             itBaseId === sourceId ||
-                             (itOrigId.includes(sourceId)) || (sourceId.includes(itOrigId));
-          return originMatch;
-        }
+        return itPartId === targetId;
       }
       return false;
     });
@@ -1109,18 +1048,8 @@ export const storageService = {
     
     const matchingStocks = inventory.filter(i => {
       const itPartId = i.partId.toUpperCase();
-      const itEffectiveId = this.getEffectivePartId(i.partId, stageId, poId).toUpperCase();
-      const itBaseId = itPartId.split(' - ')[0].trim();
-      const itEffectiveBaseId = itEffectiveId.split(' - ')[0].trim();
       const targetId = effectiveId.toUpperCase();
-      
-      const mainMatch = itPartId === targetId || 
-                       itBaseId === targetId || 
-                       itEffectiveId === targetId || 
-                       itEffectiveBaseId === targetId ||
-                       this.normalize(itPartId) === this.normalize(targetId);
-
-      return mainMatch && i.stageId === stageId && i.location === 'IN';
+      return itPartId === targetId && i.stageId === stageId && i.location === 'IN';
     });
     const totalStock = matchingStocks.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -1183,18 +1112,8 @@ export const storageService = {
     const effectiveId = this.getEffectivePartId(cleanId, stageId);
     const matchingStocks = inventory.filter(i => {
       const itPartId = i.partId.toUpperCase();
-      const itEffectiveId = this.getEffectivePartId(i.partId, stageId).toUpperCase();
-      const itBaseId = itPartId.split(' - ')[0].trim();
-      const itEffectiveBaseId = itEffectiveId.split(' - ')[0].trim();
       const targetId = effectiveId.toUpperCase();
-      
-      const mainMatch = itPartId === targetId || 
-                       itBaseId === targetId || 
-                       itEffectiveId === targetId || 
-                       itEffectiveBaseId === targetId ||
-                       this.normalize(itPartId) === this.normalize(targetId);
-
-      return mainMatch && i.stageId === stageId && i.location === 'DEFECT';
+      return itPartId === targetId && i.stageId === stageId && i.location === 'DEFECT';
     });
     const totalStock = matchingStocks.reduce((sum, i) => sum + i.quantity, 0);
 
@@ -1240,10 +1159,11 @@ export const storageService = {
   },
 
   getProductionOrders(): ProductionOrder[] {
-    return getCached(STORAGE_KEYS.PRODUCTION_ORDERS, () => {
+    const data = getCached(STORAGE_KEYS.PRODUCTION_ORDERS, () => {
       const data = localStorage.getItem(STORAGE_KEYS.PRODUCTION_ORDERS);
       return data ? JSON.parse(data) : [];
     });
+    return [...data];
   },
 
   saveProductionOrders(orders: ProductionOrder[]) {

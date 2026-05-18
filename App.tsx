@@ -196,6 +196,7 @@ export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [labels, setLabels] = useState<Transaction[]>([]);
   const [parts, setParts] = useState<Part[]>([]);
+  const [productionOrders, setProductionOrders] = useState<ProductionOrder[]>([]);
   const [selectedStage, setSelectedStage] = useState<StageId>(STAGES[0].id);
   const [scanStage, setScanStage] = useState<StageId>(STAGES.find(s => s.id !== 'LASER')?.id || STAGES[0].id);
   const [selectedPart, setSelectedPart] = useState<string>('');
@@ -225,6 +226,7 @@ export default function App() {
     setInventory(storageService.getInventory());
     setTransactions(storageService.getTransactions());
     setLabels(storageService.getLabels());
+    setProductionOrders(storageService.getProductionOrders());
     const currentParts = storageService.getParts();
     setParts(currentParts);
     if (currentParts.length > 0 && !selectedPart) {
@@ -729,6 +731,7 @@ export default function App() {
                   lastTransaction={lastTransaction}
                   setLastTransaction={setLastTransaction}
                   inventory={inventory}
+                  productionOrders={productionOrders}
                   parts={parts}
                   onPrint={handlePrint}
                   onCopy={copyToClipboard}
@@ -2894,6 +2897,7 @@ function ProduceView({
   handleProduce,
   lastTransaction, setLastTransaction,
   inventory,
+  productionOrders,
   parts,
   onPrint,
   onCopy,
@@ -2906,7 +2910,7 @@ function ProduceView({
   );
 
   const allAvailablePos = useMemo(() => {
-    return storageService.getProductionOrders().filter(p => {
+    return productionOrders.filter(p => {
       if (p.stageId !== selectedStage || p.status === 'COMPLETED') return false;
       
       if (sourceLocation === 'IN') {
@@ -2916,7 +2920,7 @@ function ProduceView({
         return (p.exportedQuantity || 0) < p.targetQuantity;
       }
     });
-  }, [selectedStage, sourceLocation, storageService.getProductionOrders()]); // Depend on getter
+  }, [selectedStage, sourceLocation, productionOrders]);
 
   // Filter parts based on stage, BOM level, and selected PO
   const filteredParts = React.useMemo(() => {
@@ -3040,49 +3044,13 @@ function ProduceView({
     const cleanId = selectedPart.split(' - ')[0].trim().toUpperCase();
     const effectiveId = storageService.getEffectivePartId(cleanId, selectedStage, selectedPoId);
     
-    const partsInCatalog = storageService.getParts();
-    const selectedPartInCatalog = partsInCatalog.find(p => p.id === cleanId || p.name === cleanId);
-    const selectedPartName = selectedPartInCatalog?.name.toUpperCase();
-    const selectedPartId = selectedPartInCatalog?.id.toUpperCase();
-
     return inventory.reduce((sum: number, item: any) => {
       if (item.stageId === selectedStage && item.location === sourceLocation) {
         const itPartId = item.partId.toUpperCase();
-        const itOrigId = (item.originalPartId || '').toUpperCase();
         const targetId = effectiveId.toUpperCase();
-        const sourceId = cleanId.toUpperCase();
 
-        const itEffectiveId = storageService.getEffectivePartId(item.partId, selectedStage, selectedPoId).toUpperCase();
-        const itBaseId = itPartId.split(' - ')[0].trim();
-        const itEffectiveBaseId = itEffectiveId.split(' - ')[0].trim();
-
-        const nItPartId = storageService.normalize(itPartId);
-        const nTargetId = storageService.normalize(targetId);
-        const nSelectedPartName = storageService.normalize(selectedPartName || '');
-        const nItOrigId = storageService.normalize(itOrigId);
-        const nSourceId = storageService.normalize(sourceId);
-
-        const mainMatch = itPartId === targetId || 
-                         itBaseId === targetId ||
-                         itEffectiveId === targetId ||
-                         itEffectiveBaseId === targetId ||
-                         nItPartId === nTargetId ||
-                         (nSelectedPartName && nItPartId === nSelectedPartName) ||
-                         (selectedPartName && itPartId === selectedPartName);
-        
-        if (mainMatch) {
-          const originMatch = !itOrigId || 
-                             itOrigId === sourceId || 
-                             nItOrigId === nSourceId ||
-                             (nSelectedPartName && nItOrigId === nSelectedPartName) ||
-                             (selectedPartName && itOrigId === selectedPartName) ||
-                             (selectedPartId && itOrigId === selectedPartId) ||
-                             itBaseId === sourceId ||
-                             (itOrigId.includes(sourceId)) || (sourceId.includes(itOrigId));
-          
-          if (originMatch) {
-            return sum + item.quantity;
-          }
+        if (itPartId === targetId) {
+          return sum + item.quantity;
         }
       }
       return sum;
