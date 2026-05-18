@@ -681,9 +681,30 @@ export const storageService = {
     const inventory = this.getInventory();
     const effectiveId = this.getEffectivePartId(cleanId, stageId, linkedPoId);
     
-    const matchingStocks = inventory.filter(
-      (item) => item.partId.toUpperCase() === effectiveId.toUpperCase() && item.stageId === stageId && item.location === sourceLocation
-    );
+    const partsInCatalog = this.getParts();
+    const selectedPartInCatalog = partsInCatalog.find(p => p.id === cleanId || p.name === cleanId);
+    const selectedPartName = selectedPartInCatalog?.name.toUpperCase();
+    const selectedPartId = selectedPartInCatalog?.id.toUpperCase();
+
+    const matchingStocks = inventory.filter((item) => {
+      if (item.stageId === stageId && item.location === sourceLocation) {
+        const itPartId = item.partId.toUpperCase();
+        const itOrigId = (item.originalPartId || '').toUpperCase();
+        const targetId = effectiveId.toUpperCase();
+        const sourceId = cleanId.toUpperCase();
+
+        const mainMatch = itPartId === targetId || (selectedPartName && itPartId === selectedPartName);
+        if (mainMatch) {
+          const originMatch = !itOrigId || 
+                             itOrigId === sourceId || 
+                             (selectedPartName && itOrigId === selectedPartName) ||
+                             (selectedPartId && itOrigId === selectedPartId) ||
+                             (itOrigId.includes(sourceId)) || (sourceId.includes(itOrigId));
+          return originMatch;
+        }
+      }
+      return false;
+    });
     const totalStock = matchingStocks.reduce((sum, item) => sum + item.quantity, 0);
 
     if (totalStock < quantity) {

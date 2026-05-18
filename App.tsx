@@ -239,24 +239,19 @@ export default function App() {
       return;
     }
 
-    // Validate against current stock
-    if (quantity > currentStock + 0.0001) { // small epsilon for float precision
-      setError(`Số lượng xuất (${quantity}) vượt quá tồn kho hiện tại (${currentStock})`);
-      return;
-    }
-
     try {
       const tx = storageService.recordStageOut(selectedPart, selectedStage, quantity, sourceLocation, targetStageId, poId);
+      
+      // Update inventory state immediately
+      const updatedInventory = storageService.getInventory();
+      setInventory(updatedInventory);
+      
       setLastTransaction(tx);
       const part = parts.find(p => p.id === selectedPart);
       const partName = getProcessValue(part?.name, part, selectedStage, 'OUT');
       const locationName = sourceLocation === 'IN' ? 'KHO_IN' : 'KHO_OUT';
       setSuccess(`Đã xuất từ ${locationName} ${quantity} ${partName} tại ${STAGES.find(s => s.id === selectedStage)?.name}`);
       setQuantity(0);
-      
-      // Force immediate update of state
-      const updatedInventory = storageService.getInventory();
-      setInventory(updatedInventory);
       
       refreshData();
     } catch (err) {
@@ -3040,24 +3035,30 @@ function ProduceView({
     const cleanId = selectedPart.split(' - ')[0].trim().toUpperCase();
     const effectiveId = storageService.getEffectivePartId(cleanId, selectedStage, selectedPoId);
     
-    return inventory.reduce((sum: number, item: any) => {
-      // Inventory entries may use either the catalog ID or the transformed ID
-      const itPartId = item.partId.toUpperCase();
-      const itOrigId = (item.originalPartId || '').toUpperCase();
-      const targetId = effectiveId.toUpperCase();
-      const sourceId = cleanId.toUpperCase();
+    const partsInCatalog = storageService.getParts();
+    const selectedPartInCatalog = partsInCatalog.find(p => p.id === cleanId || p.name === cleanId);
+    const selectedPartName = selectedPartInCatalog?.name.toUpperCase();
+    const selectedPartId = selectedPartInCatalog?.id.toUpperCase();
 
+    return inventory.reduce((sum: number, item: any) => {
       if (item.stageId === selectedStage && item.location === sourceLocation) {
-        // If it was stored under the transformed name
-        if (itPartId === targetId) {
-          // AND it matches the original source part (to prevent cross-contamination of similar named transformations)
-          if (!itOrigId || itOrigId === sourceId) {
-             return sum + item.quantity;
+        const itPartId = item.partId.toUpperCase();
+        const itOrigId = (item.originalPartId || '').toUpperCase();
+        const targetId = effectiveId.toUpperCase();
+        const sourceId = cleanId.toUpperCase();
+
+        const mainMatch = itPartId === targetId || (selectedPartName && itPartId === selectedPartName);
+        
+        if (mainMatch) {
+          const originMatch = !itOrigId || 
+                             itOrigId === sourceId || 
+                             (selectedPartName && itOrigId === selectedPartName) ||
+                             (selectedPartId && itOrigId === selectedPartId) ||
+                             (itOrigId.includes(sourceId)) || (sourceId.includes(itOrigId));
+          
+          if (originMatch) {
+            return sum + item.quantity;
           }
-        }
-        // If it was stored under original name but we are looking for it
-        else if (itPartId === sourceId && targetId === sourceId) {
-          return sum + item.quantity;
         }
       }
       return sum;
@@ -3095,7 +3096,14 @@ function ProduceView({
           <p className="text-lg text-gray-500">Ghi nhận hoàn thành công đoạn hoặc xuất linh kiện từ kho thành phẩm để in nhãn QR.</p>
         </div>
         
-        <form onSubmit={(e) => handleProduce(e, sourceLocation, sourceLocation === 'OUT' ? targetStageId : undefined, selectedPoId)} className="space-y-8">
+        <form onSubmit={(e) => {
+          if (quantity > currentStock + 0.0001) {
+            alert(`Số lượng xuất (${quantity}) vượt quá tồn kho hiện tại (${currentStock})`);
+            e.preventDefault();
+            return;
+          }
+          handleProduce(e, sourceLocation, sourceLocation === 'OUT' ? targetStageId : undefined, selectedPoId);
+        }} className="space-y-8">
           <div className="grid grid-cols-2 gap-8">
             <div className="space-y-4">
               <label className="text-base font-bold uppercase tracking-widest opacity-70">1. Công đoạn hiện tại</label>
