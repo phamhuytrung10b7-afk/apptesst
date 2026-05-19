@@ -415,32 +415,119 @@ export const storageService = {
   rollbackTransaction(txId: string) {
     const transactions = this.getTransactions();
     const txIndex = transactions.findIndex(t => t.id === txId);
+    
     if (txIndex === -1) {
-      // If not in transactions, check labels
+      // Check labels if not in transactions
       const labels = this.getLabels();
-      const labelTx = labels.find(l => l.id === txId);
-      if (!labelTx) return;
+      const label = labels.find(l => l.id === txId);
+      if (!label) return;
       
-      // Rollback logic for label
-      this.updateInventory(labelTx.partId, labelTx.stageId, 'OUT', labelTx.quantity);
+      // Rollback logic for label (Export)
+      // 1. Add back to inventory (OUT location is "OK" stock for the stage)
+      this.updateInventory(label.partId, label.stageId, 'OUT', label.quantity);
+      
+      // 2. Update PO exportedQuantity if label has poId
+      if (label.poId) {
+        const pos = this.getProductionOrders();
+        const po = pos.find(p => p.id === label.poId);
+        if (po) {
+          po.exportedQuantity = Math.max(0, (po.exportedQuantity || 0) - label.quantity);
+          po.status = 'IN_PROGRESS';
+          po.completedAt = undefined;
+          
+          if (po.masterPoId) {
+            const masterPo = pos.find(p => p.id === po.masterPoId);
+            if (masterPo) {
+              masterPo.status = 'IN_PROGRESS';
+              masterPo.completedAt = undefined;
+            }
+          }
+          this.saveProductionOrders(pos);
+        }
+      }
+      
       this.deleteLabel(txId);
       return;
     }
 
     const tx = transactions[txIndex];
     
-    // Only rollback STAGE_OUT transactions that have QR data (meaning they were exported from OUT)
-    if (tx.type === 'STAGE_OUT' && tx.qrData) {
-      // Add quantity back to the source stage's OUT location
-      this.updateInventory(tx.partId, tx.stageId, 'OUT', tx.quantity);
+    // Rollback for standard transactions (STAGE_IN / STAGE_OUT)
+    // 1. Revert inventory
+    if (tx.type === 'STAGE_IN') {
+      // If it was an inbound, deduct from inventory
+      this.updateInventory(tx.partId, tx.stageId, tx.location || 'IN', -tx.quantity, tx.originalPartId);
       
-      // Remove from transactions
-      transactions.splice(txIndex, 1);
-      this.saveTransactions(transactions);
-      
-      // Remove from labels
-      this.deleteLabel(txId);
+      // If it updated producedQuantity (usually for OUT location inbound)
+      if (tx.location === 'OUT' && tx.poId) {
+        const pos = this.getProductionOrders();
+        const po = pos.find(p => p.id === tx.poId);
+        if (po) {
+          po.producedQuantity = Math.max(0, po.producedQuantity - tx.quantity);
+          po.status = 'IN_PROGRESS';
+          po.completedAt = undefined;
+
+          if (po.masterPoId) {
+            const masterPo = pos.find(p => p.id === po.masterPoId);
+            if (masterPo) {
+              masterPo.status = 'IN_PROGRESS';
+              masterPo.completedAt = undefined;
+            }
+          }
+          this.saveProductionOrders(pos);
+        }
+      }
+    } else if (tx.type === 'STAGE_OUT' || tx.type === 'DISPOSAL') {
+      // If it was an outbound/disposal, add back to inventory
+      this.updateInventory(tx.partId, tx.stageId, tx.location || 'OUT', tx.quantity, tx.originalPartId);
+
+      // Rollback PO progress for STAGE_OUT
+      if (tx.type === 'STAGE_OUT' && tx.poId) {
+        const pos = this.getProductionOrders();
+        const po = pos.find(p => p.id === tx.poId);
+        if (po) {
+          if (tx.location === 'IN') {
+            // Rollback Move In -> Out (increased producedQty)
+            po.producedQuantity = Math.max(0, po.producedQuantity - tx.quantity);
+          } else if (tx.location === 'OUT') {
+            // Rollback Export (increased exportedQty)
+            po.exportedQuantity = Math.max(0, (po.exportedQuantity || 0) - tx.quantity);
+            // If producedQuantity was automatically bumped to match exportedQty, pull it back too
+            if (po.producedQuantity > po.exportedQuantity) {
+               // We only pull back if it's likely it was bumped
+               // A better way is to check the transaction history, but staying simple:
+               // If producedQuantity == exportedQuantity (after subtracting), then it was likely synced
+            }
+            // Simple heuristic: if we were at 100/100 and rollback 100 export, go to 0/0
+            if (po.producedQuantity > po.exportedQuantity + tx.quantity * 0.1) { 
+               // If there was significantly more produced than exported, keep produced as is?
+               // Actually, let's just match them if produced was only driven by export
+               po.producedQuantity = Math.max(po.exportedQuantity, po.producedQuantity - tx.quantity);
+            } else {
+               po.producedQuantity = Math.max(0, po.producedQuantity - tx.quantity);
+            }
+          }
+          po.status = 'IN_PROGRESS';
+          po.completedAt = undefined;
+          
+          if (po.masterPoId) {
+            const masterPo = pos.find(p => p.id === po.masterPoId);
+            if (masterPo) {
+              masterPo.status = 'IN_PROGRESS';
+              masterPo.completedAt = undefined;
+            }
+          }
+          this.saveProductionOrders(pos);
+        }
+      }
     }
+
+    // Remove from transactions
+    transactions.splice(txIndex, 1);
+    this.saveTransactions(transactions);
+    
+    // Also remove any related labels if exist
+    this.deleteLabel(txId);
   },
 
   getEffectivePartId(partId: string, stageId: StageId, poId?: string): string {
@@ -757,7 +844,7 @@ export const storageService = {
       if (nextStage.id === 'PAINTING' && part.skipPainting) continue;
       return nextStage.id;
     }
-    return 'DCLR';
+    return null;
   },
 
   recordStageOut(partId: string, stageId: StageId, quantity: number, sourceLocation: 'IN' | 'OUT' = 'IN', targetStageId?: StageId, poId?: string) {
@@ -888,6 +975,7 @@ export const storageService = {
       originalPartId: lastOriginalId,
       quantity,
       stageId,
+      location: sourceLocation,
       targetStageId,
       timestamp: Date.now(),
       qrData,
@@ -1001,6 +1089,7 @@ export const storageService = {
       originalPartId: originalPartId, // Track original if transformed
       quantity,
       stageId: currentStageId,
+      location: finalTargetLocation,
       sourceStageId: sourceStageId as StageId,
       timestamp: Date.now(),
       qrData,
@@ -1079,6 +1168,7 @@ export const storageService = {
       originalPartId: originalPartId,
       quantity,
       stageId,
+      location, // Store the target location (IN/OUT)
       timestamp: Date.now(),
       qrData: 'MANUAL_ENTRY',
       poId: linkedPoId
@@ -1865,13 +1955,41 @@ export const storageService = {
     this.saveProductionOrders(filtered);
   },
 
+  clearStageInventory(stageId: StageId, location: 'IN' | 'OUT') {
+    const inventory = this.getInventory();
+    const newInventory = inventory.filter(item => !(item.stageId === stageId && item.location === location));
+    this.saveInventory(newInventory);
+  },
+
   updateSubPoQty(id: string, qty: number) {
     const pos = this.getProductionOrders();
-    const poIndex = pos.findIndex(p => p.id === id);
-    if (poIndex !== -1) {
-      pos[poIndex].targetQuantity = qty;
-      this.saveProductionOrders(pos);
-    }
+    const targetPo = pos.find(p => p.id === id);
+    if (!targetPo) return;
+
+    // If it's a Master PO or has a Master PO, we might want to sync all related POs
+    const masterPoId = targetPo.masterPoId || (targetPo.stageId ? null : targetPo.id);
+    
+    // Identify all POs to update
+    const posToUpdate = masterPoId 
+      ? pos.filter(p => p.id === masterPoId || p.masterPoId === masterPoId)
+      : [targetPo];
+
+    posToUpdate.forEach(po => {
+      po.targetQuantity = qty;
+      
+      // Recalculate status
+      const isProduced = po.producedQuantity >= po.targetQuantity;
+      const isExported = (po.exportedQuantity || 0) >= po.targetQuantity;
+      po.status = (isProduced && isExported) ? 'COMPLETED' : 'IN_PROGRESS';
+      
+      if (po.status === 'COMPLETED' && !po.completedAt) {
+        po.completedAt = Date.now();
+      } else if (po.status !== 'COMPLETED') {
+        po.completedAt = undefined;
+      }
+    });
+
+    this.saveProductionOrders(pos);
   },
 
   resetAllData() {

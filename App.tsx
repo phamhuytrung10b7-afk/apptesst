@@ -815,6 +815,7 @@ export default function App() {
                   parts={parts}
                   onManualInbound={handleManualInbound}
                   setDefectModal={setDefectModal}
+                  productionOrders={productionOrders}
                 />
               )}
               {currentView === 'welding_inbound' && (
@@ -823,6 +824,7 @@ export default function App() {
                   parts={parts}
                   onManualInbound={handleManualInbound}
                   setDefectModal={setDefectModal}
+                  productionOrders={productionOrders}
                 />
               )}
               {currentView === 'glazing' && (
@@ -843,6 +845,7 @@ export default function App() {
                   parts={parts}
                   onManualInbound={handleManualInbound}
                   setDefectModal={setDefectModal}
+                  productionOrders={productionOrders}
                 />
               )}
               {currentView === 'labels' && (
@@ -858,7 +861,11 @@ export default function App() {
                 />
               )}
               {currentView === 'po' && (
-                <ProductionOrderView parts={parts} />
+                <ProductionOrderView 
+                  parts={parts} 
+                  onUpdate={refreshData} 
+                  productionOrders={productionOrders} 
+                />
               )}
               {currentView === 'defects' && (
                 <DefectView key="defects" parts={parts} transactions={transactions} inventory={inventory} refreshData={refreshData} setLastTransaction={setLastTransaction} />
@@ -975,8 +982,8 @@ interface DashboardProps {
   key?: string;
 }
 
-function ProductionOrderView({ parts }: { parts: Part[] }) {
-  const [orders, setOrders] = useState<ProductionOrder[]>([]);
+function ProductionOrderView({ parts, onUpdate, productionOrders }: { parts: Part[], onUpdate: () => void, productionOrders: ProductionOrder[] }) {
+  const [orders, setOrders] = useState<ProductionOrder[]>(productionOrders);
   const [activeTab, setActiveTab] = useState<'STANDARD' | 'REPAIR'>('STANDARD');
   const [selectedPart, setSelectedPart] = useState("");
   const [quantity, setQuantity] = useState(0);
@@ -989,7 +996,10 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
   const [expandedMasterPos, setExpandedMasterPos] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    setOrders(storageService.getProductionOrders());
+    setOrders(productionOrders);
+  }, [productionOrders]);
+
+  useEffect(() => {
     setTargetCompletion(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
   }, []);
 
@@ -1018,7 +1028,7 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
     if (password === 'admin123') {
       if (showEditModal) {
         storageService.updateSubPoQty(showEditModal.id, showEditModal.qty);
-        setOrders(storageService.getProductionOrders());
+        onUpdate();
         setShowEditModal(null);
         setPassword("");
       }
@@ -1034,7 +1044,7 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
     try {
       const endTs = targetCompletion ? new Date(targetCompletion).getTime() : Date.now();
       storageService.createMasterPO(selectedPart, quantity, endTs);
-      setOrders(storageService.getProductionOrders());
+      onUpdate();
       setSelectedPart("");
       setQuantity(0);
       alert('Đã tạo lệnh sản xuất PO Tổng và các PO Con thành công!');
@@ -1047,7 +1057,7 @@ function ProductionOrderView({ parts }: { parts: Part[] }) {
     if (password === 'admin123') {
       if (showDeleteModal) {
         storageService.deletePO(showDeleteModal);
-        setOrders(storageService.getProductionOrders());
+        onUpdate();
         setShowDeleteModal(null);
         setPassword("");
       }
@@ -2314,7 +2324,7 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
   const [searchTerm, setSearchTerm] = useState('');
 
   const chartData = useMemo(() => {
-    return STAGES.filter(s => s.id !== 'DCLR' && s.id !== 'GLAZING').map(stage => {
+    return STAGES.filter(s => s.id !== 'GLAZING').map(stage => {
       const stageItems = inventory.filter(item => item.stageId === stage.id);
       const inQty = stageItems
         .filter(item => item.location === 'IN')
@@ -2390,7 +2400,7 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stageSummaries.filter(s => s.id !== 'DCLR' && s.id !== 'GLAZING').map((summary, idx) => {
+        {stageSummaries.filter(s => s.id !== 'GLAZING').map((summary, idx) => {
           const isActive = selectedStageDetail === summary.id;
 
           return (
@@ -2496,6 +2506,38 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                   </button>
                 </div>
               </div>
+
+              {selectedStageDetail === 'DCLR' && (
+                <div className="mb-8 p-6 bg-red-50 border-2 border-red-200 rounded-2xl flex flex-col md:flex-row justify-between items-center gap-6 shadow-sm animate-in fade-in slide-in-from-top-4 duration-500">
+                  <div className="flex items-center gap-4">
+                    <div className="bg-red-600 p-4 rounded-2xl text-white shadow-lg">
+                      <Trash2 size={32} />
+                    </div>
+                    <div>
+                      <h4 className="text-xl font-black text-red-700 uppercase italic">Xóa tất cả tồn kho DCLR OUT</h4>
+                      <p className="text-red-600 font-medium opacity-80">Hành động này sẽ xóa vĩnh viễn toàn bộ số lượng đang có tại kho OUT của DCLR.</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      const pwd = prompt('Nhập mật khẩu ADMIN để xóa hết tồn kho DCLR OUT:');
+                      if (pwd === 'admin123') {
+                        if (confirm('BẠN CÓ CHẮC CHẮN MUỐN XÓA HẾT TỒN KHO DCLR OUT? Hành động này không thể hoàn tác!')) {
+                          storageService.clearStageInventory('DCLR', 'OUT');
+                          refreshData();
+                          alert('Đã xóa sạch tồn kho DCLR OUT thành công!');
+                        }
+                      } else if (pwd !== null) {
+                        alert('Mật khẩu không chính xác!');
+                      }
+                    }}
+                    className="px-8 py-4 bg-red-600 text-white rounded-xl font-black uppercase tracking-tighter hover:bg-black transition-all flex items-center gap-3 shadow-xl active:scale-95 group"
+                  >
+                    <Trash2 size={24} className="group-hover:rotate-12 transition-transform" />
+                    Xác nhận xóa hết
+                  </button>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* KHO_IN Detail */}
@@ -3045,14 +3087,9 @@ function ProduceView({
     });
 
     if (nextAvailableStage) {
-      // Special case: Painting OUT goes directly to DCLR as requested by user
-      if (selectedStage === 'PAINTING' && sourceLocation === 'OUT') {
-        setTargetStageId('DCLR');
-      } else {
-        setTargetStageId(nextAvailableStage.id);
-      }
+      setTargetStageId(nextAvailableStage.id);
     } else {
-      setTargetStageId('DCLR');
+      setTargetStageId('' as StageId); // End of line
     }
     
     // Auto-switch to OUT for stages with automatic BOM deduction
@@ -3127,7 +3164,7 @@ function ProduceView({
                 onChange={(e) => setSelectedStage(e.target.value)}
                 className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none bg-white cursor-pointer"
               >
-                {STAGES.filter(stage => stage.id !== 'DCLR').map(stage => (
+                {STAGES.map(stage => (
                   <option key={stage.id} value={stage.id}>{stage.name}</option>
                 ))}
               </select>
@@ -3189,7 +3226,7 @@ function ProduceView({
             />
           </div>
 
-          {sourceLocation === 'OUT' && targetStageId !== 'DCLR' && (
+          {sourceLocation === 'OUT' && (
             <div className="space-y-4">
               <label className="text-sm font-bold uppercase tracking-widest opacity-50">4. Công đoạn đích (Nhập kho IN)</label>
               <select 
@@ -3197,35 +3234,11 @@ function ProduceView({
                 onChange={(e) => setTargetStageId(e.target.value as StageId)}
                 className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none bg-white cursor-pointer"
               >
-                {STAGES.filter((s, idx) => {
-                  const currentIdx = STAGES.findIndex(st => st.id === selectedStage);
-                  const part = parts.find((p: any) => p.id === selectedPart);
-                  
-                  if (s.id === 'DCLR') return false; // Hide DCLR choice explicitly here
-
-                  // Only show stages after the current one
-                  if (idx <= currentIdx) return false;
-
-                  // Filter out skipped stages based on part configuration
-                  if (s.id === 'LASER' && part?.skipLaser) return false;
-                  if (s.id === 'BENDING' && part?.skipBending) return false;
-                  if (s.id === 'WELDING' && part?.skipWelding) return false;
-                  if (s.id === 'PAINTING' && part?.skipPainting) return false;
-
-                  return true;
-                }).map(stage => (
-                  <option key={stage.id} value={stage.id}>{stage.name}</option>
+                {STAGES.map(s => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
+                <option value="">Kết thúc (Thành phẩm)</option>
               </select>
-            </div>
-          )}
-
-          {sourceLocation === 'OUT' && targetStageId === 'DCLR' && (
-            <div className="space-y-4">
-              <label className="text-sm font-bold uppercase tracking-widest opacity-50">4. Công đoạn đích (Nhập kho IN)</label>
-              <div className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg bg-gray-50 text-gray-500 text-center">
-                Lắp ráp (DCLR)
-              </div>
             </div>
           )}
 
@@ -3499,7 +3512,7 @@ function ProduceView({
   );
 }
 
-function WeldingInboundView({ parts, onManualInbound, setDefectModal }: any) {
+function WeldingInboundView({ parts, onManualInbound, setDefectModal, productionOrders }: any) {
   const [manualPart, setManualPart] = useState('');
   const [manualQty, setManualQty] = useState(0);
   const [selectedPoId, setSelectedPoId] = useState<string>("");
@@ -3509,10 +3522,10 @@ function WeldingInboundView({ parts, onManualInbound, setDefectModal }: any) {
   const targetLocation = 'OUT';
 
   const allAvailablePos = useMemo(() => {
-    return storageService.getProductionOrders().filter(
-      p => p.stageId === selectedStage && p.status !== 'COMPLETED'
+    return (productionOrders || []).filter(
+      (p: any) => p.stageId === selectedStage && p.status !== 'COMPLETED'
     );
-  }, [selectedStage, storageService.getProductionOrders()]);
+  }, [selectedStage, productionOrders]);
 
   const filteredParts = parts.filter((p: any) => {
     if (selectedPoId) {
@@ -3782,7 +3795,7 @@ function WeldingInboundView({ parts, onManualInbound, setDefectModal }: any) {
   );
 }
 
-function LaserInboundView({ parts, onManualInbound, setDefectModal }: any) {
+function LaserInboundView({ parts, onManualInbound, setDefectModal, productionOrders }: any) {
   const [targetLocation, setTargetLocation] = useState<'IN' | 'OUT'>('IN');
   const [manualPart, setManualPart] = useState('');
   const [manualQty, setManualQty] = useState(0);
@@ -3792,10 +3805,10 @@ function LaserInboundView({ parts, onManualInbound, setDefectModal }: any) {
   const selectedStage = 'LASER';
 
   const allAvailablePos = useMemo(() => {
-    return storageService.getProductionOrders().filter(
-      p => p.stageId === selectedStage && p.status !== 'COMPLETED'
+    return (productionOrders || []).filter(
+      (p: any) => p.stageId === selectedStage && p.status !== 'COMPLETED'
     );
-  }, [selectedStage, storageService.getProductionOrders()]);
+  }, [selectedStage, productionOrders]);
 
   const filteredParts = parts.filter((p: any) => {
     if (selectedPoId && targetLocation === 'OUT') {
@@ -4087,7 +4100,7 @@ function LaserInboundView({ parts, onManualInbound, setDefectModal }: any) {
   );
 }
 
-function ManualInboundView({ parts, onManualInbound, setDefectModal }: any) {
+function ManualInboundView({ parts, onManualInbound, setDefectModal, productionOrders }: any) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
   const [selectedStage, setSelectedStage] = useState<StageId>(STAGES[0].id);
@@ -4113,10 +4126,10 @@ function ManualInboundView({ parts, onManualInbound, setDefectModal }: any) {
   };
 
   const allAvailablePos = useMemo(() => {
-    return storageService.getProductionOrders().filter(
-      p => p.stageId === selectedStage && p.status !== 'COMPLETED'
+    return (productionOrders || []).filter(
+      (p: any) => p.stageId === selectedStage && p.status !== 'COMPLETED'
     );
-  }, [selectedStage, storageService.getProductionOrders()]);
+  }, [selectedStage, productionOrders]);
 
   const filteredParts = parts.filter((p: any) => {
     // Allow selecting any valid part for IN/OUT even if no PO exists in manual inbound
@@ -4259,7 +4272,7 @@ function ManualInboundView({ parts, onManualInbound, setDefectModal }: any) {
                 onChange={(e) => setSelectedStage(e.target.value as StageId)}
                 className="w-full p-5 rounded-xl border-2 border-gray-100 font-bold text-lg focus:border-blue-600 outline-none bg-white cursor-pointer"
               >
-                {STAGES.filter(stage => stage.id !== 'DCLR').map(stage => (
+                {STAGES.map(stage => (
                   <option key={stage.id} value={stage.id}>{stage.name}</option>
                 ))}
               </select>
@@ -4868,14 +4881,14 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
       }
 
       const headers = rows[0].map((h: any) => String(h || '').toLowerCase().trim());
-      const nameIdx = headers.findIndex((h: any) => h.includes('tên linh kiện'));
-      const idIdx = headers.findIndex((h: any) => h.includes('mã linh kiện') || h.includes('part id'));
-      const normIdx = headers.findIndex((h: any) => h.includes('định mức'));
-      const modelIdx = headers.findIndex((h: any) => h.includes('tên model'));
-      const appliedIdx = headers.findIndex((h: any) => h.includes('model áp dụng') || h.includes('model sx'));
+      const nameIdx = headers.findIndex((h: any) => h.includes('tên lk') || h.includes('tên linh kiện'));
+      const idIdx = headers.findIndex((h: any) => h.includes('mã lk') || h.includes('mã linh kiện') || h.includes('part id'));
+      const normIdx = headers.findIndex((h: any) => h.includes('định mức') || h.includes('đm'));
+      const modelIdx = headers.findIndex((h: any) => h.includes('tên model') || h.includes('mã model'));
+      const appliedIdx = headers.findIndex((h: any) => h.includes('model áp dụng') || h.includes('model sx') || h.includes('mã model'));
 
       if (nameIdx === -1 || normIdx === -1) {
-        alert('Không tìm thấy các cột tối thiểu: Tên linh kiện, Định mức.');
+        alert('Không tìm thấy các cột tối thiểu: Tên LK (hoặc Tên linh kiện), Định mức.');
         return;
       }
 
@@ -7325,7 +7338,7 @@ function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () 
         >
           Tổ hợp Laser
         </button>
-        {STAGES.filter(s => s.id !== 'LASER' && s.id !== 'DCLR').map(stage => (
+        {STAGES.filter(s => s.id !== 'LASER').map(stage => (
           <button
             key={stage.id}
             onClick={() => setActiveTab(stage.id)}

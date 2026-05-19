@@ -33,6 +33,7 @@ export interface Transaction {
   originalPartId?: string; // If part was transformed upon entry
   quantity: number;
   stageId: StageId;
+  location?: 'IN' | 'OUT' | 'DEFECT';
   timestamp: number;
   qrData?: string;
   sourceStageId?: StageId; // For STAGE_IN, where it came from
@@ -161,9 +162,9 @@ export const STAGES: { id: StageId; name: string; nextStageId?: StageId }[] = [
   { id: 'LASER', name: 'Cắt Laser', nextStageId: 'BENDING' },
   { id: 'BENDING', name: 'Chấn/Dập', nextStageId: 'WELDING' },
   { id: 'WELDING', name: 'Hàn', nextStageId: 'PAINTING' },
-  { id: 'PAINTING', name: 'Sơn', nextStageId: 'GLAZING' },
-  { id: 'GLAZING', name: 'Dán Kính', nextStageId: 'DCLR' },
-  { id: 'DCLR', name: 'Lắp ráp (DCLR)' },
+  { id: 'PAINTING', name: 'Sơn', nextStageId: 'DCLR' },
+  { id: 'DCLR', name: 'Lắp ráp (DCLR)', nextStageId: 'GLAZING' },
+  { id: 'GLAZING', name: 'Dán Kính' },
 ];
 
 export const DEFECT_REASONS = [
