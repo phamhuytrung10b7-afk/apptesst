@@ -3120,7 +3120,7 @@ function ProduceView({
   }, [selectedStage, selectedPart, sourceLocation, parts]);
 
   const currentStock = useMemo(() => {
-    const cleanId = selectedPart.split(' - ')[0].trim().toUpperCase();
+    const cleanId = selectedPart.startsWith('GLZ-OUT-') ? selectedPart.trim().toUpperCase() : selectedPart.split(' - ')[0].trim().toUpperCase();
     const effectiveId = storageService.getEffectivePartId(cleanId, selectedStage, selectedPoId);
     
     return inventory.reduce((sum: number, item: any) => {

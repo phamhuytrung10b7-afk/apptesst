@@ -725,7 +725,7 @@ export const storageService = {
   applyBOMDeduction(partId: string, stageId: StageId, quantity: number, poId?: string) {
     const parts = this.getParts();
     // Strip suffixes added by display logic (e.g., " - CD", " - H") to ensure BOM lookups match the original part ID
-    const cleanId = partId.split(' - ')[0];
+    const cleanId = partId.startsWith('GLZ-OUT-') ? partId : partId.split(' - ')[0];
 
     let currentModelId: string | undefined;
     if (poId) {
@@ -848,7 +848,7 @@ export const storageService = {
   },
 
   recordStageOut(partId: string, stageId: StageId, quantity: number, sourceLocation: 'IN' | 'OUT' = 'IN', targetStageId?: StageId, poId?: string) {
-    const cleanId = partId.split(' - ')[0].trim().toUpperCase();
+    const cleanId = partId.startsWith('GLZ-OUT-') ? partId.trim().toUpperCase() : partId.split(' - ')[0].trim().toUpperCase();
     const pos = this.getProductionOrders();
     const poIndex = poId 
       ? pos.findIndex(p => p.id === poId)
@@ -1106,7 +1106,7 @@ export const storageService = {
   },
 
   recordManualInbound(partId: string, stageId: StageId, location: 'IN' | 'OUT', quantity: number, poId?: string) {
-    const cleanId = partId.split(' - ')[0].trim().toUpperCase();
+    const cleanId = partId.startsWith('GLZ-OUT-') ? partId.trim().toUpperCase() : partId.split(' - ')[0].trim().toUpperCase();
     let linkedPoId = poId;
 
     // Check for required PO
@@ -1189,7 +1189,7 @@ export const storageService = {
   },
 
   recordDefect(partId: string, stageId: StageId, quantity: number, reason: string, category: string, poId?: string) {
-    const cleanId = partId.split(' - ')[0].trim().toUpperCase();
+    const cleanId = partId.startsWith('GLZ-OUT-') ? partId.trim().toUpperCase() : partId.split(' - ')[0].trim().toUpperCase();
     
     // 1. Validation: Ensure we have enough stock in IN to mark as defect
     const inventory = this.getInventory();
@@ -1259,7 +1259,7 @@ export const storageService = {
   },
 
   recordDisposal(partId: string, stageId: StageId, quantity: number) {
-    const cleanId = partId.split(' - ')[0].trim().toUpperCase();
+    const cleanId = partId.startsWith('GLZ-OUT-') ? partId.trim().toUpperCase() : partId.split(' - ')[0].trim().toUpperCase();
     
     // 1. Validation
     const inventory = this.getInventory();
