@@ -2323,48 +2323,77 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
   const [selectedStageDetail, setSelectedStageDetail] = useState<StageId | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const chartData = useMemo(() => {
-    return STAGES.filter(s => s.id !== 'GLAZING').map(stage => {
-      const stageItems = inventory.filter(item => item.stageId === stage.id);
-      const inQty = stageItems
-        .filter(item => item.location === 'IN')
-        .reduce((sum, item) => sum + item.quantity, 0);
-      const outQty = stageItems
-        .filter(item => item.location === 'OUT')
-        .reduce((sum, item) => sum + item.quantity, 0);
-      const defectQty = stageItems
-        .filter(item => item.location === 'DEFECT')
-        .reduce((sum, item) => sum + item.quantity, 0);
+  const [chartDate, setChartDate] = useState(() => {
+    const today = new Date();
+    const offset = today.getTimezoneOffset();
+    const local = new Date(today.getTime() - (offset*60*1000));
+    return local.toISOString().split('T')[0];
+  });
+
+  const productionChartData = useMemo(() => {
+    const timeSlots = [
+      { label: '7h-8h', start: 7, end: 8 },
+      { label: '8h-10h', start: 8, end: 10 },
+      { label: '10h-12h', start: 10, end: 12 },
+      { label: '13h-15h', start: 13, end: 15 },
+      { label: '15h-17h', start: 15, end: 17 },
+      { label: '17h-19h', start: 17, end: 19 },
+      { label: '19h-20h', start: 19, end: 20 },
+    ];
+
+    const targetStages = ['LASER', 'BENDING', 'WELDING', 'PAINTING'];
+    
+    // Filter transactions by date and type STAGE_OUT (location IN -> processing done)
+    const productionTransactions = transactions.filter(t => {
+      // "Năng lực sản xuất" logic: When something leaves 'IN' at a stage (moves to OUT),
+      // OR when something is manually inbound directly to 'OUT' (like Laser Cutting)
+      const isProducedAtStage = 
+        (t.type === 'STAGE_OUT' && t.location === 'IN') ||
+        (t.type === 'STAGE_IN' && t.location === 'OUT');
+
+      if (!isProducedAtStage) return false;
+      if (!targetStages.includes(t.stageId)) return false;
       
-      return {
-        name: stage.name,
-        'Chờ SX (IN)': inQty,
-        'Hoàn thành (OUT)': outQty,
-        'Lỗi (Defect)': defectQty,
-      };
+      const txDateObj = new Date(t.timestamp);
+      const offset = txDateObj.getTimezoneOffset();
+      const localDate = new Date(txDateObj.getTime() - (offset*60*1000));
+      const txDate = localDate.toISOString().split('T')[0];
+      
+      return txDate === chartDate;
     });
-  }, [inventory]);
 
-  const { totalOk, totalNg, yieldRate, totalScrapped, topDefects } = useMemo(() => {
-    const ok = inventory.filter(i => i.location === 'OUT').reduce((sum, i) => sum + i.quantity, 0);
-    const ng = inventory.filter(i => i.location === 'DEFECT').reduce((sum, i) => sum + i.quantity, 0);
-    const rate = ok + ng > 0 ? (ok / (ok + ng)) * 100 : 100;
-    
-    const scrapped = transactions.filter(t => t.type === 'DISPOSAL').reduce((sum, t) => sum + t.quantity, 0);
-    
-    const defectReasons: Record<string, number> = {};
-    transactions.filter(t => t.type === 'DEFECT' && t.defectReason).forEach(t => {
-      const reason = t.defectReason as string;
-      defectReasons[reason] = (defectReasons[reason] || 0) + t.quantity;
+    return timeSlots.map(slot => {
+      const slotData: any = { name: slot.label, details: {} };
+      targetStages.forEach(stageId => {
+        const stageName = STAGES.find(s => s.id === stageId)?.name || stageId;
+        slotData[stageName] = 0;
+        slotData.details[stageName] = [];
+      });
+
+      const slotTxs = productionTransactions.filter(t => {
+        const hour = new Date(t.timestamp).getHours();
+        return hour >= slot.start && hour < slot.end;
+      });
+
+      slotTxs.forEach(t => {
+        const stageName = STAGES.find(s => s.id === t.stageId)?.name || t.stageId;
+        slotData[stageName] += t.quantity;
+        
+        const part = parts.find((p: any) => p.id === t.partId);
+        const partName = part ? part.name : (t.partName || t.partId);
+        const unit = part?.unit || 'cái';
+        
+        const existingDetail = slotData.details[stageName].find((d: any) => d.partName === partName);
+        if (existingDetail) {
+          existingDetail.quantity += t.quantity;
+        } else {
+          slotData.details[stageName].push({ partName, quantity: t.quantity, unit });
+        }
+      });
+
+      return slotData;
     });
-    
-    const top = Object.entries(defectReasons)
-      .map(([reason, count]) => ({ reason, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 3);
-
-    return { totalOk: ok, totalNg: ng, yieldRate: rate, totalScrapped: scrapped, topDefects: top };
-  }, [inventory, transactions]);
+  }, [transactions, chartDate]);
 
   const stageSummaries = useMemo(() => {
     return STAGES.map(stage => {
@@ -2841,111 +2870,103 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
         ) : null}
       </AnimatePresence>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Chart Area */}
-        <div className="lg:col-span-2 bg-white p-8 rounded-2xl border border-gray-200 shadow-sm">
-          <div className="flex justify-between items-center mb-8">
-            <h2 className="font-bold text-2xl tracking-tight">Biểu đồ tồn kho WIP</h2>
-            <div className="flex gap-6">
-              <div className="flex items-center gap-3">
-                <div className="w-4 h-4 rounded-full bg-blue-500" />
-                <span className="text-sm font-mono uppercase opacity-60">Chờ SX (IN)</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-4 h-4 rounded-full bg-[#F27D26]" />
-                <span className="text-sm font-mono uppercase opacity-60">Hoàn thành (OUT)</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-4 h-4 rounded-full bg-red-500" />
-                <span className="text-sm font-mono uppercase opacity-60">Lỗi (Defect)</span>
-              </div>
-            </div>
-          </div>
-          <div className="h-80 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F0F0F0" />
-                <XAxis 
-                  dataKey="name" 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{ fontSize: 14, fontWeight: 600 }} 
-                />
-                <YAxis 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{ fontSize: 14, fontFamily: 'monospace' }} 
-                />
-                <Tooltip 
-                  cursor={{ fill: '#F3F4F6' }}
-                  contentStyle={{ 
-                    backgroundColor: '#FFFFFF', 
-                    border: '1px solid #E5E7EB', 
-                    borderRadius: '12px',
-                    color: '#111827',
-                    fontFamily: 'monospace',
-                    fontSize: '14px',
-                    padding: '16px',
-                    boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'
-                  }} 
-                />
-                <Bar dataKey="Chờ SX (IN)" fill="#3B82F6" radius={[6, 6, 0, 0]} barSize={30} />
-                <Bar dataKey="Hoàn thành (OUT)" fill="#F27D26" radius={[6, 6, 0, 0]} barSize={30} />
-                <Bar dataKey="Lỗi (Defect)" fill="#EF4444" radius={[6, 6, 0, 0]} barSize={30} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Yield Rate Card */}
-        <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm flex flex-col items-center justify-center space-y-6 text-gray-900">
-          <div className="text-center">
-            <span className="text-sm font-mono uppercase opacity-50 font-bold tracking-widest text-[#F27D26]">Yield Rate (Toàn xưởng)</span>
-            <div className="flex items-baseline justify-center gap-1 mt-2">
-              <h3 className="text-6xl font-black text-[#F27D26]">{yieldRate.toFixed(1)}</h3>
-              <span className="text-2xl font-bold text-[#F27D26]">%</span>
-            </div>
-          </div>
-          
-          <div className="w-full space-y-2">
-            <div className="w-full bg-gray-100 h-6 rounded-full overflow-hidden border border-gray-200 p-1">
-              <motion.div 
-                initial={{ width: 0 }}
-                animate={{ width: `${yieldRate}%` }}
-                transition={{ duration: 1.5, ease: "easeOut" }}
-                className={cn(
-                  "h-full rounded-full transition-all duration-1000 shadow-inner",
-                  yieldRate > 95 ? "bg-green-500" : yieldRate > 85 ? "bg-[#F27D26]" : "bg-orange-500"
-                )}
+      <div className="bg-white p-8 rounded-2xl border border-gray-200 shadow-sm w-full">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+          <h2 className="font-bold text-2xl tracking-tight">Năng lực sản xuất theo giờ</h2>
+          <div className="flex items-center gap-6 flex-wrap">
+            <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-lg px-4 py-2">
+              <span className="text-sm font-bold uppercase opacity-60">Ngày:</span>
+              <input 
+                type="date"
+                value={chartDate}
+                onChange={(e) => setChartDate(e.target.value)}
+                className="bg-transparent border-none outline-none font-bold text-[#F27D26] cursor-pointer"
               />
             </div>
-            <div className="flex justify-between w-full text-[11px] font-mono uppercase font-bold px-1">
-              <span className="text-red-600 bg-red-50 px-2 py-0.5 rounded">Lỗi (NG): {totalNg}</span>
-              <span className="text-[#F27D26] bg-orange-50 px-2 py-0.5 rounded">Đạt (OK): {totalOk}</span>
-            </div>
-          </div>
-
-          <div className="pt-6 border-t border-gray-100 w-full space-y-4">
-            <div className="flex justify-between items-center">
-              <span className="text-sm font-bold uppercase opacity-60">Lũy kế hủy (Scrapped)</span>
-              <span className="text-xl font-black text-red-600 font-mono bg-red-50 px-3 py-1 rounded">{totalScrapped}</span>
-            </div>
             
-            {topDefects.length > 0 && (
-              <div className="space-y-2 pt-2 border-t border-gray-50">
-                <span className="text-[10px] font-bold uppercase tracking-widest opacity-50 block mb-2">Top lý do gây lỗi phổ biến</span>
-                {topDefects.map((def, idx) => (
-                  <div key={idx} className="flex justify-between items-center bg-red-50/50 p-2 rounded">
-                    <span className="text-xs font-bold text-red-800">{idx + 1}. {def.reason}</span>
-                    <span className="text-xs font-mono font-bold text-red-600">{def.count}</span>
-                  </div>
-                ))}
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded bg-[#3B82F6]" />
+                <span className="text-sm font-mono uppercase opacity-60">Cắt Laser</span>
               </div>
-            )}
-            <p className="text-[10px] text-center text-gray-400 italic pt-2">
-              * Tỷ lệ hàng đạt (Yield Rate) dựa trên tổng số lượng linh kiện hoàn thành so với xuất hủy (Disposal).
-            </p>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded bg-[#F27D26]" />
+                <span className="text-sm font-mono uppercase opacity-60">Chấn/Dập</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded bg-[#10B981]" />
+                <span className="text-sm font-mono uppercase opacity-60">Hàn</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded bg-[#8B5CF6]" />
+                <span className="text-sm font-mono uppercase opacity-60">Sơn</span>
+              </div>
+            </div>
           </div>
+        </div>
+        <div className="h-96 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={productionChartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+              <XAxis 
+                dataKey="name" 
+                axisLine={false} 
+                tickLine={false} 
+                tick={{ fontSize: 12, fontWeight: 700 }} 
+                dy={10}
+              />
+              <YAxis 
+                axisLine={false} 
+                tickLine={false} 
+                tick={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 600 }} 
+                dx={-10}
+              />
+              <Tooltip 
+                cursor={{ fill: '#F9FAFB' }}
+                content={({ active, payload, label }: any) => {
+                  if (active && payload && payload.length) {
+                    const data = payload[0].payload;
+                    return (
+                      <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-xl text-sm text-gray-800 min-w-[200px]">
+                        <h4 className="font-bold border-b border-gray-100 pb-2 mb-3 text-lg opacity-80">{label}</h4>
+                        {payload.map((entry: any, index: number) => {
+                          if (entry.value === 0) return null;
+                          const stageDetails = data.details[entry.dataKey] || [];
+                          return (
+                            <div key={index} className="mb-4 last:mb-0">
+                              <div className="font-bold flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2" style={{ color: entry.color }}>
+                                  <div className="w-3 h-3 rounded" style={{ backgroundColor: entry.color }} />
+                                  <span className="uppercase tracking-widest">{entry.dataKey}</span>
+                                </div>
+                                <span className="font-mono bg-gray-100 px-2 py-0.5 rounded text-xs">{entry.value} TOTAL</span>
+                              </div>
+                              <div className="pl-5 space-y-2">
+                                {stageDetails.map((detail: any, idx: number) => (
+                                  <div key={idx} className="flex justify-between items-start text-xs text-gray-600 gap-6">
+                                    <span className="break-words flex-1 leading-tight">{detail.partName}</span>
+                                    <div className="flex items-center gap-1">
+                                      <span className="font-mono font-bold bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100">{detail.quantity}</span>
+                                      <span className="text-[10px] opacity-60 font-medium whitespace-nowrap">{detail.unit}</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  }
+                  return null;
+                }}
+              />
+              <Bar dataKey="Cắt Laser" fill="#3B82F6" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Chấn/Dập" fill="#F27D26" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Hàn" fill="#10B981" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Sơn" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </div>
     </motion.div>
