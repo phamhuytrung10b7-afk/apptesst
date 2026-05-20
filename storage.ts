@@ -1026,7 +1026,7 @@ export const storageService = {
 
     const quantity = parseFloat(quantityStr);
 
-    let partId = idOrPo.split(' - ')[0];
+    let partId = idOrPo.startsWith('GLZ-OUT-') ? idOrPo : idOrPo.split(' - ')[0];
     let linkedPoId: string | undefined;
 
     // Recognize PO IDs (PO- or REPAIR-)
@@ -1064,7 +1064,7 @@ export const storageService = {
       throw new Error(`Lỗi: Nhãn này được chỉ định cho công đoạn ${targetStageName}. Bạn đang ở công đoạn ${STAGES.find(s => s.id === currentStageId)?.name}.`);
     }
 
-    if (!linkedPoId) {
+    if (!linkedPoId && !partId.startsWith('GLZ-OUT-')) {
       throw new Error('Lỗi: Nhãn QR này không chứa thông tin Lệnh sản xuất (PO). Không thể nhập kho.');
     }
 
