@@ -847,7 +847,7 @@ export const storageService = {
     return null;
   },
 
-  recordStageOut(partId: string, stageId: StageId, quantity: number, sourceLocation: 'IN' | 'OUT' = 'IN', targetStageId?: StageId, poId?: string) {
+  recordStageOut(partId: string, stageId: StageId, quantity: number, sourceLocation: 'IN' | 'OUT' = 'IN', targetStageId?: StageId, poId?: string, force?: boolean) {
     const cleanId = partId.startsWith('GLZ-OUT-') ? partId.trim().toUpperCase() : partId.split(' - ')[0].trim().toUpperCase();
     const pos = this.getProductionOrders();
     const poIndex = poId 
@@ -862,6 +862,16 @@ export const storageService = {
     // Validation: Check if source location has enough quantity
     const inventory = this.getInventory();
     const effectiveId = this.getEffectivePartId(cleanId, stageId, linkedPoId);
+    
+    // 0. Update Production Order progress
+    const isPaintingExempt = stageId === 'PAINTING' && sourceLocation === 'IN';
+    if (sourceLocation === 'IN' && poIndex !== -1) {
+      const po = pos[poIndex];
+      // Validate PO limit before modifying state
+      if (po.producedQuantity + quantity > po.targetQuantity && !isPaintingExempt && !force) {
+        throw new Error(`OVER_PO:Số lượng sản xuất (${po.producedQuantity + quantity}) sẽ vượt quá mục tiêu PO (${po.targetQuantity}) cho ${cleanId} tại ${stageId}. Bạn có chắc chắn muốn báo cáo hoàn thành thêm?`);
+      }
+    }
     
     const partsInCatalog = this.getParts();
     const selectedPartInCatalog = partsInCatalog.find(p => p.id === cleanId || p.name === cleanId);
@@ -887,12 +897,8 @@ export const storageService = {
     }
 
     // 0. Update Production Order progress
-    const isPaintingExempt = stageId === 'PAINTING' && sourceLocation === 'IN';
     if (sourceLocation === 'IN' && poIndex !== -1) {
       const po = pos[poIndex];
-      if (po.producedQuantity + quantity > po.targetQuantity && !isPaintingExempt) {
-        throw new Error(`Lỗi: Số lượng sản xuất (${po.producedQuantity + quantity}) vượt quá mục tiêu PO (${po.targetQuantity}) cho ${cleanId} tại ${stageId}`);
-      }
       po.producedQuantity += quantity;
       const isProduced = po.producedQuantity >= po.targetQuantity;
       const isExported = (po.exportedQuantity || 0) >= po.targetQuantity;
@@ -1105,7 +1111,7 @@ export const storageService = {
     return newTransaction;
   },
 
-  recordManualInbound(partId: string, stageId: StageId, location: 'IN' | 'OUT', quantity: number, poId?: string) {
+  recordManualInbound(partId: string, stageId: StageId, location: 'IN' | 'OUT', quantity: number, poId?: string, force?: boolean) {
     const cleanId = partId.startsWith('GLZ-OUT-') ? partId.trim().toUpperCase() : partId.split(' - ')[0].trim().toUpperCase();
     let linkedPoId = poId;
 
@@ -1119,14 +1125,19 @@ export const storageService = {
 
     // Apply BOM logic if entering into OUT (Production result)
     if (location === 'OUT') {
+      // Validate PO limit BEFORE deducting BOM and saving anything
+      if (poIndex !== -1) {
+        const po = pos[poIndex];
+        if (po.producedQuantity + quantity > po.targetQuantity && !force) {
+          throw new Error(`OVER_PO:Số lượng thêm vào (${po.producedQuantity + quantity}) sẽ vượt quá mục tiêu PO (${po.targetQuantity}) cho ${cleanId} tại ${stageId}. Bạn có chắc chắn vẫn muốn thêm và tính tiêu hao?`);
+        }
+      }
+
       this.applyBOMDeduction(cleanId, stageId, quantity, currentPoId);
 
       // Update PO progress
       if (poIndex !== -1) {
         const po = pos[poIndex];
-        if (po.producedQuantity + quantity > po.targetQuantity) {
-          throw new Error(`Lỗi: Số lượng sản xuất (${po.producedQuantity + quantity}) vượt quá mục tiêu PO (${po.targetQuantity}) cho ${cleanId} tại ${stageId}`);
-        }
         po.producedQuantity += quantity;
         const isProduced = po.producedQuantity >= po.targetQuantity;
         const isExported = (po.exportedQuantity || 0) >= po.targetQuantity;
@@ -1141,7 +1152,6 @@ export const storageService = {
             const allSubsCompleted = po.status === 'COMPLETED' && otherSubs.every(s => s.status === 'COMPLETED');
             if (allSubsCompleted) {
               masterPo.status = 'COMPLETED';
-              // masterPo.producedQuantity = masterPo.targetQuantity; 
             } else {
               masterPo.status = 'IN_PROGRESS';
             }

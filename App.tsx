@@ -316,8 +316,29 @@ export default function App() {
       refreshData();
 
       // Ensure we don't automatically trigger print, just show preview
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Đã xảy ra lỗi');
+    } catch (err: any) {
+      const errMsg = err instanceof Error ? err.message : (err.message || 'Đã xảy ra lỗi');
+      if (errMsg.startsWith('OVER_PO:')) {
+        if (confirm(errMsg.replace('OVER_PO:', ''))) {
+          try {
+            const tx = storageService.recordStageOut(selectedPart, selectedStage, quantity, sourceLocation, targetStageId, poId, true);
+            const updatedInventory = storageService.getInventory();
+            setInventory(updatedInventory);
+            
+            setLastTransaction(tx);
+            const part = parts.find(p => p.id === selectedPart);
+            const partName = getProcessValue(part?.name, part, selectedStage, 'OUT');
+            const locationName = sourceLocation === 'IN' ? 'KHO_IN' : 'KHO_OUT';
+            setSuccess(`Đã xuất từ ${locationName} ${quantity} ${partName} tại ${STAGES.find(s => s.id === selectedStage)?.name}`);
+            setQuantity(0);
+            refreshData();
+          } catch(e: any) {
+            setError(e instanceof Error ? e.message : 'Đã xảy ra lỗi');
+          }
+        }
+      } else {
+        setError(errMsg);
+      }
     }
   };
 
@@ -3235,7 +3256,24 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                         setManualAddPartSearch('');
                         setManualAddQty('');
                       } catch (err: any) {
-                        alert(err.message || 'Lỗi thêm tồn kho');
+                        const errMsg = err.message || '';
+                        if (errMsg.startsWith('OVER_PO:')) {
+                           if (confirm(errMsg.replace('OVER_PO:', ''))) {
+                              try {
+                                storageService.recordManualInbound(manualAddPart, showManualAddModal.stageId, showManualAddModal.location, Number(manualAddQty), undefined, true);
+                                alert('Thêm tồn kho thành công!');
+                                refreshData();
+                                setShowManualAddModal(null);
+                                setManualAddPart('');
+                                setManualAddPartSearch('');
+                                setManualAddQty('');
+                              } catch (e: any) {
+                                alert(e.message || 'Lỗi thêm tồn kho');
+                              }
+                           }
+                        } else {
+                          alert(errMsg || 'Lỗi thêm tồn kho');
+                        }
                       }
                     }}
                     className={cn("w-full py-4 text-white rounded-xl font-bold text-lg uppercase transition-all shadow-lg flex items-center justify-center gap-2", showManualAddModal.location === 'IN' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-orange-600 hover:bg-orange-700')}
