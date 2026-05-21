@@ -2588,13 +2588,16 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
   const stageSummaries = useMemo(() => {
     return STAGES.map(stage => {
       const stageItems = inventory.filter(item => item.stageId === stage.id);
+      
+      const formatQty = (val: number) => parseFloat(val.toFixed(4));
+      
       return {
         id: stage.id,
         name: stage.name,
-        total: stageItems.reduce((sum, item) => sum + item.quantity, 0),
-        in: stageItems.filter(i => i.location === 'IN').reduce((sum, i) => sum + i.quantity, 0),
-        out: stageItems.filter(i => i.location === 'OUT').reduce((sum, i) => sum + i.quantity, 0),
-        defect: stageItems.filter(i => i.location === 'DEFECT').reduce((sum, i) => sum + i.quantity, 0),
+        total: formatQty(stageItems.reduce((sum, item) => sum + item.quantity, 0)),
+        in: formatQty(stageItems.filter(i => i.location === 'IN').reduce((sum, i) => sum + i.quantity, 0)),
+        out: formatQty(stageItems.filter(i => i.location === 'OUT').reduce((sum, i) => sum + i.quantity, 0)),
+        defect: formatQty(stageItems.filter(i => i.location === 'DEFECT').reduce((sum, i) => sum + i.quantity, 0)),
       };
     });
   }, [inventory]);
