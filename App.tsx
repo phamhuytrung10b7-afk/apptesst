@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 import { 
   LayoutDashboard, 
   PackagePlus, 
@@ -2319,9 +2319,174 @@ const exportDailyProductionReport = (transactions: Transaction[], parts: Part[])
   XLSX.writeFile(wb, `BaoCao_SanLuong_${format(new Date(), 'yyyyMMdd')}.xlsx`);
 };
 
+const exportProductionReportRange = (transactions: Transaction[], parts: Part[], startDateStr: string, endDateStr: string) => {
+  const start = new Date(startDateStr);
+  start.setHours(0, 0, 0, 0);
+  const startMs = start.getTime();
+
+  const end = new Date(endDateStr);
+  end.setHours(23, 59, 59, 999);
+  const endMs = end.getTime();
+
+  const rangeTx = transactions.filter(t => 
+    t.type === 'STAGE_OUT' && t.timestamp >= startMs && t.timestamp <= endMs
+  );
+
+  if (rangeTx.length === 0) {
+    alert('Không có dữ liệu sản xuất xuất kho trong khoảng thời gian này.');
+    return;
+  }
+
+  const wb = XLSX.utils.book_new();
+
+  const stagesToExport = [
+    { id: 'LASER', name: 'Cắt laser' },
+    { id: 'BENDING', name: 'Chấn dập' },
+    { id: 'WELDING', name: 'Hàn' },
+    { id: 'PAINTING', name: 'Sơn' },
+  ];
+
+  const borderStyle = {
+    top: { style: "thin", color: { rgb: "000000" } },
+    bottom: { style: "thin", color: { rgb: "000000" } },
+    left: { style: "thin", color: { rgb: "000000" } },
+    right: { style: "thin", color: { rgb: "000000" } }
+  };
+
+  const headerStyle = {
+    font: { bold: true, sz: 12, color: { rgb: "FFFFFF" } },
+    fill: { fgColor: { rgb: "4F81BD" } },
+    alignment: { horizontal: "center", vertical: "center", wrapText: true },
+    border: borderStyle
+  };
+
+  const titleStyle = {
+    font: { bold: true, sz: 16 },
+    alignment: { horizontal: "center", vertical: "center" }
+  };
+
+  const dataStyle = {
+    font: { sz: 11 },
+    alignment: { vertical: "center" },
+    border: borderStyle
+  };
+  
+  const alignRightStyle = {
+    ...dataStyle,
+    alignment: { horizontal: "right", vertical: "center" }
+  };
+  
+  const alignCenterStyle = {
+    ...dataStyle,
+    alignment: { horizontal: "center", vertical: "center" }
+  };
+
+  stagesToExport.forEach(stageInfo => {
+    const stageTx = rangeTx.filter(t => t.stageId === stageInfo.id);
+    
+    const partTotals = new Map<string, number>();
+    stageTx.forEach(t => {
+      partTotals.set(t.partId, (partTotals.get(t.partId) || 0) + t.quantity);
+    });
+
+    const rows = Array.from(partTotals.entries()).map(([partId, qty]) => {
+      const part = parts.find(p => p.id === partId);
+      return {
+        'Mã linh kiện': partId,
+        'Tên linh kiện': part?.name || partId,
+        'Đơn vị': part?.unit || 'cái',
+        'Tổng sản lượng': qty
+      };
+    });
+
+    const sheetData: any[][] = [
+      [`Báo cáo sản lượng CÔNG ĐOẠN ${stageInfo.name.toUpperCase()}`],
+      [`Từ ngày: ${format(start, 'dd/MM/yyyy')} đến ngày ${format(end, 'dd/MM/yyyy')}`],
+      ['STT', 'Mã linh kiện', 'Tên linh kiện', 'Đơn vị', 'Tổng sản lượng']
+    ];
+
+    rows.forEach((r, idx) => {
+      sheetData.push([
+        idx + 1,
+        r['Mã linh kiện'],
+        r['Tên linh kiện'],
+        r['Đơn vị'],
+        r['Tổng sản lượng']
+      ]);
+    });
+    
+    const grandTotal = rows.reduce((s, r) => s + r['Tổng sản lượng'], 0);
+    sheetData.push(['', 'TỔNG CỘNG', '', '', grandTotal]);
+
+    const ws = XLSX.utils.aoa_to_sheet(sheetData);
+
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 4 } },
+      { s: { r: sheetData.length - 1, c: 1 }, e: { r: sheetData.length - 1, c: 3 } }
+    ];
+
+    ws['!cols'] = [
+      { wch: 8 },  // STT
+      { wch: 30 }, // Mã LK
+      { wch: 40 }, // Tên LK
+      { wch: 10 }, // Đơn vị
+      { wch: 15 }, // Sản lượng
+    ];
+
+    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:A1');
+    for (let R = 0; R <= range.e.r; ++R) {
+      for (let C = 0; C <= range.e.c; ++C) {
+        const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!ws[cellAddress]) ws[cellAddress] = { t: 's', v: '' };
+        
+        if (R === 0) {
+          ws[cellAddress].s = titleStyle;
+        } else if (R === 1) {
+          ws[cellAddress].s = { alignment: { horizontal: "center" }, font: { italic: true } };
+        } else if (R === 2) {
+          ws[cellAddress].s = headerStyle;
+        } else if (R > 2) {
+           if (R === sheetData.length - 1) {
+             const fontStyle = { bold: true, sz: 12, color: { rgb: "000000" } };
+             ws[cellAddress].s = { 
+               font: fontStyle, 
+               fill: { fgColor: { rgb: "E2E8F0" } },
+               alignment: C === 4 ? { horizontal: "right", vertical: "center" } : { horizontal: "center", vertical: "center" },
+               border: borderStyle
+             };
+           } else {
+             if (C === 0 || C === 3) ws[cellAddress].s = alignCenterStyle;
+             else if (C === 4) ws[cellAddress].s = alignRightStyle;
+             else ws[cellAddress].s = dataStyle;
+           }
+        }
+      }
+    }
+
+    const sheetName = stageInfo.name.replace(/[^a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF ]/g, '').substring(0, 31).trim();
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  });
+
+  XLSX.writeFile(wb, `BaoCao_SanLuong_${format(start, 'ddMMyy')}-${format(end, 'ddMMyy')}.xlsx`);
+};
+
 function DashboardView({ inventory, parts, transactions, refreshData, setDefectModal }: DashboardProps & { setDefectModal: any }) {
   const [selectedStageDetail, setSelectedStageDetail] = useState<StageId | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportStartDate, setExportStartDate] = useState(() => {
+    const today = new Date();
+    const offset = today.getTimezoneOffset();
+    const local = new Date(today.getTime() - (offset*60*1000));
+    return local.toISOString().split('T')[0];
+  });
+  const [exportEndDate, setExportEndDate] = useState(() => {
+    const today = new Date();
+    const offset = today.getTimezoneOffset();
+    const local = new Date(today.getTime() - (offset*60*1000));
+    return local.toISOString().split('T')[0];
+  });
 
   const [chartDate, setChartDate] = useState(() => {
     const today = new Date();
@@ -2419,11 +2584,11 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
       <div className="flex justify-between items-center mb-6">
         <h3 className="text-xl font-bold uppercase text-gray-800">Tổng quan Sản xuất</h3>
         <button
-          onClick={() => exportDailyProductionReport(transactions, parts)}
+          onClick={() => setShowExportModal(true)}
           className="flex items-center gap-2 px-5 py-3 bg-green-600 text-white rounded-xl shadow-lg hover:bg-green-700 transition-colors font-bold uppercase tracking-wider"
         >
           <FileSpreadsheet size={20} />
-          Xuất báo cáo SX ngày
+          Xuất báo cáo SX
         </button>
       </div>
 
@@ -2969,6 +3134,59 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
           </ResponsiveContainer>
         </div>
       </div>
+
+      <AnimatePresence>
+        {showExportModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl relative"
+            >
+              <button className="absolute top-4 right-4 text-gray-500 hover:text-gray-800 cursor-pointer p-2 hover:bg-gray-100 rounded-full transition-colors" onClick={() => setShowExportModal(false)}>
+                <X size={20} />
+              </button>
+              <h2 className="text-2xl font-bold uppercase text-gray-900 mb-6 flex items-center gap-3">
+                <FileSpreadsheet className="text-green-600" />
+                Chọn Quãng Ngày
+              </h2>
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-bold uppercase text-gray-600 mb-2">Từ Ngày</label>
+                  <input 
+                    type="date"
+                    value={exportStartDate}
+                    onChange={(e) => setExportStartDate(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 p-4 rounded-xl font-bold text-gray-800 outline-none focus:border-green-500 focus:bg-green-50 transition-all font-mono cursor-pointer"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold uppercase text-gray-600 mb-2">Đến Ngày</label>
+                  <input 
+                    type="date"
+                    value={exportEndDate}
+                    onChange={(e) => setExportEndDate(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 p-4 rounded-xl font-bold text-gray-800 outline-none focus:border-green-500 focus:bg-green-50 transition-all font-mono cursor-pointer"
+                  />
+                </div>
+                <div className="pt-2">
+                  <button 
+                    onClick={() => {
+                      exportProductionReportRange(transactions, parts, exportStartDate, exportEndDate);
+                      setShowExportModal(false);
+                    }}
+                    className="w-full py-4 bg-green-600 text-white rounded-xl font-bold text-lg uppercase hover:bg-green-700 active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2"
+                  >
+                    <FileSpreadsheet size={24} />
+                    Xuất File Excel
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
