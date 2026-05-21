@@ -2475,6 +2475,10 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
   const [selectedStageDetail, setSelectedStageDetail] = useState<StageId | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showManualAddModal, setShowManualAddModal] = useState<{stageId: StageId, location: 'IN' | 'OUT'} | null>(null);
+  const [manualAddPart, setManualAddPart] = useState('');
+  const [manualAddPartSearch, setManualAddPartSearch] = useState('');
+  const [manualAddQty, setManualAddQty] = useState('');
   const [exportStartDate, setExportStartDate] = useState(() => {
     const today = new Date();
     const offset = today.getTimezoneOffset();
@@ -2736,10 +2740,20 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* KHO_IN Detail */}
                 <div className="space-y-4">
-                  <div className="flex items-center gap-2 px-2">
-                    <div className="w-3 h-3 rounded-full bg-blue-500" />
-                    <h3 className="font-mono text-base font-bold uppercase tracking-widest opacity-80">KHO_IN (Chờ sản xuất)</h3>
-</div>
+                  <div className="flex items-center justify-between px-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-blue-500" />
+                      <h3 className="font-mono text-base font-bold uppercase tracking-widest opacity-80">KHO_IN (Chờ sản xuất)</h3>
+                    </div>
+                    {['LASER', 'BENDING', 'WELDING', 'PAINTING'].includes(selectedStageDetail!) && (
+                      <button 
+                        onClick={() => setShowManualAddModal({ stageId: selectedStageDetail as StageId, location: 'IN' })}
+                        className="text-xs bg-blue-100 text-blue-600 hover:bg-blue-200 px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <Plus size={14} /> Thêm tồn
+                      </button>
+                    )}
+                  </div>
 <div className="bg-gray-50 rounded-2xl border border-gray-100 overflow-hidden">
   <table className="w-full text-left border-collapse">
     <thead>
@@ -2841,10 +2855,20 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
 
                 {/* KHO_OUT Detail */}
                 <div className="space-y-4">
-                  <div className="flex items-center gap-2 px-2">
-                    <div className="w-3 h-3 rounded-full bg-[#F27D26]" />
-                    <h3 className="font-mono text-base font-bold uppercase tracking-widest opacity-80">KHO_OUT (Đã hoàn thành)</h3>
-</div>
+                  <div className="flex items-center justify-between px-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-[#F27D26]" />
+                      <h3 className="font-mono text-base font-bold uppercase tracking-widest opacity-80">KHO_OUT (Đã hoàn thành)</h3>
+                    </div>
+                    {['LASER', 'BENDING', 'WELDING', 'PAINTING'].includes(selectedStageDetail!) && (
+                      <button 
+                        onClick={() => setShowManualAddModal({ stageId: selectedStageDetail as StageId, location: 'OUT' })}
+                        className="text-xs bg-orange-100 text-orange-600 hover:bg-orange-200 px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <Plus size={14} /> Thêm tồn
+                      </button>
+                    )}
+                  </div>
 <div className="bg-gray-50 rounded-2xl border border-gray-100 overflow-hidden">
   <table className="w-full text-left border-collapse">
     <thead>
@@ -3134,6 +3158,97 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
           </ResponsiveContainer>
         </div>
       </div>
+
+      <AnimatePresence>
+        {showManualAddModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl relative"
+            >
+              <button 
+                className="absolute top-4 right-4 text-gray-500 hover:text-gray-800 cursor-pointer p-2 hover:bg-gray-100 rounded-full transition-colors" 
+                onClick={() => {
+                  setShowManualAddModal(null);
+                  setManualAddPart('');
+                  setManualAddPartSearch('');
+                  setManualAddQty('');
+                }}
+              >
+                <X size={20} />
+              </button>
+              <h2 className="text-2xl font-bold uppercase text-gray-900 mb-6 flex items-center gap-3">
+                <PackagePlus className={showManualAddModal.location === 'IN' ? "text-blue-600" : "text-orange-600"} />
+                Thêm tồn kho {showManualAddModal.location}
+              </h2>
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-bold uppercase text-gray-600 mb-2">Linh kiện</label>
+                  <input
+                    list="manual-add-parts"
+                    value={manualAddPartSearch}
+                    onChange={(e) => {
+                      setManualAddPartSearch(e.target.value);
+                      const match = parts.find(p => `${p.id} - ${p.name}` === e.target.value || p.id === e.target.value);
+                      if (match) setManualAddPart(match.id);
+                      else setManualAddPart('');
+                    }}
+                    className="w-full bg-gray-50 border border-gray-200 p-4 rounded-xl font-bold text-gray-800 outline-none focus:border-blue-500 transition-all font-mono"
+                    placeholder="Nhập mã hoặc tên linh kiện..."
+                  />
+                  <datalist id="manual-add-parts">
+                    {parts.map(p => (
+                      <option key={p.id} value={`${p.id} - ${p.name}`} />
+                    ))}
+                  </datalist>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold uppercase text-gray-600 mb-2">Số lượng</label>
+                  <input 
+                    type="number"
+                    value={manualAddQty}
+                    onChange={(e) => setManualAddQty(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 p-4 rounded-xl font-bold text-gray-800 outline-none focus:border-blue-500 transition-all font-mono"
+                    placeholder="Nhập số lượng..."
+                  />
+                </div>
+                <div className="pt-2">
+                  <button 
+                    onClick={() => {
+                      if (!manualAddPart || !manualAddQty || Number(manualAddQty) <= 0) {
+                        alert('Vui lòng chọn linh kiện và nhập số lượng hợp lệ.');
+                        return;
+                      }
+                      const pwd = prompt('Nhập mật khẩu để cấu hình tồn kho:');
+                      if (pwd !== 'admin123') {
+                        if (pwd !== null) alert('Mật khẩu không chính xác!');
+                        return;
+                      }
+                      try {
+                        storageService.recordManualInbound(manualAddPart, showManualAddModal.stageId, showManualAddModal.location, Number(manualAddQty));
+                        alert('Thêm tồn kho thành công!');
+                        refreshData();
+                        setShowManualAddModal(null);
+                        setManualAddPart('');
+                        setManualAddPartSearch('');
+                        setManualAddQty('');
+                      } catch (err: any) {
+                        alert(err.message || 'Lỗi thêm tồn kho');
+                      }
+                    }}
+                    className={cn("w-full py-4 text-white rounded-xl font-bold text-lg uppercase transition-all shadow-lg flex items-center justify-center gap-2", showManualAddModal.location === 'IN' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-orange-600 hover:bg-orange-700')}
+                  >
+                    <PackagePlus size={24} />
+                    Xác nhận thêm
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showExportModal && (
