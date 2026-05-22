@@ -2817,6 +2817,13 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
   const [showExportModal, setShowExportModal] = useState(false);
   const [showManualAddModal, setShowManualAddModal] = useState<{stageId: StageId, location: 'IN' | 'OUT'} | null>(null);
   const [manualAddPart, setManualAddPart] = useState('');
+  const [promptConfig, setPromptConfig] = useState<{
+    title: string;
+    message?: string;
+    defaultValue?: string;
+    isPassword?: boolean;
+    onConfirm: (val: string) => void;
+  } | null>(null);
   const [manualAddPartSearch, setManualAddPartSearch] = useState('');
   const [manualAddQty, setManualAddQty] = useState('');
   const [exportStartDate, setExportStartDate] = useState(() => {
@@ -2928,6 +2935,68 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
       exit={{ opacity: 0, y: -20 }}
       className="space-y-8"
     >
+      {/* Dynamic Prompt Modal */}
+      <AnimatePresence>
+        {promptConfig && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl flex flex-col"
+            >
+              <div className="p-6 pb-2 text-center">
+                <h3 className="text-xl font-black text-gray-900 uppercase tracking-tighter mb-2">{promptConfig.title}</h3>
+                {promptConfig.message && <p className="text-sm font-bold text-gray-500 opacity-80">{promptConfig.message}</p>}
+              </div>
+
+              <div className="p-6">
+                <input 
+                  type={promptConfig.isPassword ? "password" : "text"}
+                  autoFocus
+                  defaultValue={promptConfig.defaultValue || ""}
+                  id="prompt-modal-input"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      const val = (e.currentTarget as HTMLInputElement).value;
+                      if (val) {
+                        setPromptConfig(null);
+                        promptConfig.onConfirm(val);
+                      }
+                    }
+                  }}
+                  className="w-full text-center p-4 rounded-xl border-2 border-gray-200 focus:border-blue-500 outline-none text-lg font-bold transition-all placeholder:text-gray-300"
+                  placeholder="Nhập nội dung..."
+                />
+              </div>
+
+              <div className="flex bg-gray-50 p-4 gap-4 mt-auto">
+                <button 
+                  onClick={() => setPromptConfig(null)}
+                  className="flex-1 py-4 text-gray-500 font-bold uppercase text-sm hover:bg-gray-200 rounded-xl transition-all"
+                >
+                  Hủy
+                </button>
+                <button 
+                  onClick={() => {
+                    const el = document.getElementById('prompt-modal-input') as HTMLInputElement;
+                    if (el && el.value) {
+                      setPromptConfig(null);
+                      promptConfig.onConfirm(el.value);
+                    } else if (el) {
+                      el.focus();
+                    }
+                  }}
+                  className="flex-1 py-4 bg-blue-600 text-white rounded-xl font-black text-sm uppercase hover:bg-blue-700 transition-all shadow-lg flex justify-center items-center gap-2"
+                >
+                  Xác nhận
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       <div className="flex justify-between items-center mb-6">
         <h3 className="text-xl font-bold uppercase text-gray-800">Tổng quan Sản xuất</h3>
         <button
@@ -3061,16 +3130,22 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                   </div>
                   <button 
                     onClick={() => {
-                      const pwd = prompt('Nhập mật khẩu ADMIN để xóa hết tồn kho DCLR OUT:');
-                      if (pwd === 'admin123') {
-                        if (confirm('BẠN CÓ CHẮC CHẮN MUỐN XÓA HẾT TỒN KHO DCLR OUT? Hành động này không thể hoàn tác!')) {
-                          storageService.clearStageInventory('DCLR', 'OUT');
-                          refreshData();
-                          alert('Đã xóa sạch tồn kho DCLR OUT thành công!');
+                      setPromptConfig({
+                        title: 'XÓA TỒN KHO',
+                        message: 'Nhập mật khẩu ADMIN để xóa hết tồn kho DCLR OUT:',
+                        isPassword: true,
+                        onConfirm: (pwd) => {
+                          if (pwd === 'admin123') {
+                            if (confirm('BẠN CÓ CHẮC CHẮN MUỐN XÓA HẾT TỒN KHO DCLR OUT? Hành động này không thể hoàn tác!')) {
+                              storageService.clearStageInventory('DCLR', 'OUT');
+                              refreshData();
+                              alert('Đã xóa sạch tồn kho DCLR OUT thành công!');
+                            }
+                          } else {
+                            alert('Mật khẩu không chính xác!');
+                          }
                         }
-                      } else if (pwd !== null) {
-                        alert('Mật khẩu không chính xác!');
-                      }
+                      });
                     }}
                     className="px-8 py-4 bg-red-600 text-white rounded-xl font-black uppercase tracking-tighter hover:bg-black transition-all flex items-center gap-3 shadow-xl active:scale-95 group"
                   >
@@ -3153,16 +3228,28 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                                     </button>
                                     <button 
                                       onClick={() => {
-                                        const pwd = prompt('Nhập mật khẩu để sửa tồn kho:');
-                                        if (pwd === 'admin123') {
-                                          const newQty = prompt(`Nhập số lượng tồn mới cho ${item.partId}:`, String(qty));
-                                          if (newQty !== null) {
-                                            storageService.setInventoryQuantity(item.partId, selectedStageDetail, 'IN', parseFloat(newQty) || 0, item.originalPartId);
-                                            refreshData();
-                                          }
-                                        } else if (pwd !== null) {
-                                          alert('Mật khẩu không chính xác!');
-                                        }
+                                        setPromptConfig({
+                                            title: 'Sửa tồn kho',
+                                            message: 'Nhập mật khẩu để sửa tồn kho:',
+                                            isPassword: true,
+                                            onConfirm: (pwd) => {
+                                              if (pwd === 'admin123') {
+                                                setTimeout(() => {
+                                                  setPromptConfig({
+                                                    title: 'Cập nhật số lượng',
+                                                    message: `Nhập số lượng tồn mới cho ${item.partId}:`,
+                                                    defaultValue: String(qty),
+                                                    onConfirm: (newQty) => {
+                                                      storageService.setInventoryQuantity(item.partId, selectedStageDetail, 'IN', parseFloat(newQty) || 0, item.originalPartId);
+                                                      refreshData();
+                                                    }
+                                                  });
+                                                }, 100);
+                                              } else {
+                                                alert('Mật khẩu không chính xác!');
+                                              }
+                                            }
+                                          })
                                       }}
                                       className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors"
                                       title="Sửa số lượng"
@@ -3171,15 +3258,21 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                                     </button>
                                     <button 
                                       onClick={() => {
-                                        const pwd = prompt('Nhập mật khẩu để xóa tồn kho:');
-                                        if (pwd === 'admin123') {
-                                          if (confirm(`Bạn có chắc chắn muốn xóa tồn kho của ${item.partId} tại ${STAGES.find(s => s.id === selectedStageDetail)?.name} (Kho IN)?`)) {
-                                            storageService.deleteInventoryItem(item.partId, selectedStageDetail, 'IN', item.originalPartId);
-                                            refreshData();
-                                          }
-                                        } else if (pwd !== null) {
-                                          alert('Mật khẩu không chính xác!');
-                                        }
+                                        setPromptConfig({
+                                            title: 'Xóa tồn kho',
+                                            message: 'Nhập mật khẩu để xóa tồn kho:',
+                                            isPassword: true,
+                                            onConfirm: (pwd) => {
+                                              if (pwd === 'admin123') {
+                                                if (confirm(`Bạn có chắc chắn muốn xóa tồn kho của ${item.partId} tại ${STAGES.find(s => s.id === selectedStageDetail)?.name} (Kho IN)?`)) {
+                                                  storageService.deleteInventoryItem(item.partId, selectedStageDetail, 'IN', item.originalPartId);
+                                                  refreshData();
+                                                }
+                                              } else {
+                                                alert('Mật khẩu không chính xác!');
+                                              }
+                                            }
+                                          })
                                       }}
                                       className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-colors"
                                       title="Xóa tồn kho"
@@ -3268,16 +3361,28 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                                     </button>
                                     <button 
                                       onClick={() => {
-                                        const pwd = prompt('Nhập mật khẩu để sửa tồn kho:');
-                                        if (pwd === 'admin123') {
-                                          const newQty = prompt(`Nhập số lượng tồn mới cho ${item.partId}:`, String(qty));
-                                          if (newQty !== null) {
-                                            storageService.setInventoryQuantity(item.partId, selectedStageDetail, 'OUT', parseFloat(newQty) || 0, item.originalPartId);
-                                            refreshData();
-                                          }
-                                        } else if (pwd !== null) {
-                                          alert('Mật khẩu không chính xác!');
-                                        }
+                                        setPromptConfig({
+                                            title: 'Sửa tồn kho',
+                                            message: 'Nhập mật khẩu để sửa tồn kho:',
+                                            isPassword: true,
+                                            onConfirm: (pwd) => {
+                                              if (pwd === 'admin123') {
+                                                setTimeout(() => {
+                                                  setPromptConfig({
+                                                    title: 'Cập nhật số lượng',
+                                                    message: `Nhập số lượng tồn mới cho ${item.partId}:`,
+                                                    defaultValue: String(qty),
+                                                    onConfirm: (newQty) => {
+                                                      storageService.setInventoryQuantity(item.partId, selectedStageDetail, 'OUT', parseFloat(newQty) || 0, item.originalPartId);
+                                                      refreshData();
+                                                    }
+                                                  });
+                                                }, 100);
+                                              } else {
+                                                alert('Mật khẩu không chính xác!');
+                                              }
+                                            }
+                                          })
                                       }}
                                       className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors"
                                       title="Sửa số lượng"
@@ -3286,15 +3391,21 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                                     </button>
                                     <button 
                                       onClick={() => {
-                                        const pwd = prompt('Nhập mật khẩu để xóa tồn kho:');
-                                        if (pwd === 'admin123') {
-                                          if (confirm(`Bạn có chắc chắn muốn xóa tồn kho của ${item.partId} tại ${STAGES.find(s => s.id === selectedStageDetail)?.name} (Kho OUT)?`)) {
-                                            storageService.deleteInventoryItem(item.partId, selectedStageDetail, 'OUT', item.originalPartId);
-                                            refreshData();
-                                          }
-                                        } else if (pwd !== null) {
-                                          alert('Mật khẩu không chính xác!');
-                                        }
+                                        setPromptConfig({
+                                            title: 'Xóa tồn kho',
+                                            message: 'Nhập mật khẩu để xóa tồn kho:',
+                                            isPassword: true,
+                                            onConfirm: (pwd) => {
+                                              if (pwd === 'admin123') {
+                                                if (confirm(`Bạn có chắc chắn muốn xóa tồn kho của ${item.partId} tại ${STAGES.find(s => s.id === selectedStageDetail)?.name} (Kho OUT)?`)) {
+                                                  storageService.deleteInventoryItem(item.partId, selectedStageDetail, 'OUT', item.originalPartId);
+                                                  refreshData();
+                                                }
+                                              } else {
+                                                alert('Mật khẩu không chính xác!');
+                                              }
+                                            }
+                                          })
                                       }}
                                       className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-colors"
                                       title="Xóa tồn kho"
@@ -3366,16 +3477,28 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                                     <span className="text-xs font-mono opacity-40 uppercase mr-4 text-gray-900">{displayUnit}</span>
                                     <button 
                                       onClick={() => {
-                                        const pwd = prompt('Nhập mật khẩu để sửa tồn kho lỗi:');
-                                        if (pwd === 'admin123') {
-                                          const newQty = prompt(`Nhập số lượng tồn mới cho ${item.partId} (Lỗi):`, String(qty));
-                                          if (newQty !== null) {
-                                            storageService.setInventoryQuantity(item.partId, selectedStageDetail || STAGES[0].id, 'DEFECT', parseFloat(newQty) || 0, item.originalPartId);
-                                            refreshData();
-                                          }
-                                        } else if (pwd !== null) {
-                                          alert('Mật khẩu không chính xác!');
-                                        }
+                                        setPromptConfig({
+                                            title: 'Sửa tồn kho lỗi',
+                                            message: 'Nhập mật khẩu để sửa tồn kho lỗi:',
+                                            isPassword: true,
+                                            onConfirm: (pwd) => {
+                                              if (pwd === 'admin123') {
+                                                setTimeout(() => {
+                                                  setPromptConfig({
+                                                    title: 'Cập nhật số lượng lỗi',
+                                                    message: `Nhập số lượng tồn mới cho ${item.partId} (Lỗi):`,
+                                                    defaultValue: String(qty),
+                                                    onConfirm: (newQty) => {
+                                                      storageService.setInventoryQuantity(item.partId, selectedStageDetail || STAGES[0].id, 'DEFECT', parseFloat(newQty) || 0, item.originalPartId);
+                                                      refreshData();
+                                                    }
+                                                  });
+                                                }, 100);
+                                              } else {
+                                                alert('Mật khẩu không chính xác!');
+                                              }
+                                            }
+                                          })
                                       }}
                                       className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-colors"
                                       title="Sửa tồn lỗi"
@@ -3564,11 +3687,30 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                         alert('Vui lòng chọn linh kiện và nhập số lượng hợp lệ.');
                         return;
                       }
-                      const pwd = prompt('Nhập mật khẩu để cấu hình tồn kho:');
-                      if (pwd !== 'admin123') {
-                        if (pwd !== null) alert('Mật khẩu không chính xác!');
-                        return;
-                      }
+                      setPromptConfig({
+                          title: 'Cấu hình tồn kho',
+                          message: 'Nhập mật khẩu để cấu hình tồn kho:',
+                          isPassword: true,
+                          onConfirm: (pwd) => {
+                            if (pwd !== 'admin123') {
+                              alert('Mật khẩu không chính xác!');
+                              return;
+                            }
+                            try {
+                              storageService.recordManualInbound(manualAddPart, showManualAddModal!.stageId, showManualAddModal!.location, Number(manualAddQty));
+                              alert('Thêm tồn kho thành công!');
+                              refreshData();
+                              setShowManualAddModal(null);
+                              setManualAddPart('');
+                              setManualAddPartSearch('');
+                              setManualAddQty('');
+                            } catch (e: any) {
+                              alert('Lỗi: ' + e.message);
+                            }
+                          }
+                        });
+                        return; // Prevent further execution in the old flow
+
                       try {
                         storageService.recordManualInbound(manualAddPart, showManualAddModal.stageId, showManualAddModal.location, Number(manualAddQty));
                         alert('Thêm tồn kho thành công!');
