@@ -1010,11 +1010,13 @@ function ProductionOrderView({ parts, onUpdate, productionOrders }: { parts: Par
   const [quantity, setQuantity] = useState(0);
   const [targetCompletion, setTargetCompletion] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'IN_PROGRESS' | 'PAUSED' | 'COMPLETED'>('ALL');
   const [estimatedStart, setEstimatedStart] = useState<number | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState<string | null>(null);
   const [showEditModal, setShowEditModal] = useState<{ id: string, qty: number } | null>(null);
   const [password, setPassword] = useState("");
   const [expandedMasterPos, setExpandedMasterPos] = useState<Set<string>>(new Set());
+  const [expandedModels, setExpandedModels] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setOrders(productionOrders);
@@ -1106,11 +1108,57 @@ function ProductionOrderView({ parts, onUpdate, productionOrders }: { parts: Par
       });
   }, [orders, parts, searchTerm]);
 
+  const statusCounts = useMemo(() => {
+    const counts = { ALL: 0, PENDING: 0, IN_PROGRESS: 0, PAUSED: 0, COMPLETED: 0 };
+    masterOrders.filter(o => activeTab === 'REPAIR' ? o.id.startsWith('REPAIR') : !o.id.startsWith('REPAIR')).forEach(master => {
+      let overallStatus = master.status;
+      if (master.id.startsWith('REPAIR')) {
+          const subOrders = orders.filter(so => so.masterPoId === master.id);
+          const allCompleted = subOrders.length > 0 && subOrders.every(so => so.status === 'COMPLETED');
+          const hasInProgress = subOrders.some(so => so.status === 'IN_PROGRESS');
+          overallStatus = allCompleted ? 'COMPLETED' : (hasInProgress ? 'IN_PROGRESS' : 'PENDING');
+      }
+      counts[overallStatus as keyof typeof counts] = (counts[overallStatus as keyof typeof counts] || 0) + 1;
+      counts.ALL += 1;
+    });
+    return counts;
+  }, [masterOrders, activeTab, orders]);
+
   const filteredMasterOrders = useMemo(() => {
     return masterOrders.filter(o => 
       activeTab === 'REPAIR' ? o.id.startsWith('REPAIR') : !o.id.startsWith('REPAIR')
-    );
-  }, [masterOrders, activeTab]);
+    ).filter(master => {
+      if (statusFilter === 'ALL') return true;
+      const subOrders = orders.filter(so => so.masterPoId === master.id);
+      let overallStatus = master.status;
+      if (master.id.startsWith('REPAIR')) {
+          const allCompleted = subOrders.length > 0 && subOrders.every(so => so.status === 'COMPLETED');
+          const hasInProgress = subOrders.some(so => so.status === 'IN_PROGRESS');
+          overallStatus = allCompleted ? 'COMPLETED' : (hasInProgress ? 'IN_PROGRESS' : 'PENDING');
+      }
+      return overallStatus === statusFilter;
+    });
+  }, [masterOrders, activeTab, statusFilter, orders]);
+
+  const groupedOrders = useMemo(() => {
+    const grouped = new Map<string, ProductionOrder[]>();
+    filteredMasterOrders.forEach(o => {
+      const group = grouped.get(o.partId) || [];
+      group.push(o);
+      grouped.set(o.partId, group);
+    });
+    return Array.from(grouped.entries()).map(([partId, masters]) => ({
+      partId,
+      masters,
+    }));
+  }, [filteredMasterOrders]);
+
+  const toggleExpandModel = (partId: string) => {
+    const newExpanded = new Set(expandedModels);
+    if (newExpanded.has(partId)) newExpanded.delete(partId);
+    else newExpanded.add(partId);
+    setExpandedModels(newExpanded);
+  };
   
   return (
     <div className="space-y-8">
@@ -1221,6 +1269,35 @@ function ProductionOrderView({ parts, onUpdate, productionOrders }: { parts: Par
                 Kế hoạch bù (Repair)
               </button>
             </div>
+            {/* Status Filter */}
+            <div className="flex gap-2 flex-wrap text-sm font-bold mt-2">
+              {(['ALL', 'PENDING', 'IN_PROGRESS', 'PAUSED', 'COMPLETED'] as const).map(status => (
+                <button
+                  key={status}
+                  onClick={() => setStatusFilter(status)}
+                  className={cn(
+                    "px-4 py-1.5 rounded-full border transition-all uppercase tracking-tight flex items-center gap-2",
+                    statusFilter === status
+                      ? "bg-gray-800 text-white border-gray-800"
+                      : "bg-white text-gray-500 border-gray-200 hover:border-gray-400"
+                  )}
+                >
+                  <span>
+                    {status === 'ALL' ? 'Tất cả' :
+                      status === 'PENDING' ? 'Chờ sản xuất' :
+                      status === 'IN_PROGRESS' ? 'Đang chạy' :
+                      status === 'PAUSED' ? 'Tạm dừng' : 'Hoàn thành'
+                    }
+                  </span>
+                  <span className={cn(
+                    "px-1.5 py-0.5 rounded text-[10px] bg-white/20",
+                    statusFilter !== status && "bg-gray-100 text-gray-600"
+                  )}>
+                    {statusCounts[status]}
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
           <div className="relative w-full md:w-80">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -1251,37 +1328,69 @@ function ProductionOrderView({ parts, onUpdate, productionOrders }: { parts: Par
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredMasterOrders.map((master, idx) => {
-                const subOrders = orders.filter(o => o.masterPoId === master.id);
-                const totalTarget = subOrders.reduce((sum, o) => sum + o.targetQuantity, 0);
-                const totalProduced = subOrders.reduce((sum, o) => sum + o.producedQuantity, 0);
-                const overallProgress = totalTarget > 0 ? (totalProduced / totalTarget) * 100 : 0;
-                const isExpanded = expandedMasterPos.has(master.id);
-                
-                let currentStageText = 'MODEL';
-                if (master.id.startsWith('REPAIR')) {
-                  const sortedSubOrders = [...subOrders].sort((a, b) => {
-                    return STAGES.findIndex(s => s.id === a.stageId) - STAGES.findIndex(s => s.id === b.stageId);
-                  });
-                  const activeSubOrder = sortedSubOrders.find(o => o.status !== 'COMPLETED');
-                  if (activeSubOrder) {
-                    currentStageText = `Đang làm: ${STAGES.find(s => s.id === activeSubOrder.stageId)?.name}`;
-                  } else if (sortedSubOrders.length > 0 && sortedSubOrders.every(o => o.status === 'COMPLETED')) {
-                    currentStageText = 'Hoàn thành';
-                  } else {
-                    currentStageText = 'Đang chờ';
-                  }
-                }
+              {groupedOrders.map((group, groupIdx) => {
+                const modelPartName = parts.find(p => p.id === group.partId)?.name || group.partId;
+                const isModelExpanded = expandedModels.has(group.partId);
 
                 return (
-                  <React.Fragment key={`${master.id}-${idx}`}>
+                  <React.Fragment key={`group-${group.partId}-${groupIdx}`}>
                     <tr 
-                      className={cn(
-                        "bg-blue-50/30 font-bold cursor-pointer hover:bg-blue-50 transition-colors group",
-                        isExpanded && "bg-blue-100/50"
-                      )}
-                      onClick={() => toggleExpand(master.id)}
+                      className="bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors group border-b-2 border-gray-200"
+                      onClick={() => toggleExpandModel(group.partId)}
                     >
+                      <td colSpan={11} className="px-8 py-4">
+                        <div className="flex items-center gap-4">
+                          <div className={cn("transition-transform duration-200", isModelExpanded ? "rotate-90" : "rotate-0")}>
+                            <ChevronRight size={20} className="text-gray-400" />
+                          </div>
+                          <span className="font-black text-gray-900 text-lg uppercase">{modelPartName} <span className="text-gray-400 text-sm ml-2 font-mono">({group.partId})</span></span>
+                          <span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-gray-600 shadow-sm border border-gray-200">{group.masters.length} lệnh PO</span>
+                        </div>
+                      </td>
+                    </tr>
+                    
+                    {isModelExpanded && group.masters.map((master, idx) => {
+                      const subOrders = orders.filter(o => o.masterPoId === master.id);
+                      const totalTarget = subOrders.reduce((sum, o) => sum + o.targetQuantity, 0);
+                      const totalProduced = subOrders.reduce((sum, o) => sum + o.producedQuantity, 0);
+                      const overallProgress = totalTarget > 0 ? (totalProduced / totalTarget) * 100 : 0;
+                      const isExpanded = expandedMasterPos.has(master.id);
+                      
+                      let currentStageText = 'MODEL';
+                      let displayStatusText = master.status === 'COMPLETED' ? 'HOÀN THÀNH' : master.status === 'PENDING' ? 'CHỜ SẢN XUẤT' : master.status === 'PAUSED' ? 'TẠM DỪNG' : 'ĐANG CHẠY';
+                      let statusBadgeClass = master.status === 'COMPLETED' ? "bg-green-100 text-green-700" : master.status === 'PENDING' ? "bg-gray-100 text-gray-700" : master.status === 'PAUSED' ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700";
+
+                      if (master.id.startsWith('REPAIR')) {
+                        const sortedSubOrders = [...subOrders].sort((a, b) => {
+                          return STAGES.findIndex(s => s.id === a.stageId) - STAGES.findIndex(s => s.id === b.stageId);
+                        });
+                        const activeSubOrder = sortedSubOrders.find(o => o.status !== 'COMPLETED');
+                        if (activeSubOrder) {
+                          currentStageText = `Đang làm: ${STAGES.find(s => s.id === activeSubOrder.stageId)?.name}`;
+                        } else if (sortedSubOrders.length > 0 && sortedSubOrders.every(o => o.status === 'COMPLETED')) {
+                          currentStageText = 'Hoàn thành';
+                        } else {
+                          currentStageText = 'Đang chờ';
+                        }
+                        
+                        // Override displayStatusText for REPAIR sub POs aggregated status
+                        const allCompleted = subOrders.length > 0 && subOrders.every(so => so.status === 'COMPLETED');
+                        const hasInProgress = subOrders.some(so => so.status === 'IN_PROGRESS');
+                        const overallStatus = allCompleted ? 'COMPLETED' : (hasInProgress ? 'IN_PROGRESS' : 'PENDING');
+                        
+                        displayStatusText = overallStatus === 'COMPLETED' ? 'HOÀN THÀNH' : overallStatus === 'PENDING' ? 'CHỜ SẢN XUẤT' : overallStatus === 'PAUSED' ? 'TẠM DỪNG' : 'ĐANG CHẠY';
+                        statusBadgeClass = overallStatus === 'COMPLETED' ? "bg-green-100 text-green-700" : overallStatus === 'PENDING' ? "bg-gray-100 text-gray-700" : overallStatus === 'PAUSED' ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700";
+                      }
+
+                      return (
+                        <React.Fragment key={`${master.id}-${idx}`}>
+                          <tr 
+                            className={cn(
+                              "bg-blue-50/10 font-bold cursor-pointer hover:bg-blue-50/50 transition-colors group",
+                              isExpanded && "bg-blue-50/80"
+                            )}
+                            onClick={() => toggleExpand(master.id)}
+                          >
                       <td className="px-8 py-5 font-mono text-blue-700 flex items-center gap-3 text-lg">
                         <div className={cn("transition-transform duration-200", isExpanded ? "rotate-90" : "rotate-0")}>
                           <ChevronRight size={18} />
@@ -1412,37 +1521,38 @@ function ProductionOrderView({ parts, onUpdate, productionOrders }: { parts: Par
                               <span className="text-[10px] opacity-30 italic">Chưa có ĐM</span>
                             )}
                           </td>
-                          <td className="px-8 py-4">
-                            <span className={cn(
-                              "px-2 py-0.5 rounded-full text-xs font-bold",
-                              sub.status === 'COMPLETED' ? "bg-green-50 text-green-600" : "bg-gray-100 text-gray-500"
-                            )}>
-                              {sub.status === 'COMPLETED' ? 'XONG' : 'ĐANG SX'}
-                            </span>
-                          </td>
-                          <td className="px-8 py-4 text-center">
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setShowEditModal({ id: sub.id, qty: sub.targetQuantity });
-                              }}
-                              className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all border border-transparent hover:border-blue-100"
-                              title="Điều chỉnh số lượng"
-                            >
-                              <Edit2 size={16} />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </React.Fragment>
-                );
-              })}
-              {masterOrders.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-8 py-20 text-center text-gray-400 italic">Chưa có lệnh sản xuất nào.</td>
-                </tr>
-              )}
+                            <td className="px-8 py-4">
+                              <span className={cn(
+                                "px-2 py-1 rounded text-[10px] font-bold uppercase",
+                                sub.status === 'COMPLETED' ? "bg-green-100 text-green-700" : sub.status === 'PENDING' ? "bg-gray-100 text-gray-700" : sub.status === 'PAUSED' ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700"
+                              )}>
+                                {sub.status === 'COMPLETED' ? 'HOÀN THÀNH' : sub.status === 'PENDING' ? 'CHỜ SX' : sub.status === 'PAUSED' ? 'TẠM DỪNG' : 'ĐANG CHẠY'}
+                              </span>
+                            </td>
+                            <td className="px-8 py-4 text-center">
+                              <button
+                                  onClick={() => setShowEditModal({ id: sub.id, qty: sub.targetQuantity })}
+                                  className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                  title="Điều chỉnh số lượng"
+                                >
+                                <Edit2 size={16} />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </React.Fragment>
+                  );
+                })}
+              </React.Fragment>
+            );
+          })}
+          
+          {groupedOrders.length === 0 && (
+            <tr>
+              <td colSpan={11} className="px-8 py-20 text-center text-gray-400 italic font-bold">Chưa có lệnh sản xuất nào phù hợp với bộ lọc.</td>
+            </tr>
+          )}
             </tbody>
           </table>
         </div>
@@ -2826,7 +2936,7 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                                     <span className="font-mono font-bold text-xl">{displayQty}</span>
                                     <span className="text-xs font-mono opacity-40 uppercase mr-4">{displayUnit}</span>
                                     <button 
-                                      onClick={() => setDefectModal({ partId: item.partId, stageId: selectedStageDetail })}
+                                      onClick={() => setDefectModal({ partId: item.partId, stageId: selectedStageDetail, location: 'IN' })}
                                       className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-colors"
                                       title="Báo lỗi (NG)"
                                     >
@@ -2941,7 +3051,7 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                                     <span className="font-mono font-bold text-xl text-[#F27D26]">{displayQty}</span>
                                     <span className="text-xs font-mono opacity-40 uppercase mr-4">{displayUnit}</span>
                                     <button 
-                                      onClick={() => setDefectModal({ partId: item.partId, stageId: selectedStageDetail })}
+                                      onClick={() => setDefectModal({ partId: item.partId, stageId: selectedStageDetail, location: 'OUT' })}
                                       className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-colors"
                                       title="Báo lỗi (NG)"
                                     >
@@ -3364,7 +3474,7 @@ function ProduceView({
   const [sourceLocation, setSourceLocation] = useState<'IN' | 'OUT'>('IN');
   const [selectedPoId, setSelectedPoId] = useState<string>("");
   const [targetStageId, setTargetStageId] = useState<StageId>(
-    (STAGES.find(s => s.id === selectedStage)?.nextStageId || '') as StageId
+    (STAGES.find(s => s.id === selectedStage)?.nextStageId || STAGES[0].id) as StageId
   );
 
   const allAvailablePos = useMemo(() => {
@@ -3383,6 +3493,8 @@ function ProduceView({
   // Filter parts based on stage, BOM level, and selected PO
   const filteredParts = React.useMemo(() => {
     let baseParts = parts;
+    const glazingConfigs = storageService.getGlazingConfigs();
+    const glazingConfigPartIds = new Set(glazingConfigs.map((c: any) => c.partId.toUpperCase()));
 
     // Inject pseudo parts if we are looking at Glazing OUT
     if (selectedStage === 'GLAZING' && sourceLocation === 'OUT') {
@@ -3422,6 +3534,8 @@ function ProduceView({
         });
         if (!hasAvailablePo && selectedStage !== 'GLAZING' && !isPaintingExempt && !hasInventory) return false; 
       }
+
+      if (sourceLocation === 'OUT' && glazingConfigPartIds.has(p.id.toUpperCase())) return false;
 
       if (selectedStage === 'LASER') {
         return (sourceLocation === 'IN' ? p.level === 3 : p.level === 2) && !p.skipLaser;
@@ -3484,7 +3598,7 @@ function ProduceView({
     if (nextAvailableStage) {
       setTargetStageId(nextAvailableStage.id);
     } else {
-      setTargetStageId('' as StageId); // End of line
+      setTargetStageId(STAGES[0].id as StageId); // Default if no next valid stage
     }
     
     // Auto-switch to OUT for stages with automatic BOM deduction
@@ -3632,7 +3746,6 @@ function ProduceView({
                 {STAGES.map(s => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
-                <option value="">Kết thúc (Thành phẩm)</option>
               </select>
             </div>
           )}
@@ -3703,16 +3816,16 @@ function ProduceView({
                 {sourceLocation === 'IN' ? <CheckCircle2 size={24} /> : <Printer size={24} />}
                 {sourceLocation === 'IN' ? 'Xác nhận hoàn thành' : 'In nhãn QR'}
               </button>
-              {sourceLocation === 'IN' && (
+              {sourceLocation === 'IN' || selectedStage === 'LASER' ? (
                 <button 
                   type="button"
-                  onClick={() => setDefectModal({ partId: selectedPart, stageId: selectedStage, poId: selectedPoId })}
+                  onClick={() => setDefectModal({ partId: selectedPart, stageId: selectedStage, poId: selectedPoId, location: sourceLocation })}
                   className="w-32 py-5 rounded-xl border border-red-200 bg-red-50 text-red-600 font-bold uppercase text-[10px] flex flex-col items-center justify-center gap-1 hover:bg-red-100 transition-all active:scale-[0.98] shadow-lg shadow-red-50"
                 >
                   <AlertCircle size={20} />
                   Báo lỗi (NG)
                 </button>
-              )}
+              ) : null}
             </div>
           )}
         </form>
@@ -8417,7 +8530,8 @@ function DefectModal({ data, onClose, onDefectRecorded, inventory }: { data: any
     }
     try {
       const reasonName = DEFECT_REASONS.find(r => r.id === reasonId)?.name || reasonId;
-      storageService.recordDefect(finalPartId, data.stageId, qty, reasonName, note, data.poId);
+      const targetLocation = data.location || 'IN';
+      storageService.recordDefect(finalPartId, data.stageId, targetLocation, qty, reasonName, note, data.poId);
       onDefectRecorded();
       onClose();
     } catch (err) {

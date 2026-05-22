@@ -1198,7 +1198,7 @@ export const storageService = {
     };
   },
 
-  recordDefect(partId: string, stageId: StageId, quantity: number, reason: string, category: string, poId?: string) {
+  recordDefect(partId: string, stageId: StageId, location: 'IN' | 'OUT', quantity: number, reason: string, category: string, poId?: string) {
     const cleanId = partId.startsWith('GLZ-OUT-') ? partId.trim().toUpperCase() : partId.split(' - ')[0].trim().toUpperCase();
     
     // 1. Validation: Ensure we have enough stock in IN to mark as defect
@@ -1213,7 +1213,7 @@ export const storageService = {
       const itPartId = i.partId.toUpperCase().trim();
       const targetId = effectiveId.toUpperCase();
       const matchesPart = itPartId === targetId || (effectivePartName && itPartId === effectivePartName);
-      return matchesPart && i.stageId === stageId && i.location === 'IN';
+      return matchesPart && i.stageId === stageId && i.location === location;  // Fix: Check specific location
     });
     const totalStock = matchingStocks.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -1231,7 +1231,7 @@ export const storageService = {
     for (const stock of matchingStocks) {
       if (remainingToDeduct <= 0) break;
       const toTake = Math.min(stock.quantity, remainingToDeduct);
-      this.updateInventory(effectiveId, stageId, 'IN', -toTake, stock.originalPartId);
+      this.updateInventory(effectiveId, stageId, location, -toTake, stock.originalPartId);
       this.updateInventory(effectiveId, stageId, 'DEFECT', toTake, stock.originalPartId);
       deductedFromOriginalId = stock.originalPartId;
       remainingToDeduct -= toTake;
@@ -1259,7 +1259,8 @@ export const storageService = {
     // Auto-create supplementary POs for compensation for any stage
     if (stageId !== 'LASER') {
       try {
-        this.createMasterPO(cleanId, quantity, Date.now(), undefined, "REPAIR", stageId);
+        const repairId = deductedFromOriginalId || cleanId;
+        this.createMasterPO(repairId, quantity, Date.now(), undefined, "REPAIR", stageId);
       } catch (err) {
         console.error("Failed to create supplementary PO:", err);
       }
