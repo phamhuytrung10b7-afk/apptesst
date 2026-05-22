@@ -366,7 +366,15 @@ export const storageService = {
   getTransactions(): Transaction[] {
     const data = getCached(STORAGE_KEYS.TRANSACTIONS, () => {
       const data = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
-      return data ? JSON.parse(data) : [];
+      let parsed = data ? JSON.parse(data) : [];
+      // Optimal optimization: Auto purge data older than 7 days to save local storage limit
+      const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      const initialLength = parsed.length;
+      parsed = parsed.filter((t: any) => t.timestamp >= cutoff);
+      if (parsed.length !== initialLength) {
+        localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(parsed));
+      }
+      return parsed;
     });
     return [...data];
   },
@@ -389,7 +397,15 @@ export const storageService = {
   getLabels(): Transaction[] {
     const data = getCached('wip_labels', () => {
       const data = localStorage.getItem('wip_labels');
-      return data ? JSON.parse(data) : [];
+      let parsed = data ? JSON.parse(data) : [];
+      // Optimal optimization: Auto purge data older than 7 days from local storage
+      const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      const initialLength = parsed.length;
+      parsed = parsed.filter((t: any) => t.timestamp >= cutoff);
+      if (parsed.length !== initialLength) {
+        localStorage.setItem('wip_labels', JSON.stringify(parsed));
+      }
+      return parsed;
     });
     return [...data];
   },
