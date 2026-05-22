@@ -1977,18 +1977,28 @@ export const storageService = {
     const targetPo = pos.find(p => p.id === id);
     if (!targetPo) return;
 
-    targetPo.targetQuantity = qty;
+    // If it's a Master PO or has a Master PO, we might want to sync all related POs
+    const masterPoId = targetPo.masterPoId || (targetPo.stageId ? null : targetPo.id);
     
-    // Recalculate status
-    const isProduced = targetPo.producedQuantity >= targetPo.targetQuantity;
-    const isExported = (targetPo.exportedQuantity || 0) >= targetPo.targetQuantity;
-    targetPo.status = (isProduced && isExported) ? 'COMPLETED' : 'IN_PROGRESS';
-    
-    if (targetPo.status === 'COMPLETED' && !targetPo.completedAt) {
-      targetPo.completedAt = Date.now();
-    } else if (targetPo.status !== 'COMPLETED') {
-      targetPo.completedAt = undefined;
-    }
+    // Identify all POs to update
+    const posToUpdate = masterPoId 
+      ? pos.filter(p => p.id === masterPoId || p.masterPoId === masterPoId)
+      : [targetPo];
+
+    posToUpdate.forEach(po => {
+      po.targetQuantity = qty;
+      
+      // Recalculate status
+      const isProduced = po.producedQuantity >= po.targetQuantity;
+      const isExported = (po.exportedQuantity || 0) >= po.targetQuantity;
+      po.status = (isProduced && isExported) ? 'COMPLETED' : 'IN_PROGRESS';
+      
+      if (po.status === 'COMPLETED' && !po.completedAt) {
+        po.completedAt = Date.now();
+      } else if (po.status !== 'COMPLETED') {
+        po.completedAt = undefined;
+      }
+    });
 
     this.saveProductionOrders(pos);
   },
