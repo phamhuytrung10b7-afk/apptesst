@@ -1376,7 +1376,7 @@ function ProductionOrderView({ parts, onUpdate, productionOrders }: { parts: Par
                         // Override displayStatusText for REPAIR sub POs aggregated status
                         const allCompleted = subOrders.length > 0 && subOrders.every(so => so.status === 'COMPLETED');
                         const hasInProgress = subOrders.some(so => so.status === 'IN_PROGRESS');
-                        const overallStatus = allCompleted ? 'COMPLETED' : (hasInProgress ? 'IN_PROGRESS' : 'PENDING');
+                        const overallStatus: string = allCompleted ? 'COMPLETED' : (hasInProgress ? 'IN_PROGRESS' : 'PENDING');
                         
                         displayStatusText = overallStatus === 'COMPLETED' ? 'HOÀN THÀNH' : overallStatus === 'PENDING' ? 'CHỜ SẢN XUẤT' : overallStatus === 'PAUSED' ? 'TẠM DỪNG' : 'ĐANG CHẠY';
                         statusBadgeClass = overallStatus === 'COMPLETED' ? "bg-green-100 text-green-700" : overallStatus === 'PENDING' ? "bg-gray-100 text-gray-700" : overallStatus === 'PAUSED' ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700";
@@ -2459,14 +2459,15 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
   end.setHours(23, 59, 59, 999);
   const endMs = end.getTime();
 
+  const labels = storageService.getLabels();
+
   const rangeTx = transactions.filter(t => 
     t.type === 'STAGE_OUT' && t.timestamp >= startMs && t.timestamp <= endMs
   );
 
-  if (rangeTx.length === 0) {
-    alert('Không có dữ liệu sản xuất xuất kho trong khoảng thời gian này.');
-    return;
-  }
+  const rangeLabels = labels.filter(l => 
+    l.type === 'STAGE_OUT' && l.stageId === 'GLAZING' && l.timestamp >= startMs && l.timestamp <= endMs
+  );
 
   const wb = XLSX.utils.book_new();
 
@@ -2475,6 +2476,7 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
     { id: 'BENDING', name: 'Chấn dập' },
     { id: 'WELDING', name: 'Hàn' },
     { id: 'PAINTING', name: 'Sơn' },
+    { id: 'GLAZING', name: 'Dán kính' },
   ];
 
   const borderStyle = {
@@ -2513,7 +2515,9 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
   };
 
   stagesToExport.forEach(stageInfo => {
-    const stageTx = rangeTx.filter(t => t.stageId === stageInfo.id);
+    const stageTx = stageInfo.id === 'GLAZING' 
+      ? rangeLabels 
+      : rangeTx.filter(t => t.stageId === stageInfo.id);
     
     const partTotals = new Map<string, number>();
     stageTx.forEach(t => {
@@ -2598,6 +2602,211 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
     const sheetName = stageInfo.name.replace(/[^a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF ]/g, '').substring(0, 31).trim();
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
   });
+
+  // ========== BÁO CÁO LẮP RÁP ==========
+  const dclrNorms = storageService.getNorms().filter(n => n.stageId === 'DCLR'); 
+  const dclrNormsMap = new Map(dclrNorms.map(n => [n.partId, n.secondsPerUnit]));
+
+  const masterOrders = storageService.getProductionOrders().filter(o => !o.masterPoId && !o.id.startsWith('REPAIR'));
+  
+  const allLapRapParts = new Set<string>();
+  dclrNorms.forEach(n => {
+    if (n.partId) allLapRapParts.add(n.partId);
+  });
+  
+  const dayLabels: string[] = [];
+  const daysStartMs: number[] = [];
+  const daysEndMs: number[] = [];
+  let curr = new Date(startMs);
+  while (curr.getTime() <= endMs) {
+    const dStart = new Date(curr); dStart.setHours(0,0,0,0);
+    const dEnd = new Date(curr); dEnd.setHours(23,59,59,999);
+    dayLabels.push(`${format(dStart, 'EEE').replace('Mon','Thứ 2').replace('Tue','Thứ 3').replace('Wed','Thứ 4').replace('Thu','Thứ 5').replace('Fri','Thứ 6').replace('Sat','Thứ 7').replace('Sun','Chủ Nhật')} ${format(dStart, 'dd/MM')}`);
+    daysStartMs.push(dStart.getTime());
+    daysEndMs.push(dEnd.getTime());
+    curr.setDate(curr.getDate() + 1);
+  }
+
+  masterOrders.forEach(po => {
+    const time = po.plannedStartTime || po.createdAt;
+    if (time >= startMs && time <= endMs) {
+      allLapRapParts.add(po.partId);
+    }
+  });
+
+  transactions.filter(t => t.timestamp >= startMs && t.timestamp <= endMs)
+    .filter(t => t.type === 'STAGE_OUT')
+    .filter(t => t.stageId === 'PAINTING')
+    .forEach(t => {
+       allLapRapParts.add(t.partId);
+    });
+
+  labels.filter(l => l.timestamp >= startMs && l.timestamp <= endMs)
+    .filter(l => l.type === 'STAGE_OUT' && l.stageId === 'GLAZING')
+    .forEach(l => {
+       allLapRapParts.add(l.partId);
+    });
+
+  const lrSheetData: any[][] = [];
+  const lrRow1: any[] = ['Mã thành phẩm', 'Tên thành phẩm', 'HSQĐ'];
+  const lrRow2: any[] = ['', '', ''];
+  
+  dayLabels.forEach(dl => {
+     lrRow1.push(dl, ''); 
+     lrRow2.push('KHSX', 'TH');
+  });
+  
+  lrRow1.push('KHSX', 'Tổng TH', 'Chênh lệch');
+  lrRow2.push('', '', '');
+  
+  lrSheetData.push(lrRow1, lrRow2);
+
+  const lapRapRows = Array.from(allLapRapParts).sort().map(partId => {
+    const part = parts.find(p => p.id === partId);
+    const partName = part?.name || partId;
+    const hsqd = dclrNormsMap.get(partId) || 0;
+    
+    const rowData: any[] = [partId, partName, hsqd];
+    let totalKHSX = 0;
+    let totalTH = 0;
+    
+    for (let i = 0; i < daysStartMs.length; i++) {
+        const dStart = daysStartMs[i];
+        const dEnd = daysEndMs[i];
+        
+        const dayKHSX = masterOrders.filter(o => o.partId === partId && (o.plannedStartTime || o.createdAt) >= dStart && (o.plannedStartTime || o.createdAt) <= dEnd).reduce((sum, o) => sum + o.targetQuantity, 0);
+        
+        const dayTH_Painting = transactions.filter(t => t.timestamp >= dStart && t.timestamp <= dEnd && t.partId === partId && t.type === 'STAGE_OUT' && t.stageId === 'PAINTING').reduce((sum, t) => sum + Math.abs(t.quantity), 0);
+        const dayTH_Glazing = labels.filter(l => l.timestamp >= dStart && l.timestamp <= dEnd && l.partId === partId && l.type === 'STAGE_OUT' && l.stageId === 'GLAZING').reduce((sum, l) => sum + Math.abs(l.quantity), 0);
+        
+        const dayTH = dayTH_Painting + dayTH_Glazing;
+        
+        rowData.push(dayKHSX > 0 ? dayKHSX : '', dayTH > 0 ? dayTH : '');
+        totalKHSX += dayKHSX;
+        totalTH += dayTH;
+    }
+    
+    rowData.push(totalKHSX > 0 ? totalKHSX : '', totalTH > 0 ? totalTH : '', (totalTH - totalKHSX) !== 0 ? (totalTH - totalKHSX) : '');
+    return { rowData, hsqd, totalKHSX, totalTH };
+  });
+
+  const activeLapRapRows = lapRapRows.filter(r => r.totalKHSX > 0 || r.totalTH > 0);
+  activeLapRapRows.forEach(r => lrSheetData.push(r.rowData));
+
+  const footerUnconverted: any[] = ['Tổng sản phẩm chưa quy đổi', '', ''];
+  const footerConverted: any[] = ['Tổng sản phẩm quy đổi/ngày', '', ''];
+  const footerPeople: any[] = ['Tổng số người', '', ''];
+  const footerCapacity: any[] = ['Năng lực sản xuất dây chuyền (8h)', '', ''];
+  const footerRatio: any[] = ['KHSX / NLSX', '', ''];
+
+  let grandKHSX_un = 0;
+  let grandTH_un = 0;
+  let grandKHSX_conv = 0;
+  let grandTH_conv = 0;
+
+  for (let i = 0; i < daysStartMs.length; i++) {
+      let dayKHSX_un = 0; let dayTH_un = 0;
+      let dayKHSX_conv = 0; let dayTH_conv = 0;
+      
+      activeLapRapRows.forEach(r => {
+         const k = Number(r.rowData[3 + i*2]) || 0;
+         const th = Number(r.rowData[3 + i*2 + 1]) || 0;
+         dayKHSX_un += k;
+         dayTH_un += th;
+         dayKHSX_conv += k * r.hsqd;
+         dayTH_conv += th * r.hsqd;
+      });
+      
+      footerUnconverted.push(dayKHSX_un > 0 ? dayKHSX_un : '-', dayTH_un > 0 ? dayTH_un : '-');
+      footerConverted.push(dayKHSX_conv > 0 ? Math.round(dayKHSX_conv) : '-', dayTH_conv > 0 ? Math.round(dayTH_conv) : '-');
+      footerPeople.push(12, 12);
+      footerCapacity.push(768, 768);
+      footerRatio.push(dayKHSX_conv > 0 ? Math.round((dayKHSX_conv / 768)*100) + '%' : '0%', ''); 
+      
+      grandKHSX_un += dayKHSX_un;
+      grandTH_un += dayTH_un;
+      grandKHSX_conv += dayKHSX_conv;
+      grandTH_conv += dayTH_conv;
+  }
+  
+  footerUnconverted.push(grandKHSX_un > 0 ? grandKHSX_un : '-', grandTH_un > 0 ? grandTH_un : '-', (grandTH_un - grandKHSX_un));
+  footerConverted.push(Math.round(grandKHSX_conv), Math.round(grandTH_conv), Math.round(grandTH_conv - grandKHSX_conv));
+  footerPeople.push('', '', '');
+  footerCapacity.push('', '', '');
+  footerRatio.push('', '', ''); 
+
+  lrSheetData.push(footerUnconverted, footerConverted, footerPeople, footerCapacity, footerRatio);
+
+  const wsLR = XLSX.utils.aoa_to_sheet(lrSheetData);
+
+  const numDays = daysStartMs.length;
+  const mergesLR = [
+    { s: {r:0, c:0}, e: {r:1, c:0} }, 
+    { s: {r:0, c:1}, e: {r:1, c:1} }, 
+    { s: {r:0, c:2}, e: {r:1, c:2} }
+  ];
+  for (let i = 0; i < numDays; i++) {
+    mergesLR.push({ s: {r:0, c: 3 + i*2}, e: {r:0, c: 3 + i*2 + 1} }); 
+  }
+  mergesLR.push(
+    { s: {r:0, c: 3 + numDays*2}, e: {r:1, c: 3 + numDays*2} }, 
+    { s: {r:0, c: 3 + numDays*2 + 1}, e: {r:1, c: 3 + numDays*2 + 1} }, 
+    { s: {r:0, c: 3 + numDays*2 + 2}, e: {r:1, c: 3 + numDays*2 + 2} }  
+  );
+  
+  const footerStartR = lrSheetData.length - 5;
+  for (let i = 0; i < 5; i++) {
+     mergesLR.push({ s: {r:footerStartR + i, c:0}, e: {r:footerStartR + i, c:2} });
+  }
+  wsLR['!merges'] = mergesLR;
+
+  const rangeLR = XLSX.utils.decode_range(wsLR['!ref'] || 'A1:A1');
+  for (let R = 0; R <= rangeLR.e.r; ++R) {
+    for (let C = 0; C <= rangeLR.e.c; ++C) {
+      const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+      if (!wsLR[cellAddress]) wsLR[cellAddress] = { t: 's', v: '' };
+      
+      const isHeader = R < 2;
+      const isFooter = R >= footerStartR;
+      
+      if (isHeader) {
+         wsLR[cellAddress].s = {
+            ...headerStyle,
+            font: { bold: true, sz: 10, color: { rgb: "FFFFFF" } },
+         };
+      } else if (isFooter) {
+         wsLR[cellAddress].s = {
+            ...dataStyle,
+            font: { bold: true, sz: 11 },
+            fill: { fgColor: { rgb: R === footerStartR ? "E2E8F0" : R === footerStartR + 1 ? "FED7AA" : R === footerStartR + 4 ? "F3F4F6" : "FEF3C7" } }
+         };
+         if (C > 2) wsLR[cellAddress].s.alignment = { horizontal: "center", vertical: "center" };
+      } else {
+         wsLR[cellAddress].s = { ...dataStyle, alignment: (C > 1 && C !== 2) ? { horizontal: "center", vertical: "center" } : { horizontal: "left", vertical: "center" } };
+         if (C >= 3 && C < 3 + numDays*2) {
+             const isKHSX = (C - 3) % 2 === 0;
+             wsLR[cellAddress].s.font = { ...wsLR[cellAddress].s.font, color: { rgb: isKHSX ? "DC2626" : "2563EB" }, bold: true };
+         }
+      }
+    }
+  }
+
+  const colsLR = [
+    { wch: 30 }, // Mã TP
+    { wch: 45 }, // Tên TP
+    { wch: 8 },  // HSQĐ
+  ];
+  for (let i = 0; i < numDays; i++) {
+    colsLR.push({ wch: 6 }, { wch: 6 }); // KHSX, TH
+  }
+  colsLR.push({ wch: 8 }, { wch: 8 }, { wch: 10 }); // Total KHSX, TH, Chênh lệch
+  wsLR['!cols'] = colsLR;
+
+  if (activeLapRapRows.length > 0) {
+    XLSX.utils.book_append_sheet(wb, wsLR, "Lắp Ráp");
+  }
+
+
 
   XLSX.writeFile(wb, `BaoCao_SanLuong_${format(start, 'ddMMyy')}-${format(end, 'ddMMyy')}.xlsx`);
 };
@@ -5981,8 +6190,8 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
           <div className="space-y-12">
             <div className="space-y-6 bg-blue-50/30 p-8 rounded-3xl border border-blue-100">
               <hgroup>
-                <h3 className="text-xl font-black uppercase text-blue-800 tracking-tight">Định mức Kế hoạch Dán Kính</h3>
-                <p className="text-xs text-blue-600 font-bold uppercase tracking-widest mt-1 italic">Dành cho lập kế hoạch Gói Cánh / Gói Đỉnh</p>
+                <h3 className="text-xl font-black uppercase text-blue-800 tracking-tight">Định mức kế hoạch dán kính</h3>
+                <p className="text-xs text-blue-600 font-bold uppercase tracking-widest mt-1 italic">Dành cho lập kế hoạch gói cánh / gói đỉnh</p>
               </hgroup>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -5993,7 +6202,7 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                     <div>
                       <div className="font-black text-blue-600 uppercase tracking-tight">Tải lên định mức dán kính</div>
                       <div className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-2 leading-relaxed">
-                        Tên linh kiện | Định mức | Mã Linh Kiện | Model áp dụng
+                        Tên linh kiện | Định mức | Mã linh kiện | Model áp dụng
                       </div>
                     </div>
                   </label>
@@ -6004,7 +6213,7 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                     <span className="text-[10px] font-black uppercase text-blue-600 tracking-widest">Định mức đã tải ({glazingPlanNorms.length})</span>
                     {glazingPlanNorms.length > 0 && (
                       <button 
-                        onClick={() => { if(confirm('Xóa sạch định mức kế hoạch?')) { storageService.saveGlazingPlanNorms([]); setGlazingPlanNorms([]); } }}
+                        onClick={() => { if(confirm('Xóa sạch định mức?')) { storageService.saveGlazingPlanNorms([]); setGlazingPlanNorms([]); } }}
                         className="text-red-400 hover:text-red-600 transition-colors"
                       >
                         <Trash2 size={16} />
@@ -6017,16 +6226,18 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                         <thead className="bg-gray-50 font-black uppercase text-gray-400">
                           <tr>
                             <th className="px-3 py-2">Linh kiện</th>
-                            <th className="px-3 py-2 text-center">T/G (giây)</th>
+                            <th className="px-3 py-2 text-center">T/G (Giây)</th>
                             <th className="px-3 py-2">Model áp dụng</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
                           {glazingPlanNorms.map((n, i) => (
                             <tr key={i} className="hover:bg-blue-50/20">
-                              <td className="px-3 py-2 font-bold text-gray-700">{n.partName}</td>
+                              <td className="px-3 py-2 font-bold text-gray-700">
+                                <div>{n.partName}</div>
+                              </td>
                               <td className="px-3 py-2 text-center font-black text-blue-600">{n.norm}</td>
-                              <td className="px-3 py-2 font-bold italic text-blue-500 bg-blue-50/30">{n.appliedModel || n.modelName}</td>
+                              <td className="px-3 py-2 font-bold text-blue-600">{n.appliedModel || n.modelName}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -7786,8 +7997,15 @@ function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () 
         } else {
           // Standard Stage Norm Import
           const imported: ProductivityNorm[] = data.map(row => {
-            const partIdRaw = String(row['PartID'] || row['Mã linh kiện'] || row['Mã LK'] || '').trim();
-            const partNameRaw = String(row['PartName'] || row['Tên linh kiện'] || row['Tên LK'] || '').trim();
+            const lowerRow: any = {};
+            for (const key in row) {
+              if (Object.prototype.hasOwnProperty.call(row, key)) {
+                lowerRow[key.toLowerCase().trim()] = row[key];
+              }
+            }
+
+            const partIdRaw = String(lowerRow['partid'] || lowerRow['mã linh kiện'] || lowerRow['mã lk'] || lowerRow['mã thành phẩm'] || '').trim();
+            const partNameRaw = String(lowerRow['partname'] || lowerRow['tên linh kiện'] || lowerRow['tên lk'] || lowerRow['tên thành phẩm'] || '').trim();
             
             let finalPartId = partIdRaw;
             if (!finalPartId && partNameRaw) {
@@ -7796,15 +8014,17 @@ function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () 
               if (found) finalPartId = found.id;
             }
 
+            const normVal = lowerRow['seconds'] || lowerRow['giây'] || lowerRow['thời gian'] || lowerRow['định mức'] || lowerRow['hsqd nmbd'] || lowerRow['hsqd'] || lowerRow['hsqđ'];
+
             return {
               partId: finalPartId,
               stageId: activeTab as StageId,
-              secondsPerUnit: parseFloat(row['Seconds'] || row['Giây'] || row['Thời gian'] || row['Định mức'] || '0')
+              secondsPerUnit: parseFloat(String(normVal || '0').replace(',', '.'))
             };
           }).filter(n => n.partId && n.secondsPerUnit > 0);
 
           if (imported.length === 0) {
-            alert('Không tìm thấy dữ liệu hợp lệ. Cần các cột: PartID hoặc Tên linh kiện, Định mức (Giây)');
+            alert(`Không tìm thấy dữ liệu hợp lệ. Cần các cột: PartID/Mã thành phẩm hoặc Tên linh kiện, ${activeTab === 'DCLR' ? 'Hệ số quy đổi' : 'Định mức (Giây)'}`);
           } else {
             const currentNorms = storageService.getNorms();
             // Replace or add
@@ -7969,7 +8189,9 @@ function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () 
                 <tr className="bg-gray-50/50 border-b border-gray-100">
                   <th className="p-8 pl-12 text-sm font-mono uppercase opacity-75">Mã linh kiện</th>
                   <th className="p-8 text-sm font-mono uppercase opacity-75">Tên linh kiện</th>
-                  <th className="p-8 text-sm font-mono uppercase opacity-75 text-center">Thời gian (Giây/Đơn vị)</th>
+                    <th className="p-8 pb-4 text-sm font-mono uppercase opacity-75 text-center">
+                      {activeTab === 'DCLR' ? 'Hệ số quy đổi' : 'Thời gian (Giây/Đơn vị)'}
+                    </th>
                   <th className="p-8 pr-12 text-sm font-mono uppercase opacity-75 text-right">Thao tác</th>
                 </tr>
               </thead>
