@@ -1993,28 +1993,22 @@ export const storageService = {
     const targetPo = pos.find(p => p.id === id);
     if (!targetPo) return;
 
-    // If it's a Master PO or has a Master PO, we might want to sync all related POs
-    const masterPoId = targetPo.masterPoId || (targetPo.stageId ? null : targetPo.id);
+    // Only update the specific target PO, not all related POs
+    targetPo.targetQuantity = qty;
     
-    // Identify all POs to update
-    const posToUpdate = masterPoId 
-      ? pos.filter(p => p.id === masterPoId || p.masterPoId === masterPoId)
-      : [targetPo];
-
-    posToUpdate.forEach(po => {
-      po.targetQuantity = qty;
-      
-      // Recalculate status
-      const isProduced = po.producedQuantity >= po.targetQuantity;
-      const isExported = (po.exportedQuantity || 0) >= po.targetQuantity;
-      po.status = (isProduced && isExported) ? 'COMPLETED' : 'IN_PROGRESS';
-      
-      if (po.status === 'COMPLETED' && !po.completedAt) {
-        po.completedAt = Date.now();
-      } else if (po.status !== 'COMPLETED') {
-        po.completedAt = undefined;
-      }
-    });
+    // Recalculate status
+    const isProduced = targetPo.producedQuantity >= targetPo.targetQuantity;
+    const isExported = (targetPo.exportedQuantity || 0) >= targetPo.targetQuantity;
+    
+    // If it was already completed but now target is higher, put back to IN_PROGRESS. 
+    // If it wasn't completed but now meets target, complete it.
+    if (isProduced && isExported) {
+      targetPo.status = 'COMPLETED';
+      if (!targetPo.completedAt) targetPo.completedAt = Date.now();
+    } else {
+      targetPo.status = (targetPo.producedQuantity > 0 || (targetPo.exportedQuantity && targetPo.exportedQuantity > 0)) ? 'IN_PROGRESS' : 'PENDING';
+      targetPo.completedAt = undefined;
+    }
 
     this.saveProductionOrders(pos);
   },

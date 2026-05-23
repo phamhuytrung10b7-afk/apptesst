@@ -8263,6 +8263,10 @@ interface HistoryProps {
 }
 
 function HistoryView({ transactions, parts }: HistoryProps) {
+  // Only show transactions from the last 3 days
+  const cutoff = Date.now() - 3 * 24 * 60 * 60 * 1000;
+  const filteredTransactions = transactions.filter(t => t.timestamp >= cutoff);
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
@@ -8271,7 +8275,7 @@ function HistoryView({ transactions, parts }: HistoryProps) {
       className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden"
     >
       <div className="p-10 border-b border-gray-100 flex justify-between items-center">
-        <h2 className="font-bold text-2xl tracking-tight">Nhật ký giao dịch hệ thống</h2>
+        <h2 className="font-bold text-2xl tracking-tight">Nhật ký giao dịch hệ thống <span className="text-sm font-normal text-gray-500 bg-gray-100 px-3 py-1 rounded-full ml-4">3 ngày gần nhất</span></h2>
         <div className="flex gap-4">
           <button className="px-6 py-3 text-sm font-bold uppercase border border-gray-200 rounded-lg hover:bg-gray-50">Xuất Excel</button>
           <button className="px-6 py-3 text-sm font-bold uppercase border border-gray-200 rounded-lg hover:bg-gray-50">Lọc dữ liệu</button>
@@ -8292,7 +8296,7 @@ function HistoryView({ transactions, parts }: HistoryProps) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {transactions.length === 0 ? (
+            {filteredTransactions.length === 0 ? (
               <tr>
                 <td colSpan={7} className="p-24 text-center text-gray-400">
                   <div className="flex flex-col items-center">
@@ -8302,7 +8306,7 @@ function HistoryView({ transactions, parts }: HistoryProps) {
                 </td>
               </tr>
             ) : (
-              transactions.map((tx) => (
+              filteredTransactions.map((tx) => (
                 <tr key={tx.id} className="hover:bg-gray-50/50 transition-colors">
                   <td className="p-6 pl-10 font-mono text-base">{format(tx.timestamp, 'dd/MM/yyyy HH:mm:ss')}</td>
                   <td className="p-6">
