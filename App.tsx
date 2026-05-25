@@ -2453,7 +2453,7 @@ const exportDailyProductionReport = (transactions: Transaction[], parts: Part[])
   XLSX.writeFile(wb, `BaoCao_SanLuong_${format(new Date(), 'yyyyMMdd')}.xlsx`);
 };
 
-const exportProductionReportRange = (transactions: Transaction[], parts: Part[], startDateStr: string, endDateStr: string) => {
+const exportProductionReportRange = (transactions: Transaction[], parts: Part[], startDateStr: string, endDateStr: string, peoplePerDay: Record<string, number> = {}, totalMandays: number = 0) => {
   const start = new Date(startDateStr);
   start.setHours(0, 0, 0, 0);
   const startMs = start.getTime();
@@ -2748,11 +2748,15 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
          dayTH_conv += th * r.hsqd;
       });
       
+      const dayDateStr = new Date(daysStartMs[i]).toISOString().split('T')[0];
+      const people = peoplePerDay[dayDateStr] === undefined ? 12 : peoplePerDay[dayDateStr];
+      const capacity = people * 64;
+
       footerUnconverted.push(dayKHSX_un > 0 ? dayKHSX_un : '-', dayTH_un > 0 ? dayTH_un : '-');
       footerConverted.push(dayKHSX_conv > 0 ? Math.round(dayKHSX_conv) : '-', dayTH_conv > 0 ? Math.round(dayTH_conv) : '-');
-      footerPeople.push(12, 12);
-      footerCapacity.push(768, 768);
-      footerRatio.push(dayKHSX_conv > 0 ? Math.round((dayKHSX_conv / 768)*100) + '%' : '0%', ''); 
+      footerPeople.push(people, people);
+      footerCapacity.push(capacity, capacity);
+      footerRatio.push(dayKHSX_conv > 0 ? (capacity > 0 ? Math.round((dayKHSX_conv / capacity)*100) + '%' : '0%') : '0%', ''); 
       
       grandKHSX_un += dayKHSX_un;
       grandTH_un += dayTH_un;
@@ -2760,11 +2764,21 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
       grandTH_conv += dayTH_conv;
   }
   
+  let total_people = 0;
+  for (let i = 0; i < daysStartMs.length; i++) {
+      const dayDateStr = new Date(daysStartMs[i]).toISOString().split('T')[0];
+      const people = peoplePerDay[dayDateStr] === undefined ? 12 : peoplePerDay[dayDateStr];
+      total_people += people;
+  }
+  const thucHienAvg = totalMandays > 0 ? (grandTH_conv / totalMandays) : 0;
+  const phanTramAvg = (thucHienAvg / 64) * 100;
+
   footerUnconverted.push(grandKHSX_un > 0 ? grandKHSX_un : '-', grandTH_un > 0 ? grandTH_un : '-', (grandKHSX_un - grandTH_un));
   footerConverted.push(Math.round(grandKHSX_conv), Math.round(grandTH_conv), Math.round(grandKHSX_conv - grandTH_conv));
-  footerPeople.push('', '', '');
-  footerCapacity.push('', '', '');
-  footerRatio.push('', '', ''); 
+  footerPeople.push('Năng suất Tuần', '', '');
+  footerCapacity.push('Kế hoạch', 'Thực hiện', '% thực hiện');
+  footerRatio.push(64, Math.round(thucHienAvg), Math.round(phanTramAvg) + '%'); 
+
 
   lrSheetData.push(footerUnconverted, footerConverted, footerPeople, footerCapacity, footerRatio);
 
@@ -2789,6 +2803,11 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
   for (let i = 0; i < 5; i++) {
      mergesLR.push({ s: {r:footerStartR + i, c:0}, e: {r:footerStartR + i, c:2} });
   }
+
+  const nangSuatTuanRow = footerStartR + 2;
+  const nangSuatTuanCol = 3 + numDays * 2;
+  mergesLR.push({ s: { r: nangSuatTuanRow, c: nangSuatTuanCol }, e: { r: nangSuatTuanRow, c: nangSuatTuanCol + 2 } });
+
   wsLR['!merges'] = mergesLR;
 
   const rangeLR = XLSX.utils.decode_range(wsLR['!ref'] || 'A1:A1');
@@ -2860,6 +2879,27 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
 
   const [exportStartDate, setExportStartDate] = useState(() => getPastDateStr(30));
   const [exportEndDate, setExportEndDate] = useState(() => getPastDateStr(0));
+  const [peoplePerDay, setPeoplePerDay] = useState<Record<string, number>>({});
+  const [exportTotalMandays, setExportTotalMandays] = useState("");
+
+  const exportDateRange = useMemo(() => {
+    const dates = [];
+    const [sY, sM, sD] = exportStartDate.split('-').map(Number);
+    const curr = new Date(sY, sM - 1, sD, 0, 0, 0, 0);
+    const [eY, eM, eD] = exportEndDate.split('-').map(Number);
+    const end = new Date(eY, eM - 1, eD, 23, 59, 59, 999);
+    
+    let count = 0;
+    while (curr <= end && count < 32) {
+      const y = curr.getFullYear();
+      const m = String(curr.getMonth() + 1).padStart(2, '0');
+      const d = String(curr.getDate()).padStart(2, '0');
+      dates.push(`${y}-${m}-${d}`);
+      curr.setDate(curr.getDate() + 1);
+      count++;
+    }
+    return dates;
+  }, [exportStartDate, exportEndDate]);
 
   const [chartDate, setChartDate] = useState(() => getPastDateStr(0));
 
@@ -3646,7 +3686,7 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl relative"
+              className="bg-white rounded-3xl p-8 max-w-xl w-full shadow-2xl relative"
             >
               <button className="absolute top-4 right-4 text-gray-500 hover:text-gray-800 cursor-pointer p-2 hover:bg-gray-100 rounded-full transition-colors" onClick={() => setShowExportModal(false)}>
                 <X size={20} />
@@ -3678,10 +3718,47 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                     className="w-full bg-gray-50 border border-gray-200 p-4 rounded-xl font-bold text-gray-800 outline-none focus:border-green-500 focus:bg-green-50 transition-all font-mono cursor-pointer"
                   />
                 </div>
+                
+                <div>
+                  <label className="block text-sm font-bold uppercase text-gray-600 mb-2">Tổng số công đi làm <span className="text-[10px] text-gray-400 normal-case">(Tính % thực hiện tuần)</span></label>
+                  <input 
+                    type="number"
+                    min="1"
+                    placeholder="VD: 50"
+                    value={exportTotalMandays}
+                    onChange={(e) => setExportTotalMandays(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 p-4 rounded-xl font-bold text-gray-800 outline-none focus:border-green-500 focus:bg-green-50 transition-all font-mono"
+                  />
+                </div>
+
+                <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 max-h-60 overflow-y-auto">
+                  <label className="block text-sm font-bold uppercase text-gray-600 mb-4 sticky top-0 bg-gray-50 pb-2 border-b border-gray-200">Số lượng người</label>
+                  <div className="grid grid-cols-3 gap-4">
+                    {exportDateRange.map(dateStr => {
+                      const [y, m, d] = dateStr.split('-');
+                      return (
+                      <div key={dateStr} className="flex flex-col gap-1 bg-white p-2 border border-gray-200 rounded-lg shadow-sm">
+                        <span className="text-[10px] font-bold text-gray-500 uppercase flex justify-between items-center">
+                          {d}/{m}/{y}
+                        </span>
+                        <input
+                          type="number"
+                          min="0"
+                          title={`Số người ngày ${dateStr}`}
+                          placeholder="12"
+                          value={peoplePerDay[dateStr] === undefined ? 12 : peoplePerDay[dateStr]}
+                          onChange={(e) => setPeoplePerDay({ ...peoplePerDay, [dateStr]: parseInt(e.target.value) || 0 })}
+                          className="w-full bg-gray-50 outline-none text-base font-bold p-2 rounded focus:border-blue-500 border border-transparent hover:border-gray-300 transition-colors text-blue-700 text-center"
+                        />
+                      </div>
+                    )})}
+                  </div>
+                </div>
+
                 <div className="pt-2">
                   <button 
                     onClick={() => {
-                      exportProductionReportRange(transactions, parts, exportStartDate, exportEndDate);
+                      exportProductionReportRange(transactions, parts, exportStartDate, exportEndDate, peoplePerDay, parseInt(exportTotalMandays) || 0);
                       setShowExportModal(false);
                     }}
                     className="w-full py-4 bg-green-600 text-white rounded-xl font-bold text-lg uppercase hover:bg-green-700 active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2"
