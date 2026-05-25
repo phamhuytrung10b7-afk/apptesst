@@ -2640,10 +2640,24 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
     curr.setDate(curr.getDate() + 1);
   }
 
-  masterOrders.forEach(po => {
+  const paintingOrders = storageService.getProductionOrders().filter(o => o.stageId === 'PAINTING' && o.status !== 'COMPLETED'); // or all statuses? Wait, all statues.
+  // Actually, we want KHSX for any PO created in the day, regardless of completeness.
+  const allPaintingOrders = storageService.getProductionOrders().filter(o => o.stageId === 'PAINTING');
+  const glazingPlans = storageService.getGlazingPlans();
+  const glazingPlanNorms = storageService.getGlazingPlanNorms();
+
+  allPaintingOrders.forEach(po => {
     const time = po.plannedStartTime || po.createdAt;
     if (time >= startMs && time <= endMs) {
       allLapRapParts.add(po.partId);
+    }
+  });
+
+  glazingPlans.forEach(plan => {
+    const time = plan.plannedStartTime || plan.createdAt;
+    if (time >= startMs && time <= endMs) {
+      const relatedNorms = glazingPlanNorms.filter(n => n.appliedModel === plan.modelId);
+      relatedNorms.forEach(n => allLapRapParts.add(n.id));
     }
   });
 
@@ -2687,7 +2701,12 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
         const dStart = daysStartMs[i];
         const dEnd = daysEndMs[i];
         
-        const dayKHSX = masterOrders.filter(o => o.partId === partId && (o.plannedStartTime || o.createdAt) >= dStart && (o.plannedStartTime || o.createdAt) <= dEnd).reduce((sum, o) => sum + o.targetQuantity, 0);
+        const dayKHSX_Painting = allPaintingOrders.filter(o => o.partId === partId && (o.plannedStartTime || o.createdAt) >= dStart && (o.plannedStartTime || o.createdAt) <= dEnd).reduce((sum, o) => sum + o.targetQuantity, 0);
+        const dayKHSX_Glazing = glazingPlanNorms.find(n => n.id === partId) 
+           ? glazingPlans.filter(p => p.modelId === glazingPlanNorms.find(n => n.id === partId)?.appliedModel && (p.plannedStartTime || p.createdAt) >= dStart && (p.plannedStartTime || p.createdAt) <= dEnd).reduce((sum, p) => sum + p.targetQuantity, 0)
+           : 0;
+
+        const dayKHSX = dayKHSX_Painting + dayKHSX_Glazing;
         
         const dayTH_Painting = transactions.filter(t => t.timestamp >= dStart && t.timestamp <= dEnd && t.partId === partId && t.type === 'STAGE_OUT' && t.stageId === 'PAINTING').reduce((sum, t) => sum + Math.abs(t.quantity), 0);
         const dayTH_Glazing = labels.filter(l => l.timestamp >= dStart && l.timestamp <= dEnd && l.partId === partId && l.type === 'STAGE_OUT' && l.stageId === 'GLAZING').reduce((sum, l) => sum + Math.abs(l.quantity), 0);
@@ -2699,7 +2718,7 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
         totalTH += dayTH;
     }
     
-    rowData.push(totalKHSX > 0 ? totalKHSX : '', totalTH > 0 ? totalTH : '', (totalTH - totalKHSX) !== 0 ? (totalTH - totalKHSX) : '');
+    rowData.push(totalKHSX > 0 ? totalKHSX : '', totalTH > 0 ? totalTH : '', (totalKHSX - totalTH) !== 0 ? (totalKHSX - totalTH) : '');
     return { rowData, hsqd, totalKHSX, totalTH };
   });
 
@@ -2742,8 +2761,8 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
       grandTH_conv += dayTH_conv;
   }
   
-  footerUnconverted.push(grandKHSX_un > 0 ? grandKHSX_un : '-', grandTH_un > 0 ? grandTH_un : '-', (grandTH_un - grandKHSX_un));
-  footerConverted.push(Math.round(grandKHSX_conv), Math.round(grandTH_conv), Math.round(grandTH_conv - grandKHSX_conv));
+  footerUnconverted.push(grandKHSX_un > 0 ? grandKHSX_un : '-', grandTH_un > 0 ? grandTH_un : '-', (grandKHSX_un - grandTH_un));
+  footerConverted.push(Math.round(grandKHSX_conv), Math.round(grandTH_conv), Math.round(grandKHSX_conv - grandTH_conv));
   footerPeople.push('', '', '');
   footerCapacity.push('', '', '');
   footerRatio.push('', '', ''); 
