@@ -46,6 +46,8 @@ import { QRCodeSVG } from 'qrcode.react';
 import { format, startOfDay } from 'date-fns';
 import { 
   BarChart, 
+  ComposedChart,
+  Line,
   Bar, 
   XAxis, 
   YAxis, 
@@ -790,7 +792,7 @@ export default function App() {
           <div className="w-full max-w-[1600px] mx-auto">
             <AnimatePresence mode="wait">
               {currentView === 'dashboard' && (
-                <DashboardView key="dashboard" transactions={transactions} inventory={inventory} parts={parts} refreshData={refreshData} setDefectModal={setDefectModal} />
+                <DashboardView key="dashboard" labels={labels} transactions={transactions} inventory={inventory} parts={parts} refreshData={refreshData} setDefectModal={setDefectModal} />
               )}
               {currentView === 'produce' && (
                 <ProduceView 
@@ -989,6 +991,7 @@ interface DashboardProps {
   inventory: InventoryItem[];
   parts: Part[];
   transactions: Transaction[];
+  labels: Transaction[];
   refreshData: () => void;
   key?: string;
 }
@@ -3128,7 +3131,7 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
   XLSX.writeFile(wb, `BaoCao_SanLuong_${format(start, 'ddMMyy')}-${format(end, 'ddMMyy')}.xlsx`);
 };
 
-function DashboardView({ inventory, parts, transactions, refreshData, setDefectModal }: DashboardProps & { setDefectModal: any }) {
+function DashboardView({ inventory, parts, transactions, labels, refreshData, setDefectModal }: DashboardProps & { setDefectModal: any }) {
   const [selectedStageDetail, setSelectedStageDetail] = useState<StageId | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showExportModal, setShowExportModal] = useState(false);
@@ -3174,7 +3177,7 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
 
   const productionChartData = useMemo(() => {
     const timeSlots = [
-      { label: '7h-8h', start: 7, end: 8 },
+      { label: '6h-8h', start: 6, end: 8 },
       { label: '8h-10h', start: 8, end: 10 },
       { label: '10h-12h', start: 10, end: 12 },
       { label: '13h-15h', start: 13, end: 15 },
@@ -3185,8 +3188,11 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
 
     const targetStages = ['LASER', 'BENDING', 'WELDING', 'PAINTING', 'GLAZING'];
     
+    const dclrNorms = storageService.getNorms().filter(n => n.stageId === 'DCLR');
+    const dclrNormsMap = new Map(dclrNorms.map(n => [n.partId, n.secondsPerUnit]));
+    
     // Filter transactions by date and type STAGE_OUT (location IN -> processing done)
-    const productionTransactions = transactions.filter(t => {
+    const txFilterFn = (t: any) => {
       // "Năng lực sản xuất" logic: When something leaves 'IN' at a stage (moves to OUT),
       // OR when something is manually inbound directly to 'OUT' (like Laser Cutting)
       const isProducedAtStage = 
@@ -3202,6 +3208,18 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
       const txDate = localDate.toISOString().split('T')[0];
       
       return txDate === chartDate;
+    };
+
+    const productionTransactions = transactions.filter(txFilterFn);
+    
+    // Specifically for GLAZING, we might need to also count STAGE_OUT labels
+    // similar to how export reports work.
+    const glazingLabels = labels.filter(l => {
+       if (l.type !== 'STAGE_OUT' || l.stageId !== 'GLAZING') return false;
+       const txDateObj = new Date(l.timestamp);
+       const offset = txDateObj.getTimezoneOffset();
+       const localDate = new Date(txDateObj.getTime() - (offset*60*1000));
+       return localDate.toISOString().split('T')[0] === chartDate;
     });
 
     return timeSlots.map(slot => {
@@ -3216,10 +3234,20 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
         const hour = new Date(t.timestamp).getHours();
         return hour >= slot.start && hour < slot.end;
       });
+      
+      const slotGlazingLabels = glazingLabels.filter(t => {
+        const hour = new Date(t.timestamp).getHours();
+        return hour >= slot.start && hour < slot.end;
+      });
+
+      let sonConverted = 0;
+      let danKinhConverted = 0;
 
       slotTxs.forEach(t => {
+        if (t.stageId === 'GLAZING') return; // Handled below with labels if prefered, or combine.
+        // Actually, combining transactions for standard view, but maybe they don't produce tx, only labels for glazing.
         const stageName = STAGES.find(s => s.id === t.stageId)?.name || t.stageId;
-        slotData[stageName] += t.quantity;
+        slotData[stageName] += (t.quantity || 0);
         
         const part = parts.find((p: any) => p.id === t.partId);
         const partName = part ? part.name : (t.partName || t.partId);
@@ -3227,15 +3255,47 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
         
         const existingDetail = slotData.details[stageName].find((d: any) => d.partName === partName);
         if (existingDetail) {
-          existingDetail.quantity += t.quantity;
+          existingDetail.quantity += (t.quantity || 0);
         } else {
-          slotData.details[stageName].push({ partName, quantity: t.quantity, unit });
+          slotData.details[stageName].push({ partName, quantity: (t.quantity || 0), unit });
+        }
+        
+        if (t.stageId === 'PAINTING') {
+           const hsqd = dclrNormsMap.get(t.partId) || 0;
+           sonConverted += ((t.quantity || 0) * hsqd);
         }
       });
+      
+      // Handle GLAZING using labels to match export exactly
+      slotGlazingLabels.forEach(t => {
+        const stageName = 'Dán Kính';
+        slotData[stageName] += (t.quantity || 0);
+        
+        const part = parts.find((p: any) => p.id === t.partId);
+        const partName = part ? part.name : (t.partName || t.partId);
+        const unit = part?.unit || 'cái';
+        
+        const existingDetail = slotData.details[stageName].find((d: any) => d.partName === partName);
+        if (existingDetail) {
+          existingDetail.quantity += (t.quantity || 0);
+        } else {
+          slotData.details[stageName].push({ partName, quantity: (t.quantity || 0), unit });
+        }
+        
+        const hsqd = dclrNormsMap.get(t.partId) || 0;
+        danKinhConverted += ((t.quantity || 0) * hsqd);
+      });
+      
+      // Calculate productivity percentage
+      // Fixed peoplePerHour = 8, Target = 64 for 2h slots (if specified) or 128
+      const targetQD = (slot.label === '6h-8h' || slot.label === '19h-20h') ? 64 : 128;
+      
+      slotData['NSLD_Son'] = targetQD > 0 ? (sonConverted / targetQD) : 0;
+      slotData['NSLD_DanKinh'] = targetQD > 0 ? (danKinhConverted / targetQD) : 0;
 
       return slotData;
     });
-  }, [transactions, chartDate]);
+  }, [transactions, labels, chartDate]);
 
   const stageSummaries = useMemo(() => {
     return STAGES.map(stage => {
@@ -3782,12 +3842,20 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                 <div className="w-4 h-4 rounded bg-[#EC4899]" />
                 <span className="text-sm font-mono uppercase opacity-60">Dán Kính</span>
               </div>
+              <div className="flex items-center gap-2 ml-4">
+                <div className="w-4 h-1 rounded bg-[#6D28D9]" />
+                <span className="text-sm font-mono uppercase font-bold opacity-80 text-[#6D28D9]">NSLĐ Sơn</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-1 rounded bg-[#BE185D]" />
+                <span className="text-sm font-mono uppercase font-bold opacity-80 text-[#BE185D]">NSLĐ Dán Kính</span>
+              </div>
             </div>
           </div>
         </div>
-        <div className="h-96 w-full">
+        <div className="h-96 w-full mt-6">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={productionChartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+            <ComposedChart data={productionChartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
               <XAxis 
                 dataKey="name" 
@@ -3797,10 +3865,20 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                 dy={10}
               />
               <YAxis 
+                yAxisId="left"
                 axisLine={false} 
                 tickLine={false} 
                 tick={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 600 }} 
                 dx={-10}
+              />
+              <YAxis 
+                yAxisId="right"
+                orientation="right"
+                axisLine={false} 
+                tickLine={false} 
+                tick={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 600 }} 
+                tickFormatter={(value) => `${Math.round(value * 100)}%`}
+                dx={10}
               />
               <Tooltip 
                 cursor={{ fill: '#F9FAFB' }}
@@ -3812,6 +3890,19 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                         <h4 className="font-bold border-b border-gray-100 pb-2 mb-3 text-lg opacity-80">{label}</h4>
                         {payload.map((entry: any, index: number) => {
                           if (entry.value === 0) return null;
+                          
+                          if (entry.dataKey === 'NSLD_Son' || entry.dataKey === 'NSLD_DanKinh') {
+                             return (
+                               <div key={index} className="mb-2 last:mb-0 flex items-center justify-between font-bold">
+                                  <div className="flex items-center gap-2" style={{ color: entry.color }}>
+                                    <div className="w-4 h-1 rounded" style={{ backgroundColor: entry.color }} />
+                                    <span className="uppercase tracking-widest">{entry.dataKey === 'NSLD_Son' ? 'NSLĐ Sơn' : 'NSLĐ Dán Kính'}</span>
+                                  </div>
+                                  <span className="font-mono bg-gray-100 px-2 py-0.5 rounded text-xs">{(entry.value * 100).toFixed(0)}%</span>
+                               </div>
+                             );
+                          }
+
                           const stageDetails = data.details[entry.dataKey] || [];
                           return (
                             <div key={index} className="mb-4 last:mb-0">
@@ -3842,12 +3933,15 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                   return null;
                 }}
               />
-              <Bar dataKey="Cắt Laser" fill="#3B82F6" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Chấn/Dập" fill="#F27D26" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Hàn" fill="#10B981" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Sơn" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Dán Kính" fill="#EC4899" radius={[4, 4, 0, 0]} />
-            </BarChart>
+              <Bar yAxisId="left" dataKey="Cắt Laser" fill="#3B82F6" radius={[4, 4, 0, 0]} />
+              <Bar yAxisId="left" dataKey="Chấn/Dập" fill="#F27D26" radius={[4, 4, 0, 0]} />
+              <Bar yAxisId="left" dataKey="Hàn" fill="#10B981" radius={[4, 4, 0, 0]} />
+              <Bar yAxisId="left" dataKey="Sơn" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
+              <Bar yAxisId="left" dataKey="Dán Kính" fill="#EC4899" radius={[4, 4, 0, 0]} />
+              
+              <Line yAxisId="right" type="monotone" dataKey="NSLD_Son" stroke="#6D28D9" strokeWidth={3} dot={{ r: 4, fill: '#6D28D9', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+              <Line yAxisId="right" type="monotone" dataKey="NSLD_DanKinh" stroke="#BE185D" strokeWidth={3} dot={{ r: 4, fill: '#BE185D', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
       </div>
