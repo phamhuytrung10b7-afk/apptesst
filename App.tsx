@@ -726,13 +726,7 @@ export default function App() {
             label="Định mức Năng suất"
             collapsed={!isSidebarOpen}
           />
-          <SidebarLink 
-            active={currentView === 'history'} 
-            onClick={() => setCurrentView('history')}
-            icon={<History size={24} />}
-            label="Lịch sử giao dịch"
-            collapsed={!isSidebarOpen}
-          />
+
           <SidebarLink 
             active={currentView === 'manual_inbound'} 
             onClick={() => setCurrentView('manual_inbound')}
@@ -773,7 +767,6 @@ export default function App() {
               {currentView === 'manual_inbound' && 'Nhập kho thủ công (Admin)'}
               {currentView === 'labels' && 'Danh sách nhãn QR đã xuất'}
               {currentView === 'po' && 'Quản lý Lệnh sản xuất (PO)'}
-              {currentView === 'history' && 'Nhật ký biến động kho'}
               {currentView === 'norms' && 'Định mức năng suất sản xuất'}
               {currentView === 'working_hours' && 'Cài đặt Ca làm việc & Nghỉ ngơi'}
               {currentView === 'settings' && 'Cài đặt danh mục linh kiện'}
@@ -896,9 +889,6 @@ export default function App() {
               )}
               {currentView === 'working_hours' && (
                 <WorkingHoursView />
-              )}
-              {currentView === 'history' && (
-                <HistoryView key="history" transactions={transactions} parts={parts} />
               )}
               {currentView === 'settings' && (
                 <SettingsView 
@@ -2623,8 +2613,15 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
   const masterOrders = storageService.getProductionOrders().filter(o => !o.masterPoId && !o.id.startsWith('REPAIR'));
   
   const allLapRapParts = new Set<string>();
+  const outConfigs = storageService.getGlazingOutConfigs();
+  const excludedGlazingParts = new Set(
+    outConfigs
+      .filter(c => c.finalPartName.toLowerCase().endsWith('dán kính') || c.finalPartName.toLowerCase().endsWith('dán kính '))
+      .map(c => 'GLZ-OUT-' + c.finalPartName.toUpperCase().trim())
+  );
+
   dclrNorms.forEach(n => {
-    if (n.partId) allLapRapParts.add(n.partId);
+    if (n.partId && !excludedGlazingParts.has(n.partId)) allLapRapParts.add(n.partId);
   });
   
   const dayLabels: string[] = [];
@@ -2649,7 +2646,7 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
   allPaintingOrders.forEach(po => {
     const time = po.plannedStartTime || po.createdAt;
     if (time >= startMs && time <= endMs) {
-      allLapRapParts.add(po.partId);
+      if (!excludedGlazingParts.has(po.partId)) allLapRapParts.add(po.partId);
     }
   });
 
@@ -2657,7 +2654,9 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
     const time = plan.plannedStartTime || plan.createdAt;
     if (time >= startMs && time <= endMs) {
       const relatedNorms = glazingPlanNorms.filter(n => n.appliedModel === plan.modelId);
-      relatedNorms.forEach(n => allLapRapParts.add(n.id));
+      relatedNorms.forEach(n => {
+        if (!excludedGlazingParts.has(n.id)) allLapRapParts.add(n.id);
+      });
     }
   });
 
@@ -2665,13 +2664,13 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
     .filter(t => t.type === 'STAGE_OUT')
     .filter(t => t.stageId === 'PAINTING')
     .forEach(t => {
-       allLapRapParts.add(t.partId);
+       if (!excludedGlazingParts.has(t.partId)) allLapRapParts.add(t.partId);
     });
 
   labels.filter(l => l.timestamp >= startMs && l.timestamp <= endMs)
     .filter(l => l.type === 'STAGE_OUT' && l.stageId === 'GLAZING')
     .forEach(l => {
-       allLapRapParts.add(l.partId);
+       if (!excludedGlazingParts.has(l.partId)) allLapRapParts.add(l.partId);
     });
 
   const lrSheetData: any[][] = [];
@@ -2859,7 +2858,7 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
     return local.toISOString().split('T')[0];
   };
 
-  const [exportStartDate, setExportStartDate] = useState(() => getPastDateStr(6));
+  const [exportStartDate, setExportStartDate] = useState(() => getPastDateStr(30));
   const [exportEndDate, setExportEndDate] = useState(() => getPastDateStr(0));
 
   const [chartDate, setChartDate] = useState(() => getPastDateStr(0));
@@ -3435,14 +3434,14 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
               <span className="text-sm font-bold uppercase opacity-60">Ngày:</span>
               <input 
                 type="date"
-                min={getPastDateStr(6)}
+                min={getPastDateStr(30)}
                 max={getPastDateStr(0)}
                 value={chartDate}
                 onChange={(e) => setChartDate(e.target.value)}
                 className="bg-transparent border-none outline-none font-bold text-[#F27D26] cursor-pointer"
               />
               <div className="absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap bg-gray-800 text-white text-[10px] font-bold py-1 px-3 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                Chỉ xem báo cáo 7 ngày gần nhất
+                Chỉ xem báo cáo 30 ngày gần nhất
               </div>
             </div>
             
@@ -3658,10 +3657,10 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
               </h2>
               <div className="space-y-6">
                 <div>
-                  <label className="block text-sm font-bold uppercase text-gray-600 mb-2">Từ Ngày <span className="text-[10px] text-gray-400 normal-case">(Tối đa 7 ngày)</span></label>
+                  <label className="block text-sm font-bold uppercase text-gray-600 mb-2">Từ Ngày <span className="text-[10px] text-gray-400 normal-case">(Tối đa 1 tháng)</span></label>
                   <input 
                     type="date"
-                    min={getPastDateStr(6)}
+                    min={getPastDateStr(30)}
                     max={getPastDateStr(0)}
                     value={exportStartDate}
                     onChange={(e) => setExportStartDate(e.target.value)}
@@ -3669,10 +3668,10 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold uppercase text-gray-600 mb-2">Đến Ngày <span className="text-[10px] text-gray-400 normal-case">(Tối đa 7 ngày)</span></label>
+                  <label className="block text-sm font-bold uppercase text-gray-600 mb-2">Đến Ngày <span className="text-[10px] text-gray-400 normal-case">(Tối đa 1 tháng)</span></label>
                   <input 
                     type="date"
-                    min={getPastDateStr(6)}
+                    min={getPastDateStr(30)}
                     max={getPastDateStr(0)}
                     value={exportEndDate}
                     onChange={(e) => setExportEndDate(e.target.value)}
