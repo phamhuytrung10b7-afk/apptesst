@@ -2453,6 +2453,265 @@ const exportDailyProductionReport = (transactions: Transaction[], parts: Part[])
   XLSX.writeFile(wb, `BaoCao_SanLuong_${format(new Date(), 'yyyyMMdd')}.xlsx`);
 };
 
+const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[], dateStr: string, peoplePerHour: number = 8) => {
+  const start = new Date(dateStr);
+  start.setHours(0, 0, 0, 0);
+  const startMs = start.getTime();
+
+  const end = new Date(dateStr);
+  end.setHours(23, 59, 59, 999);
+  const endMs = end.getTime();
+
+  const labels = storageService.getLabels();
+
+  const rangeTx = transactions.filter(t => 
+    (t.type === 'STAGE_OUT' && t.location === 'IN') ||
+    (t.type === 'STAGE_IN' && t.location === 'OUT') // Năng lực sản xuất includes this
+  ).filter(t => t.timestamp >= startMs && t.timestamp <= endMs);
+
+  const rangeLabels = labels.filter(l => 
+    l.type === 'STAGE_OUT' && l.stageId === 'GLAZING' && l.timestamp >= startMs && l.timestamp <= endMs
+  );
+
+  const wb = XLSX.utils.book_new();
+
+  const stagesToExport = [
+    { id: 'PAINTING', name: 'Sơn' },
+    { id: 'GLAZING', name: 'Dán kính' },
+  ];
+
+  const borderStyle = {
+    top: { style: "thin", color: { rgb: "000000" } },
+    bottom: { style: "thin", color: { rgb: "000000" } },
+    left: { style: "thin", color: { rgb: "000000" } },
+    right: { style: "thin", color: { rgb: "000000" } }
+  };
+
+  const headerStyle = {
+    font: { bold: true, sz: 11 },
+    fill: { fgColor: { rgb: "FFFF00" } },
+    alignment: { horizontal: "center", vertical: "center", wrapText: true },
+    border: borderStyle
+  };
+
+  const dataStyle = {
+    font: { sz: 11 },
+    alignment: { vertical: "center" },
+    border: borderStyle
+  };
+  
+  const dclrNorms = storageService.getNorms();
+  const dclrNormsMap = new Map(dclrNorms.map(n => [n.id, n.norms]));
+
+  const timeSlots = [
+    { label: '6h-8h', start: 6, end: 8 },
+    { label: '8h-10h', start: 8, end: 10 },
+    { label: '10h-12h', start: 10, end: 12 },
+    { label: '13h-15h', start: 13, end: 15 },
+    { label: '15h-17h', start: 15, end: 17 },
+    { label: '17h-19h', start: 17, end: 19 },
+    { label: '19h-20h', start: 19, end: 20 },
+  ];
+
+  stagesToExport.forEach(stageInfo => {
+    const stageTx = stageInfo.id === 'GLAZING' 
+      ? rangeLabels 
+      : rangeTx.filter(t => t.stageId === stageInfo.id);
+    
+    const partTotals = new Map<string, number>();
+    const partSlots = new Map<string, number[]>();
+    
+    stageTx.forEach(t => {
+      partTotals.set(t.partId, (partTotals.get(t.partId) || 0) + (t.quantity || 0));
+      const H = new Date(t.timestamp).getHours();
+      
+      const slotIndex = timeSlots.findIndex(s => H >= s.start && H < s.end);
+      if (slotIndex !== -1) {
+          if (!partSlots.has(t.partId)) {
+             partSlots.set(t.partId, Array(timeSlots.length).fill(0));
+          }
+          const arr = partSlots.get(t.partId)!;
+          arr[slotIndex] += (t.quantity || 0);
+      }
+    });
+
+    const activeParts = Array.from(partTotals.keys());
+    if (activeParts.length === 0) return;
+
+    const sheetData: any[] = [];
+    
+    // Rows 1 and 2 headers
+    const row1 = ['Tên linh kiện', 'KHSX Ngày', 'Thực Hiện', 'Còn Lại', 'Tỉ lệ Hoàn\nThành KHSX', 'HSQĐ', 'KHSX sau QĐ', 'Sản lượng theo múi giờ'];
+    for(let i=0; i<timeSlots.length - 1; i++) row1.push('');
+    row1.push('Tổng sản\nlượng');
+    
+    const row2 = ['', '', '', '', '', '', ''];
+    timeSlots.forEach(s => row2.push(s.label));
+    row2.push('');
+    
+    sheetData.push(row1, row2);
+    
+    let sumKHSX = 0;
+    let sumTH = 0;
+    let sumKHSX_QD = 0;
+    let sumSlots = Array(timeSlots.length).fill(0);
+    let sumSlots_QD = Array(timeSlots.length).fill(0);
+    let totalQD = 0;
+
+    activeParts.sort().forEach(partId => {
+       const part = parts.find(p => p.id === partId);
+       const partName = part?.name || partId;
+       const hsqd = dclrNormsMap.get(partId) || 0;
+       const thucHien = partTotals.get(partId) || 0;
+       
+       // get KHSX based on Stage
+       let khsx = 0;
+       if (stageInfo.id === 'PAINTING') {
+           const orders = storageService.getProductionOrders().filter(o => o.stageId === 'PAINTING' && o.partId === partId);
+           khsx = orders.filter(o => {
+               const dt = o.plannedStartTime || o.createdAt;
+               return dt >= startMs && dt <= endMs;
+           }).reduce((s, o) => s + (o.targetQuantity || 0), 0);
+       } else if (stageInfo.id === 'GLAZING') {
+           const glazingPlans = storageService.getGlazingPlans();
+           const glazingPlanNorms = storageService.getGlazingPlanNorms();
+           const planNorm = glazingPlanNorms.find(n => n.id === partId);
+           if (planNorm) {
+               khsx = glazingPlans.filter(p => p.modelId === planNorm.appliedModel && (p.plannedStartTime || p.createdAt) >= startMs && (p.plannedStartTime || p.createdAt) <= endMs).reduce((s, p) => s + p.targetQuantity, 0);
+           }
+       }
+       
+       const conLai = khsx > thucHien ? khsx - thucHien : 0;
+       const tiLe = khsx > 0 ? (thucHien/khsx) : 0;
+       const khsx_qd = khsx * hsqd;
+       
+       sumKHSX += khsx;
+       sumTH += thucHien;
+       sumKHSX_QD += khsx_qd;
+       
+       const r = [
+          partName, 
+          khsx > 0 ? khsx : '', 
+          thucHien > 0 ? thucHien : '',
+          conLai > 0 ? conLai : '',
+          tiLe > 0 ? tiLe : '',
+          hsqd > 0 ? hsqd : '',
+          '' // KHSX sau QD de trong for parts
+       ];
+       
+       const slotsArr = partSlots.get(partId) || Array(timeSlots.length).fill(0);
+       slotsArr.forEach((v, i) => {
+           r.push(v > 0 ? v : '');
+           sumSlots[i] += v;
+           sumSlots_QD[i] += (v * hsqd);
+       });
+       totalQD += (thucHien * hsqd);
+       
+       r.push(thucHien > 0 ? thucHien : '');
+       sheetData.push(r);
+    });
+    
+    // Total row
+    const totalRow = ['Tổng số lượng chưa quy đổi', sumKHSX, sumTH, '', sumKHSX > 0 ? (sumTH/sumKHSX) : '', 0, sumKHSX];
+    sumSlots.forEach(s => totalRow.push(s));
+    totalRow.push(sumTH);
+    sheetData.push(totalRow);
+    
+    // San pham quy doi
+    const qdRow = ['Sản phẩm quy đổi', '', '', '', '', '', ''];
+    sumSlots_QD.forEach(s => qdRow.push(Math.round(s)));
+    qdRow.push(Math.round(totalQD));
+    sheetData.push(qdRow);
+    
+    // Năng suất lao động
+    const targetQDs = timeSlots.map(s => (s.label === '6h-8h' || s.label === '19h-20h') ? 64 : 128);
+    const totalTarget = targetQDs.reduce((a,b) => a+b, 0);
+
+    const tlRow = ['Năng suất lao động', '', '', '', '', '', ''];
+    sumSlots_QD.forEach((s, i) => {
+        const tgt = targetQDs[i];
+        tlRow.push(tgt > 0 ? (s/tgt) : 0);
+    });
+    tlRow.push(totalTarget > 0 ? (totalQD / totalTarget) : 0);
+    sheetData.push(tlRow);
+    
+    // Nhân sự mỗi giờ
+    const nhanSuRow = ['Nhân sự mỗi giờ', '', '', '', '', '', ''];
+    timeSlots.forEach(() => nhanSuRow.push(peoplePerHour));
+    nhanSuRow.push(14.0); 
+    sheetData.push(nhanSuRow);
+    
+    // Số lượng sản phẩm quy đổi cần đạt được
+    const tgtRow = ['Số lượng sản phẩm quy đổi cần đạt được', '', '', '', '', '', ''];
+    targetQDs.forEach(t => tgtRow.push(t));
+    tgtRow.push(totalTarget);
+    sheetData.push(tgtRow);
+    
+    const ws = XLSX.utils.aoa_to_sheet(sheetData);
+    
+    // Formatting
+    const mergeArr = [
+      { s: {r:0, c:0}, e: {r:1, c:0} },
+      { s: {r:0, c:1}, e: {r:1, c:1} },
+      { s: {r:0, c:2}, e: {r:1, c:2} },
+      { s: {r:0, c:3}, e: {r:1, c:3} },
+      { s: {r:0, c:4}, e: {r:1, c:4} },
+      { s: {r:0, c:5}, e: {r:1, c:5} },
+      { s: {r:0, c:6}, e: {r:1, c:6} },
+      { s: {r:0, c:7}, e: {r:0, c:6 + timeSlots.length} }, // Sản lượng theo múi giờ
+      { s: {r:0, c:7 + timeSlots.length}, e: {r:1, c:7 + timeSlots.length} }, // Tổng sản lượng
+    ];
+    
+    // footer merges
+    const frOffset = sheetData.length - 5;
+    [1, 2, 3, 4].forEach(i => {
+       mergeArr.push({ s: {r: frOffset + i, c: 0}, e: {r: frOffset + i, c: 6}});
+    });
+    
+    ws['!merges'] = mergeArr;
+    
+    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:A1');
+    for (let R = 0; R <= range.e.r; ++R) {
+        for (let C = 0; C <= range.e.c; ++C) {
+            const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+            if (!ws[cellAddress]) ws[cellAddress] = {t: 's', v: ''};
+            
+            if (R < 2) {
+                ws[cellAddress].s = headerStyle;
+            } else {
+                ws[cellAddress].s = dataStyle;
+                if (C === 4 || (R === frOffset + 2 && C > 6)) {
+                    ws[cellAddress].z = '0%';
+                }
+            }
+            if (R === frOffset) { // total row styles
+                 ws[cellAddress].s = { ...dataStyle, font: { bold: true, color: { rgb: "0000FF" } } };
+            }
+            if (R === frOffset + 1 || R === frOffset + 2 || R === frOffset + 3 || R === frOffset + 4) {
+                 ws[cellAddress].s = { ...dataStyle, font: { bold: true, color: { rgb: "0000FF" } } };
+                 if (R === frOffset + 4) {
+                     ws[cellAddress].s = { ...dataStyle, font: { bold: true } }; // Just bold for the target row
+                 }
+                 if (R === frOffset + 3) { // Nhan su style
+                     ws[cellAddress].s = { ...dataStyle, font: { bold: true }, fill: { fgColor: { rgb: "92D050" } } };
+                 }
+            }
+        }
+    }
+    
+    const cols = [{wch: 35}, {wch: 10}, {wch: 10}, {wch: 10}, {wch: 10}, {wch: 10}, {wch: 12}];
+    timeSlots.forEach(()=>cols.push({wch: 10}));
+    cols.push({wch: 10});
+    ws['!cols'] = cols;
+    
+    XLSX.utils.book_append_sheet(wb, ws, stageInfo.name);
+  });
+  
+  if (wb.SheetNames.length > 0) {
+      XLSX.writeFile(wb, `BaoCao_NangLuc_${format(start, 'yyyyMMdd')}.xlsx`);
+  }
+};
+
 const exportProductionReportRange = (transactions: Transaction[], parts: Part[], startDateStr: string, endDateStr: string, peoplePerDay: Record<string, number> = {}, totalMandays: number = 0) => {
   const start = new Date(startDateStr);
   start.setHours(0, 0, 0, 0);
@@ -2865,6 +3124,8 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
   const [selectedStageDetail, setSelectedStageDetail] = useState<StageId | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showExportHourlyModal, setShowExportHourlyModal] = useState(false);
+  const [hourlyExportPeople, setHourlyExportPeople] = useState('8');
   const [showManualAddModal, setShowManualAddModal] = useState<{stageId: StageId, location: 'IN' | 'OUT'} | null>(null);
   const [manualAddPart, setManualAddPart] = useState('');
   const [manualAddPartSearch, setManualAddPartSearch] = useState('');
@@ -2914,7 +3175,7 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
       { label: '19h-20h', start: 19, end: 20 },
     ];
 
-    const targetStages = ['LASER', 'BENDING', 'WELDING', 'PAINTING'];
+    const targetStages = ['LASER', 'BENDING', 'WELDING', 'PAINTING', 'GLAZING'];
     
     // Filter transactions by date and type STAGE_OUT (location IN -> processing done)
     const productionTransactions = transactions.filter(t => {
@@ -3470,6 +3731,13 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
           <h2 className="font-bold text-2xl tracking-tight">Năng lực sản xuất theo giờ</h2>
           <div className="flex items-center gap-6 flex-wrap">
+            <button
+              onClick={() => setShowExportHourlyModal(true)}
+              className="flex items-center gap-2 px-3 py-2 bg-green-50 text-green-700 hover:bg-green-100 rounded-lg transition-colors text-sm font-bold border border-green-200"
+            >
+              <FileSpreadsheet size={16} />
+              XUẤT BÁO CÁO GIỜ
+            </button>
             <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 relative group">
               <span className="text-sm font-bold uppercase opacity-60">Ngày:</span>
               <input 
@@ -3501,6 +3769,10 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
               <div className="flex items-center gap-2">
                 <div className="w-4 h-4 rounded bg-[#8B5CF6]" />
                 <span className="text-sm font-mono uppercase opacity-60">Sơn</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded bg-[#EC4899]" />
+                <span className="text-sm font-mono uppercase opacity-60">Dán Kính</span>
               </div>
             </div>
           </div>
@@ -3566,6 +3838,7 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
               <Bar dataKey="Chấn/Dập" fill="#F27D26" radius={[4, 4, 0, 0]} />
               <Bar dataKey="Hàn" fill="#10B981" radius={[4, 4, 0, 0]} />
               <Bar dataKey="Sơn" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Dán Kính" fill="#EC4899" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -3765,6 +4038,64 @@ function DashboardView({ inventory, parts, transactions, refreshData, setDefectM
                   >
                     <FileSpreadsheet size={24} />
                     Xuất File Excel
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showExportHourlyModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl relative"
+            >
+              <button className="absolute top-4 right-4 text-gray-500 hover:text-gray-800 cursor-pointer p-2 hover:bg-gray-100 rounded-full transition-colors" onClick={() => setShowExportHourlyModal(false)}>
+                <X size={20} />
+              </button>
+              <h2 className="text-2xl font-bold uppercase text-gray-900 mb-6 flex items-center gap-3">
+                <FileSpreadsheet className="text-green-600" />
+                Dữ Liệu Giờ
+              </h2>
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-bold uppercase text-gray-600 mb-2">Ngày Xuất</label>
+                  <input 
+                    type="date"
+                    value={chartDate}
+                    disabled
+                    className="w-full bg-gray-100 border border-gray-200 p-4 rounded-xl font-bold text-gray-500 focus:outline-none"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1 uppercase">Đổi ngày ở góc phải biểu đồ</p>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-bold uppercase text-gray-600 mb-2">Nhân sự mỗi giờ <span className="text-[10px] text-gray-400 normal-case">(Tính năng suất)</span></label>
+                  <input 
+                    type="number"
+                    min="1"
+                    placeholder="VD: 8"
+                    value={hourlyExportPeople}
+                    onChange={(e) => setHourlyExportPeople(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 p-4 rounded-xl font-bold text-gray-800 outline-none focus:border-green-500 focus:bg-green-50 transition-all font-mono"
+                  />
+                </div>
+
+                <div className="pt-2">
+                  <button 
+                    onClick={() => {
+                      exportHourlyProductionReport(transactions, parts, chartDate, parseInt(hourlyExportPeople) || 8);
+                      setShowExportHourlyModal(false);
+                    }}
+                    className="w-full py-4 bg-green-600 text-white rounded-xl font-bold text-lg uppercase hover:bg-green-700 active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2"
+                  >
+                    <FileSpreadsheet size={24} />
+                    Xuất Báo Cáo
                   </button>
                 </div>
               </div>
