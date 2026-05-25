@@ -2500,8 +2500,8 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
     border: borderStyle
   };
   
-  const dclrNorms = storageService.getNorms();
-  const dclrNormsMap = new Map(dclrNorms.map(n => [n.id, n.norms]));
+  const dclrNorms = storageService.getNorms().filter(n => n.stageId === 'DCLR');
+  const dclrNormsMap = new Map(dclrNorms.map(n => [n.partId, n.secondsPerUnit]));
 
   const timeSlots = [
     { label: '6h-8h', start: 6, end: 8 },
@@ -2581,7 +2581,7 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
            }
        }
        
-       const conLai = khsx > thucHien ? khsx - thucHien : 0;
+       const conLai = khsx - thucHien;
        const tiLe = khsx > 0 ? (thucHien/khsx) : 0;
        const khsx_qd = khsx * hsqd;
        
@@ -2593,8 +2593,8 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
           partName, 
           khsx > 0 ? khsx : '', 
           thucHien > 0 ? thucHien : '',
-          conLai > 0 ? conLai : '',
-          tiLe > 0 ? tiLe : '',
+          conLai !== 0 ? conLai : '',
+          khsx > 0 ? (thucHien/khsx) : '',
           hsqd > 0 ? hsqd : '',
           '' // KHSX sau QD de trong for parts
        ];
@@ -2612,9 +2612,9 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
     });
     
     // Total row
-    const totalRow = ['Tổng số lượng chưa quy đổi', sumKHSX, sumTH, '', sumKHSX > 0 ? (sumTH/sumKHSX) : '', 0, sumKHSX];
-    sumSlots.forEach(s => totalRow.push(s));
-    totalRow.push(sumTH);
+    const totalRow = ['Tổng số lượng chưa quy đổi', sumKHSX > 0 ? sumKHSX : '', sumTH > 0 ? sumTH : '', sumKHSX - sumTH !== 0 ? sumKHSX - sumTH : '', sumKHSX > 0 ? (sumTH/sumKHSX) : '', '', sumKHSX_QD > 0 ? sumKHSX_QD : ''];
+    sumSlots.forEach(s => totalRow.push(s > 0 ? s : ''));
+    totalRow.push(sumTH > 0 ? sumTH : '');
     sheetData.push(totalRow);
     
     // San pham quy doi
@@ -2638,7 +2638,7 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
     // Nhân sự mỗi giờ
     const nhanSuRow = ['Nhân sự mỗi giờ', '', '', '', '', '', ''];
     timeSlots.forEach(() => nhanSuRow.push(peoplePerHour));
-    nhanSuRow.push(14.0); 
+    nhanSuRow.push(''); 
     sheetData.push(nhanSuRow);
     
     // Số lượng sản phẩm quy đổi cần đạt được
@@ -2679,22 +2679,30 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
             if (R < 2) {
                 ws[cellAddress].s = headerStyle;
             } else {
-                ws[cellAddress].s = dataStyle;
-                if (C === 4 || (R === frOffset + 2 && C > 6)) {
-                    ws[cellAddress].z = '0%';
+                let rowStyle = { ...dataStyle };
+                
+                if (R === frOffset) {
+                    rowStyle = { ...dataStyle, font: { bold: true, color: { rgb: "0000FF" } } };
+                } else if (R >= frOffset + 1 && R <= frOffset + 4) {
+                    rowStyle = { ...dataStyle, font: { bold: true, color: { rgb: "0000FF" } } };
+                    if (R === frOffset + 4) {
+                        rowStyle = { ...dataStyle, font: { bold: true } };
+                    }
+                    if (R === frOffset + 3) {
+                        rowStyle = { ...dataStyle, font: { bold: true }, fill: { fgColor: { rgb: "92D050" } } };
+                    }
                 }
-            }
-            if (R === frOffset) { // total row styles
-                 ws[cellAddress].s = { ...dataStyle, font: { bold: true, color: { rgb: "0000FF" } } };
-            }
-            if (R === frOffset + 1 || R === frOffset + 2 || R === frOffset + 3 || R === frOffset + 4) {
-                 ws[cellAddress].s = { ...dataStyle, font: { bold: true, color: { rgb: "0000FF" } } };
-                 if (R === frOffset + 4) {
-                     ws[cellAddress].s = { ...dataStyle, font: { bold: true } }; // Just bold for the target row
-                 }
-                 if (R === frOffset + 3) { // Nhan su style
-                     ws[cellAddress].s = { ...dataStyle, font: { bold: true }, fill: { fgColor: { rgb: "92D050" } } };
-                 }
+                
+                ws[cellAddress].s = rowStyle;
+                
+                if (typeof ws[cellAddress].v === 'number') {
+                    if (C === 4 && R <= frOffset) {
+                        ws[cellAddress].z = '0%';
+                    }
+                    if (C >= 7 && R === frOffset + 2) {
+                        ws[cellAddress].z = '0%';
+                    }
+                }
             }
         }
     }
