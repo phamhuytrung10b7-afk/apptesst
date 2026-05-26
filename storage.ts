@@ -367,8 +367,8 @@ export const storageService = {
     const data = getCached(STORAGE_KEYS.TRANSACTIONS, () => {
       const data = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
       let parsed = data ? JSON.parse(data) : [];
-      // Optimal optimization: Auto purge data older than 30 days to save local storage limit
-      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      // Optimal optimization: Auto purge data older than 35 days to save local storage limit
+      const cutoff = Date.now() - 35 * 24 * 60 * 60 * 1000;
       const initialLength = parsed.length;
       parsed = parsed.filter((t: any) => t.timestamp >= cutoff);
       if (parsed.length !== initialLength) {
@@ -398,8 +398,8 @@ export const storageService = {
     const data = getCached('wip_labels', () => {
       const data = localStorage.getItem('wip_labels');
       let parsed = data ? JSON.parse(data) : [];
-      // Optimal optimization: Auto purge data older than 30 days from local storage
-      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      // Optimal optimization: Auto purge data older than 35 days from local storage
+      const cutoff = Date.now() - 35 * 24 * 60 * 60 * 1000;
       const initialLength = parsed.length;
       parsed = parsed.filter((t: any) => t.timestamp >= cutoff);
       if (parsed.length !== initialLength) {

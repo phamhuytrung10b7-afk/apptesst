@@ -55,7 +55,8 @@ import {
   Tooltip, 
   Legend, 
   ResponsiveContainer,
-  Cell
+  Cell,
+  ReferenceLine
 } from 'recharts';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -188,6 +189,115 @@ function SearchableSelect({
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+type DialogConfig = {
+  id: string;
+  type: 'alert' | 'confirm' | 'prompt';
+  title: string;
+  message?: string;
+  defaultValue?: string;
+  passwordMode?: boolean;
+  resolve: (val: any) => void;
+};
+
+let dialogListener: ((config: DialogConfig | null) => void) | null = null;
+let currentDialogs: DialogConfig[] = [];
+
+export const runDialog = (config: Omit<DialogConfig, 'id' | 'resolve'>): Promise<any> => {
+  return new Promise(resolve => {
+    const dialog: DialogConfig = {
+      ...config,
+      id: Math.random().toString(),
+      resolve
+    };
+    currentDialogs.push(dialog);
+    if (currentDialogs.length === 1 && dialogListener) {
+      dialogListener(currentDialogs[0]);
+    }
+  });
+};
+
+export const customAlert = (message: string) => runDialog({ type: 'alert', title: 'Thông báo', message });
+export const customConfirm = (message: string) => runDialog({ type: 'confirm', title: 'Xác nhận', message });
+export const customPrompt = (title: string, defaultValue?: string, passwordMode?: boolean) => runDialog({ type: 'prompt', title, defaultValue, passwordMode });
+
+export function GlobalDialogs() {
+  const [activeDialog, setActiveDialog] = useState<DialogConfig | null>(null);
+  const [inputValue, setInputValue] = useState('');
+
+  useEffect(() => {
+    dialogListener = setActiveDialog;
+    if (currentDialogs.length > 0) {
+       setActiveDialog(currentDialogs[0]);
+       setInputValue(currentDialogs[0].defaultValue || '');
+    }
+    return () => { dialogListener = null; };
+  }, []);
+
+  if (!activeDialog) return null;
+
+  const close = (val: any) => {
+    activeDialog.resolve(val);
+    currentDialogs.shift();
+    if (currentDialogs.length > 0) {
+       setActiveDialog(currentDialogs[0]);
+       setInputValue(currentDialogs[0].defaultValue || '');
+    } else {
+       setActiveDialog(null);
+       setInputValue('');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4 border border-gray-100"
+      >
+        <h3 className="text-xl font-bold text-gray-900 mb-2">{activeDialog.title}</h3>
+        {activeDialog.message && <p className="text-gray-600 mb-6">{activeDialog.message}</p>}
+        
+        {activeDialog.type === 'prompt' && (
+          <div className="mb-6">
+            <input 
+              autoFocus
+              type={activeDialog.passwordMode || activeDialog.title.toLowerCase().includes('mật khẩu') ? 'password' : 'text'}
+              value={inputValue}
+              onChange={e => setInputValue(e.target.value)}
+              className="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all font-medium text-lg"
+              placeholder="Nhập giá trị..."
+              onKeyDown={e => {
+                if (e.key === 'Enter') close(inputValue);
+                if (e.key === 'Escape') close(null);
+              }}
+            />
+          </div>
+        )}
+
+        <div className="flex justify-end gap-3 rounded-b-xl border-gray-100">
+          {activeDialog.type !== 'alert' && (
+            <button 
+              autoFocus={activeDialog.type === 'confirm'}
+              onClick={() => close(activeDialog.type === 'prompt' ? null : false)}
+              className="px-5 py-2.5 rounded-lg text-gray-600 font-bold hover:bg-gray-100 transition-colors"
+            >
+              Hủy
+            </button>
+          )}
+          <button 
+            onClick={() => close(activeDialog.type === 'prompt' ? inputValue : true)}
+            autoFocus={activeDialog.type === 'alert'}
+            className="px-5 py-2.5 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 active:scale-95 transition-all shadow-md shadow-blue-600/20"
+          >
+            {activeDialog.type === 'alert' ? 'Đóng' : 'Xác nhận'}
+          </button>
+        </div>
+      </motion.div>
     </div>
   );
 }
@@ -404,6 +514,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-[#F8F9FA] text-gray-900 font-sans overflow-hidden print:bg-white">
+      <GlobalDialogs />
       <style>
         {`
           @media print {
@@ -3149,7 +3260,7 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
     return local.toISOString().split('T')[0];
   };
 
-  const [exportStartDate, setExportStartDate] = useState(() => getPastDateStr(30));
+  const [exportStartDate, setExportStartDate] = useState(() => getPastDateStr(35));
   const [exportEndDate, setExportEndDate] = useState(() => getPastDateStr(0));
   const [peoplePerDay, setPeoplePerDay] = useState<Record<string, number>>({});
   const [exportTotalMandays, setExportTotalMandays] = useState("");
@@ -3453,16 +3564,16 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
                     </div>
                   </div>
                   <button 
-                    onClick={() => {
-                      const pwd = prompt('Nhập mật khẩu ADMIN để xóa hết tồn kho DCLR OUT:');
+                    onClick={async () => {
+                      const pwd = await customPrompt('Nhập mật khẩu ADMIN để xóa hết tồn kho DCLR OUT:', '', true);
                       if (pwd === 'admin123') {
-                        if (confirm('BẠN CÓ CHẮC CHẮN MUỐN XÓA HẾT TỒN KHO DCLR OUT? Hành động này không thể hoàn tác!')) {
+                        if (await customConfirm('BẠN CÓ CHẮC CHẮN MUỐN XÓA HẾT TỒN KHO DCLR OUT? Hành động này không thể hoàn tác!')) {
                           storageService.clearStageInventory('DCLR', 'OUT');
                           refreshData();
-                          alert('Đã xóa sạch tồn kho DCLR OUT thành công!');
+                          await customAlert('Đã xóa sạch tồn kho DCLR OUT thành công!');
                         }
                       } else if (pwd !== null) {
-                        alert('Mật khẩu không chính xác!');
+                        await customAlert('Mật khẩu không chính xác!');
                       }
                     }}
                     className="px-8 py-4 bg-red-600 text-white rounded-xl font-black uppercase tracking-tighter hover:bg-black transition-all flex items-center gap-3 shadow-xl active:scale-95 group"
@@ -3545,16 +3656,16 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
                                       <AlertCircle size={16} />
                                     </button>
                                     <button 
-                                      onClick={() => {
-                                        const pwd = prompt('Nhập mật khẩu để sửa tồn kho:');
+                                      onClick={async () => {
+                                        const pwd = await customPrompt('Nhập mật khẩu để sửa tồn kho:', '', true);
                                         if (pwd === 'admin123') {
-                                          const newQty = prompt(`Nhập số lượng tồn mới cho ${item.partId}:`, String(qty));
+                                          const newQty = await customPrompt(`Nhập số lượng tồn mới cho ${item.partId}:`, String(qty));
                                           if (newQty !== null) {
                                             storageService.setInventoryQuantity(item.partId, selectedStageDetail, 'IN', parseFloat(newQty) || 0, item.originalPartId);
                                             refreshData();
                                           }
                                         } else if (pwd !== null) {
-                                          alert('Mật khẩu không chính xác!');
+                                          await customAlert('Mật khẩu không chính xác!');
                                         }
                                       }}
                                       className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors"
@@ -3563,15 +3674,15 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
                                       <Edit2 size={16} />
                                     </button>
                                     <button 
-                                      onClick={() => {
-                                        const pwd = prompt('Nhập mật khẩu để xóa tồn kho:');
+                                      onClick={async () => {
+                                        const pwd = await customPrompt('Nhập mật khẩu để xóa tồn kho:', '', true);
                                         if (pwd === 'admin123') {
-                                          if (confirm(`Bạn có chắc chắn muốn xóa tồn kho của ${item.partId} tại ${STAGES.find(s => s.id === selectedStageDetail)?.name} (Kho IN)?`)) {
+                                          if (await customConfirm(`Bạn có chắc chắn muốn xóa tồn kho của ${item.partId} tại ${STAGES.find(s => s.id === selectedStageDetail)?.name} (Kho IN)?`)) {
                                             storageService.deleteInventoryItem(item.partId, selectedStageDetail, 'IN', item.originalPartId);
                                             refreshData();
                                           }
                                         } else if (pwd !== null) {
-                                          alert('Mật khẩu không chính xác!');
+                                          await customAlert('Mật khẩu không chính xác!');
                                         }
                                       }}
                                       className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-colors"
@@ -3660,16 +3771,16 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
                                       <AlertCircle size={16} />
                                     </button>
                                     <button 
-                                      onClick={() => {
-                                        const pwd = prompt('Nhập mật khẩu để sửa tồn kho:');
+                                      onClick={async () => {
+                                        const pwd = await customPrompt('Nhập mật khẩu để sửa tồn kho:', '', true);
                                         if (pwd === 'admin123') {
-                                          const newQty = prompt(`Nhập số lượng tồn mới cho ${item.partId}:`, String(qty));
+                                          const newQty = await customPrompt(`Nhập số lượng tồn mới cho ${item.partId}:`, String(qty));
                                           if (newQty !== null) {
                                             storageService.setInventoryQuantity(item.partId, selectedStageDetail, 'OUT', parseFloat(newQty) || 0, item.originalPartId);
                                             refreshData();
                                           }
                                         } else if (pwd !== null) {
-                                          alert('Mật khẩu không chính xác!');
+                                          await customAlert('Mật khẩu không chính xác!');
                                         }
                                       }}
                                       className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors"
@@ -3678,15 +3789,15 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
                                       <Edit2 size={16} />
                                     </button>
                                     <button 
-                                      onClick={() => {
-                                        const pwd = prompt('Nhập mật khẩu để xóa tồn kho:');
+                                      onClick={async () => {
+                                        const pwd = await customPrompt('Nhập mật khẩu để xóa tồn kho:', '', true);
                                         if (pwd === 'admin123') {
-                                          if (confirm(`Bạn có chắc chắn muốn xóa tồn kho của ${item.partId} tại ${STAGES.find(s => s.id === selectedStageDetail)?.name} (Kho OUT)?`)) {
+                                          if (await customConfirm(`Bạn có chắc chắn muốn xóa tồn kho của ${item.partId} tại ${STAGES.find(s => s.id === selectedStageDetail)?.name} (Kho OUT)?`)) {
                                             storageService.deleteInventoryItem(item.partId, selectedStageDetail, 'OUT', item.originalPartId);
                                             refreshData();
                                           }
                                         } else if (pwd !== null) {
-                                          alert('Mật khẩu không chính xác!');
+                                          await customAlert('Mật khẩu không chính xác!');
                                         }
                                       }}
                                       className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-colors"
@@ -3758,16 +3869,16 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
                                     <span className="font-mono font-bold text-xl text-red-600">{displayQty}</span>
                                     <span className="text-xs font-mono opacity-40 uppercase mr-4 text-gray-900">{displayUnit}</span>
                                     <button 
-                                      onClick={() => {
-                                        const pwd = prompt('Nhập mật khẩu để sửa tồn kho lỗi:');
+                                      onClick={async () => {
+                                        const pwd = await customPrompt('Nhập mật khẩu để sửa tồn kho lỗi:', '', true);
                                         if (pwd === 'admin123') {
-                                          const newQty = prompt(`Nhập số lượng tồn mới cho ${item.partId} (Lỗi):`, String(qty));
+                                          const newQty = await customPrompt(`Nhập số lượng tồn mới cho ${item.partId} (Lỗi):`, String(qty));
                                           if (newQty !== null) {
                                             storageService.setInventoryQuantity(item.partId, selectedStageDetail || STAGES[0].id, 'DEFECT', parseFloat(newQty) || 0, item.originalPartId);
                                             refreshData();
                                           }
                                         } else if (pwd !== null) {
-                                          alert('Mật khẩu không chính xác!');
+                                          await customAlert('Mật khẩu không chính xác!');
                                         }
                                       }}
                                       className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-colors"
@@ -3810,7 +3921,7 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
               <span className="text-sm font-bold uppercase opacity-60">Ngày:</span>
               <input 
                 type="date"
-                min={getPastDateStr(30)}
+                min={getPastDateStr(35)}
                 max={getPastDateStr(0)}
                 value={chartDate}
                 onChange={(e) => setChartDate(e.target.value)}
@@ -3835,20 +3946,20 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
                 <span className="text-sm font-mono uppercase opacity-60">Hàn</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded bg-[#8B5CF6]" />
+                <div className="w-4 h-4 rounded bg-[#EAB308]" />
                 <span className="text-sm font-mono uppercase opacity-60">Sơn</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded bg-[#EC4899]" />
+                <div className="w-4 h-4 rounded bg-[#EF4444]" />
                 <span className="text-sm font-mono uppercase opacity-60">Dán Kính</span>
               </div>
               <div className="flex items-center gap-2 ml-4">
-                <div className="w-4 h-1 rounded bg-[#6D28D9]" />
-                <span className="text-sm font-mono uppercase font-bold opacity-80 text-[#6D28D9]">NSLĐ Sơn</span>
+                <div className="w-4 h-1 rounded bg-[#EAB308]" />
+                <span className="text-sm font-mono uppercase font-bold opacity-80 text-[#EAB308]">NSLĐ Sơn</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-1 rounded bg-[#BE185D]" />
-                <span className="text-sm font-mono uppercase font-bold opacity-80 text-[#BE185D]">NSLĐ Dán Kính</span>
+                <div className="w-4 h-1 rounded bg-[#EF4444]" />
+                <span className="text-sm font-mono uppercase font-bold opacity-80 text-[#EF4444]">NSLĐ Dán Kính</span>
               </div>
             </div>
           </div>
@@ -3936,11 +4047,12 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
               <Bar yAxisId="left" dataKey="Cắt Laser" fill="#3B82F6" radius={[4, 4, 0, 0]} />
               <Bar yAxisId="left" dataKey="Chấn/Dập" fill="#F27D26" radius={[4, 4, 0, 0]} />
               <Bar yAxisId="left" dataKey="Hàn" fill="#10B981" radius={[4, 4, 0, 0]} />
-              <Bar yAxisId="left" dataKey="Sơn" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
-              <Bar yAxisId="left" dataKey="Dán Kính" fill="#EC4899" radius={[4, 4, 0, 0]} />
+              <Bar yAxisId="left" dataKey="Sơn" fill="#EAB308" radius={[4, 4, 0, 0]} />
+              <Bar yAxisId="left" dataKey="Dán Kính" fill="#EF4444" radius={[4, 4, 0, 0]} />
               
-              <Line yAxisId="right" type="monotone" dataKey="NSLD_Son" stroke="#6D28D9" strokeWidth={3} dot={{ r: 4, fill: '#6D28D9', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
-              <Line yAxisId="right" type="monotone" dataKey="NSLD_DanKinh" stroke="#BE185D" strokeWidth={3} dot={{ r: 4, fill: '#BE185D', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+              <ReferenceLine y={1} yAxisId="right" stroke="#000000" strokeDasharray="3 3" strokeWidth={2} label={{ position: 'insideTopLeft', value: '100% Target', fill: '#000', fontSize: 10, fontWeight: 'bold' }} />
+              <Line yAxisId="right" type="monotone" dataKey="NSLD_Son" stroke="#EAB308" strokeWidth={3} dot={{ r: 4, fill: '#EAB308', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+              <Line yAxisId="right" type="monotone" dataKey="NSLD_DanKinh" stroke="#EF4444" strokeWidth={3} dot={{ r: 4, fill: '#EF4444', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -4003,42 +4115,45 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
                 </div>
                 <div className="pt-2">
                   <button 
-                    onClick={() => {
+                    onClick={async () => {
                       if (!manualAddPart || !manualAddQty || Number(manualAddQty) <= 0) {
-                        alert('Vui lòng chọn linh kiện và nhập số lượng hợp lệ.');
+                        await customAlert('Vui lòng chọn linh kiện và nhập số lượng hợp lệ.');
                         return;
                       }
-                      const pwd = prompt('Nhập mật khẩu để cấu hình tồn kho:');
+                      
+                      const part = manualAddPart;
+                      const qty = Number(manualAddQty);
+                      const stageId = showManualAddModal.stageId;
+                      const location = showManualAddModal.location;
+                      
+                      setShowManualAddModal(null);
+                      setManualAddPart('');
+                      setManualAddPartSearch('');
+                      setManualAddQty('');
+
+                      const pwd = await customPrompt('Nhập mật khẩu để cấu hình tồn kho:', '', true);
                       if (pwd !== 'admin123') {
-                        if (pwd !== null) alert('Mật khẩu không chính xác!');
+                        if (pwd !== null) await customAlert('Mật khẩu không chính xác!');
                         return;
                       }
                       try {
-                        storageService.recordManualInbound(manualAddPart, showManualAddModal.stageId, showManualAddModal.location, Number(manualAddQty));
-                        alert('Thêm tồn kho thành công!');
+                        storageService.recordManualInbound(part, stageId, location, qty);
+                        await customAlert('Thêm tồn kho thành công!');
                         refreshData();
-                        setShowManualAddModal(null);
-                        setManualAddPart('');
-                        setManualAddPartSearch('');
-                        setManualAddQty('');
                       } catch (err: any) {
                         const errMsg = err.message || '';
                         if (errMsg.startsWith('OVER_PO:')) {
-                           if (confirm(errMsg.replace('OVER_PO:', ''))) {
+                           if (await customConfirm(errMsg.replace('OVER_PO:', ''))) {
                               try {
-                                storageService.recordManualInbound(manualAddPart, showManualAddModal.stageId, showManualAddModal.location, Number(manualAddQty), undefined, true);
-                                alert('Thêm tồn kho thành công!');
+                                storageService.recordManualInbound(part, stageId, location, qty, undefined, true);
+                                await customAlert('Thêm tồn kho thành công!');
                                 refreshData();
-                                setShowManualAddModal(null);
-                                setManualAddPart('');
-                                setManualAddPartSearch('');
-                                setManualAddQty('');
                               } catch (e: any) {
-                                alert(e.message || 'Lỗi thêm tồn kho');
+                                await customAlert(e.message || 'Lỗi thêm tồn kho');
                               }
                            }
                         } else {
-                          alert(errMsg || 'Lỗi thêm tồn kho');
+                          await customAlert(errMsg || 'Lỗi thêm tồn kho');
                         }
                       }
                     }}
@@ -4072,10 +4187,10 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
               </h2>
               <div className="space-y-6">
                 <div>
-                  <label className="block text-sm font-bold uppercase text-gray-600 mb-2">Từ Ngày <span className="text-[10px] text-gray-400 normal-case">(Tối đa 1 tháng)</span></label>
+                  <label className="block text-sm font-bold uppercase text-gray-600 mb-2">Từ Ngày <span className="text-[10px] text-gray-400 normal-case">(Tối đa 35 ngày)</span></label>
                   <input 
                     type="date"
-                    min={getPastDateStr(30)}
+                    min={getPastDateStr(35)}
                     max={getPastDateStr(0)}
                     value={exportStartDate}
                     onChange={(e) => setExportStartDate(e.target.value)}
@@ -4083,10 +4198,10 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold uppercase text-gray-600 mb-2">Đến Ngày <span className="text-[10px] text-gray-400 normal-case">(Tối đa 1 tháng)</span></label>
+                  <label className="block text-sm font-bold uppercase text-gray-600 mb-2">Đến Ngày <span className="text-[10px] text-gray-400 normal-case">(Tối đa 35 ngày)</span></label>
                   <input 
                     type="date"
-                    min={getPastDateStr(30)}
+                    min={getPastDateStr(35)}
                     max={getPastDateStr(0)}
                     value={exportEndDate}
                     onChange={(e) => setExportEndDate(e.target.value)}
