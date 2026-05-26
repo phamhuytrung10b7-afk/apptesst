@@ -3985,6 +3985,7 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
               <YAxis 
                 yAxisId="right"
                 orientation="right"
+                domain={[0, (dataMax: number) => Math.max(dataMax || 0, 1.2)]}
                 axisLine={false} 
                 tickLine={false} 
                 tick={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 600 }} 
