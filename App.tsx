@@ -682,7 +682,7 @@ export default function App() {
               })()}
 
               {/* PO Details Section (NEW) */}
-              <div className="mb-2 w-full space-y-1 text-[11px] font-black border-2 border-black p-2 rounded text-black">
+              <div className="mb-1 w-full space-y-[2px] text-[10px] font-black border-2 border-black p-1 rounded text-black leading-none">
                 <div className="flex justify-between items-center">
                   <span className="uppercase">LOẠI PO:</span>
                   {(() => {
@@ -696,9 +696,9 @@ export default function App() {
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="uppercase">MÃ PO:</span>
-                  <span className="font-mono font-black">{lastTransaction.poId || 'N/A'}</span>
+                  <span className="font-mono text-[10px] font-black">{lastTransaction.poId || 'N/A'}</span>
                 </div>
-                <div className="flex justify-between items-center text-[10px] italic font-black">
+                <div className="flex justify-between items-center text-[9px] italic font-black">
                   <span>Kế hoạch PO Con:</span>
                   <span>{lastTransaction.qrData?.split('|')?.[8] || storageService.getProductionOrders().find(p => p.id === lastTransaction.poId)?.targetQuantity || 0} linh kiện</span>
                 </div>
@@ -708,7 +708,7 @@ export default function App() {
                   return (
                     <>
                       {po?.plannedStartTime && (
-                        <div className="flex justify-between items-center pt-1 border-t border-black">
+                        <div className="flex justify-between items-center pt-[2px] border-t border-black">
                           <span className="uppercase">KH Bắt đầu PO:</span>
                           <span className="font-mono font-black">{format(po.plannedStartTime, 'dd/MM HH:mm')}</span>
                         </div>
@@ -721,11 +721,11 @@ export default function App() {
                       )}
                       {masterId && (
                         <>
-                          <div className="flex justify-between items-center pt-1 border-t border-black">
+                          <div className="flex justify-between items-center pt-[2px] border-t border-black">
                             <span className="uppercase font-black text-black">PO TỔNG:</span>
-                            <span className="font-mono font-black text-black">{masterId}</span>
+                            <span className="font-mono text-[10px] font-black text-black">{masterId}</span>
                           </div>
-                          <div className="flex justify-between items-center text-[10px] italic font-black text-black">
+                          <div className="flex justify-between items-center text-[9px] italic font-black text-black">
                             <span>Kế hoạch PO Tổng:</span>
                             <span>{lastTransaction.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0} máy</span>
                           </div>
@@ -734,7 +734,7 @@ export default function App() {
                     </>
                   );
                 })()}
-                <div className="flex justify-between items-center pt-1 border-t border-black">
+                <div className="flex justify-between items-center pt-[2px] border-t border-black">
                   <span className="uppercase text-[9px]">Hoàn thành thực tế:</span>
                   <span className="font-mono font-black">{format(lastTransaction.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
                 </div>
@@ -2228,13 +2228,13 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                 })()}
 
                 {/* PO Details Section */}
-                <div className="mb-2 w-full space-y-1 text-[11px] font-black bg-transparent p-3 border-2 border-black rounded text-black">
+                <div className="mb-1 w-full space-y-[2px] text-[10px] font-black bg-transparent p-1 border-2 border-black rounded text-black leading-none">
                   <div className="flex justify-between items-center">
                     <span className="uppercase text-black">LOẠI PO:</span>
                     {(() => {
                       const po = storageService.getProductionOrders().find(p => p.id === selectedLabel.poId);
                       return (
-                        <span className="px-2 py-0.5 rounded text-[9px] uppercase font-black text-black">
+                        <span className="px-1 py-0.5 rounded text-[9px] uppercase font-black text-black">
                           {po?.masterPoId ? 'PO Con (Sub)' : 'PO Tổng (Master)'}
                         </span>
                       );
@@ -2242,9 +2242,9 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                   </div>
                   <div className="flex justify-between items-center text-black">
                     <span className="uppercase text-black">Mã PO:</span>
-                    <span className="font-mono text-[12px] font-black">{selectedLabel.poId || 'N/A'}</span>
+                    <span className="font-mono text-[10px] font-black">{selectedLabel.poId || 'N/A'}</span>
                   </div>
-                  <div className="flex justify-between items-center text-[10px] italic font-black text-black">
+                  <div className="flex justify-between items-center text-[9px] italic font-black text-black">
                     <span>Kế hoạch PO Con:</span>
                     <span>{selectedLabel.qrData?.split('|')?.[8] || storageService.getProductionOrders().find(p => p.id === selectedLabel.poId)?.targetQuantity || 0} linh kiện</span>
                   </div>
@@ -2254,7 +2254,7 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                     return (
                       <>
                         {po?.plannedStartTime && (
-                          <div className="flex justify-between items-center pt-1 border-t border-black">
+                          <div className="flex justify-between items-center pt-[2px] border-t border-black">
                             <span className="uppercase text-black font-black">KH Bắt đầu PO:</span>
                             <span className="font-mono font-black">{format(po.plannedStartTime, 'dd/MM HH:mm')}</span>
                           </div>
@@ -2267,11 +2267,11 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                         )}
                         {masterId && (
                           <>
-                            <div className="flex justify-between items-center pt-1 border-t border-black">
+                            <div className="flex justify-between items-center pt-[2px] border-t border-black">
                               <span className="uppercase text-black font-black">Thuộc PO Tổng:</span>
-                              <span className="font-mono text-[12px] font-black text-black">{masterId}</span>
+                              <span className="font-mono text-[10px] font-black text-black">{masterId}</span>
                             </div>
-                            <div className="flex justify-between items-center text-[10px] italic font-black text-black">
+                            <div className="flex justify-between items-center text-[9px] italic font-black text-black">
                               <span>Kế hoạch PO Tổng:</span>
                               <span>{selectedLabel.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0} máy</span>
                             </div>
@@ -2280,7 +2280,7 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                       </>
                     );
                   })()}
-                  <div className="flex justify-between items-center pt-1 mt-1 border-t border-black">
+                  <div className="flex justify-between items-center pt-[2px] border-t border-black">
                     <span className="uppercase text-[9px] text-black font-black">Hoàn thành thực tế:</span>
                     <span className="font-mono font-black text-black">{format(selectedLabel.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
                   </div>
@@ -4787,13 +4787,13 @@ function ProduceView({
                 })()}
 
                 {/* PO Details Section */}
-                <div className="mb-2 w-full space-y-1 text-[11px] font-black bg-transparent p-3 border-2 border-black rounded text-black">
+                <div className="mb-1 w-full space-y-[2px] text-[10px] font-black bg-transparent p-1 border-2 border-black rounded text-black leading-none">
                   <div className="flex justify-between items-center text-black">
                     <span className="uppercase text-black">LOẠI PO:</span>
                     {(() => {
                       const po = storageService.getProductionOrders().find(p => p.id === lastTransaction.poId);
                       return (
-                        <span className="px-2 py-0.5 rounded text-[9px] uppercase font-black text-black">
+                        <span className="px-1 py-0.5 rounded text-[9px] uppercase font-black text-black">
                           {po?.masterPoId ? 'PO Con (Sub)' : 'PO Tổng (Master)'}
                         </span>
                       );
@@ -4801,9 +4801,9 @@ function ProduceView({
                   </div>
                   <div className="flex justify-between items-center text-black">
                     <span className="uppercase text-black">Mã PO:</span>
-                    <span className="font-mono text-[12px] font-black text-black">{lastTransaction.poId || 'N/A'}</span>
+                    <span className="font-mono text-[10px] font-black text-black">{lastTransaction.poId || 'N/A'}</span>
                   </div>
-                  <div className="flex justify-between items-center text-[10px] italic font-black text-black">
+                  <div className="flex justify-between items-center text-[9px] italic font-black text-black">
                     <span>Kế hoạch PO Con:</span>
                     <span>{lastTransaction.qrData?.split('|')?.[8] || storageService.getProductionOrders().find(p => p.id === lastTransaction.poId)?.targetQuantity || 0} linh kiện</span>
                   </div>
@@ -4813,7 +4813,7 @@ function ProduceView({
                     return (
                       <>
                         {po?.plannedStartTime && (
-                          <div className="flex justify-between items-center pt-1 border-t border-black text-black">
+                          <div className="flex justify-between items-center pt-[2px] border-t border-black text-black">
                             <span className="uppercase text-black font-black">KH Bắt đầu PO:</span>
                             <span className="font-mono font-black text-black">{format(po.plannedStartTime, 'dd/MM HH:mm')}</span>
                           </div>
@@ -4826,11 +4826,11 @@ function ProduceView({
                         )}
                         {masterId && (
                           <>
-                            <div className="flex justify-between items-center pt-1 border-t border-black text-black">
+                            <div className="flex justify-between items-center pt-[2px] border-t border-black text-black">
                               <span className="uppercase font-black text-black">PO TỔNG:</span>
-                              <span className="font-mono text-[12px] font-black text-black">{masterId}</span>
+                              <span className="font-mono text-[10px] font-black text-black">{masterId}</span>
                             </div>
-                            <div className="flex justify-between items-center text-[10px] italic text-black font-black">
+                            <div className="flex justify-between items-center text-[9px] italic text-black font-black">
                               <span>Kế hoạch PO Tổng:</span>
                               <span>{lastTransaction.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0} máy</span>
                             </div>
@@ -4839,7 +4839,7 @@ function ProduceView({
                       </>
                     );
                   })()}
-                  <div className="flex justify-between items-center pt-1 border-t border-black mt-1 text-black">
+                  <div className="flex justify-between items-center pt-[2px] border-t border-black text-black">
                     <span className="uppercase font-black text-black text-[9px]">Hoàn thành thực tế:</span>
                     <span className="font-mono font-black text-black">{format(lastTransaction.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
                   </div>
