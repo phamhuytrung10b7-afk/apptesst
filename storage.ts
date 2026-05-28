@@ -55,7 +55,17 @@ export const storageService = {
   getLabelSettings() {
     return getCached(STORAGE_KEYS.LABEL_SETTINGS, () => {
       const data = localStorage.getItem(STORAGE_KEYS.LABEL_SETTINGS);
-      return data ? JSON.parse(data) : { width: 100, height: 50, fontSize: 14, qrSize: 120 };
+      // Force migration to A7 for existing users who still have the old 100x50 default
+      if (data) {
+         let parsed = JSON.parse(data);
+         if (parsed.width === 100 && parsed.height === 50) {
+            parsed = { width: 74, height: 105, fontSize: 18, qrSize: 220 };
+            localStorage.setItem(STORAGE_KEYS.LABEL_SETTINGS, JSON.stringify(parsed));
+            return parsed;
+         }
+         return parsed;
+      }
+      return { width: 74, height: 105, fontSize: 18, qrSize: 220 };
     });
   },
 

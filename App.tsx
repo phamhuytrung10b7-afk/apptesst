@@ -559,45 +559,45 @@ export default function App() {
               </div>
 
               {/* Top NG bar */}
-              <div className="w-full bg-black text-white text-center py-2 mb-4 font-black text-xl tracking-tighter">
+              <div className="w-full bg-black text-white text-center py-1 mb-2 font-black text-xl tracking-tighter">
                 NHÃN XUẤT HỦY (DISPOSAL ONLY)
               </div>
 
               {/* QR Code Section */}
-              <div className="mb-4 border-2 border-black p-1 bg-white relative z-10">
-                <QRCodeSVG value={lastTransaction.qrData || ''} size={labelSettings.qrSize * 1.8} level="H" />
+              <div className="mb-2 border-2 border-black p-1 bg-white relative z-10">
+                <QRCodeSVG value={lastTransaction.qrData || ''} size={labelSettings.qrSize} level="H" />
               </div>
 
               {/* Part Name & ID */}
-              <div className="text-center w-full mb-3 relative z-10 text-black px-2">
-                <h1 className="font-black uppercase leading-tight text-balance break-words" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
+              <div className="text-center w-full mb-2 relative z-10 text-black px-1 flex-1 flex flex-col justify-center">
+                <h1 className="font-black uppercase leading-tight text-balance break-words" style={{ fontSize: `${labelSettings.fontSize + 8}px` }}>
                   {parts.find(p => p.id === lastTransaction.partId)?.name || lastTransaction.partId}
                 </h1>
-                <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize + 4}px` }}>
+                <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
                   Mã LK: {lastTransaction.partId}
                 </p>
               </div>
 
               {/* Quantity & Source Stage */}
-              <div className="grid grid-cols-2 w-full border-t-2 border-b-2 border-black py-4 mb-4 relative z-10 text-black">
+              <div className="grid grid-cols-2 w-full border-t-2 border-b-2 border-black py-2 mb-2 relative z-10 text-black">
                 <div className="flex flex-col items-center border-r-2 border-black">
-                  <span className="text-[10px] font-black uppercase mb-1 text-black">Số lượng:</span>
-                  <span className="font-black text-black" style={{ fontSize: `${labelSettings.fontSize + 10}px` }}>
+                  <span className="text-[12px] font-black uppercase mb-1 text-black">Số lượng:</span>
+                  <span className="font-black text-black leading-none" style={{ fontSize: `${labelSettings.fontSize + 16}px` }}>
                     {lastTransaction.quantity} {parts.find(p => p.id === lastTransaction.partId)?.unit}
                   </span>
                 </div>
-                <div className="flex flex-col items-center text-black">
-                  <span className="text-[10px] font-black uppercase mb-1 text-black">Từ kho:</span>
-                  <span className="font-black uppercase text-center leading-none text-black" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
+                <div className="flex flex-col items-center text-black justify-center">
+                  <span className="text-[12px] font-black uppercase mb-1 text-black">Từ kho:</span>
+                  <span className="font-black uppercase text-center leading-none text-black" style={{ fontSize: `${labelSettings.fontSize + 8}px` }}>
                     {STAGES.find(s => s.id === lastTransaction.stageId)?.name} (NG)
                   </span>
                 </div>
               </div>
 
               {/* Warnings */}
-              <div className="w-full border-2 border-black rounded-lg p-2 mb-3 text-center bg-transparent text-black">
-                <span className="text-sm font-black uppercase block text-black">HÀNG KHÔNG ĐẠT (NG)</span>
-                <span className="text-[10px] font-black block text-black">CẤM NHẬP KHO - CHỜ TIÊU HỦY</span>
+              <div className="w-full border-2 border-black rounded p-1 mb-1 text-center bg-transparent text-black">
+                <span className="text-lg font-black uppercase block text-black">HÀNG KHÔNG ĐẠT (NG)</span>
+                <span className="text-sm font-black block text-black">CẤM NHẬP KHO - CHỜ TIÊU HỦY</span>
               </div>
 
               {/* Footer */}
@@ -612,46 +612,46 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <div className="w-full h-full bg-white text-black flex flex-col p-2 box-border">
+            <div className="w-full h-full bg-white text-black flex flex-col p-1 box-border">
               <div className="w-full text-center pb-1">
-                <h1 className="font-black uppercase tracking-tight" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>PHIẾU ĐIỀU CHUYỂN</h1>
+                <h1 className="font-black uppercase tracking-tight" style={{ fontSize: `${labelSettings.fontSize + 4}px` }}>PHIẾU ĐIỀU CHUYỂN</h1>
               </div>
-              <div className="flex-1 w-full border-2 border-black flex flex-col items-center p-2">
+              <div className="flex-1 w-full border-2 border-black flex flex-col items-center p-1">
               {/* QR Code Section */}
-              <div className="mt-1 mb-2 border-2 border-black p-1">
-                <QRCodeSVG value={lastTransaction.qrData || ''} size={labelSettings.qrSize * 1.8} level="H" />
+              <div className="mt-1 mb-1 border-2 border-black p-1">
+                <QRCodeSVG value={lastTransaction.qrData || ''} size={labelSettings.qrSize} level="H" />
               </div>
 
               {/* Part Name & ID */}
-              <div className="text-center w-full mb-3 px-2">
-                <h1 className="font-black uppercase leading-tight text-balance break-words" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
+              <div className="text-center w-full mb-1 px-1 flex-1 flex flex-col justify-center">
+                <h1 className="font-black uppercase leading-tight text-balance break-words" style={{ fontSize: `${labelSettings.fontSize + 8}px` }}>
                   {lastTransaction.partName || getProcessValue(parts.find(p => p.id === lastTransaction.partId)?.name, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
                 </h1>
-                <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize + 4}px` }}>
+                <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
                   Mã LK: {lastTransaction.id?.startsWith('QUICK-') ? lastTransaction.partId : (lastTransaction.partId)}
                 </p>
               </div>
 
               {/* Quantity & Source Stage */}
-              <div className="grid grid-cols-2 w-full border-t-2 border-b-2 border-black py-3 mb-3 text-black">
-                <div className="flex flex-col items-center border-r-2 border-black">
-                  <span className="text-[10px] font-black uppercase mb-1">Số lượng:</span>
-                  <span className="font-black" style={{ fontSize: `${labelSettings.fontSize + 10}px` }}>
+              <div className="grid grid-cols-2 w-full border-t-2 border-b-2 border-black py-2 mb-1 text-black">
+                <div className="flex flex-col items-center border-r-2 border-black justify-center">
+                  <span className="text-[12px] font-black uppercase mb-1">Số lượng:</span>
+                  <span className="font-black leading-none" style={{ fontSize: `${labelSettings.fontSize + 16}px` }}>
                     {lastTransaction.quantity} {parts.find(p => p.id === lastTransaction.partId)?.unit}
                   </span>
                 </div>
-                <div className="flex flex-col items-center">
-                  <span className="text-[10px] font-black uppercase mb-1">Từ công đoạn:</span>
-                  <span className="font-black uppercase text-center" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
+                <div className="flex flex-col items-center justify-center">
+                  <span className="text-[12px] font-black uppercase mb-1">Từ công đoạn:</span>
+                  <span className="font-black uppercase text-center leading-none" style={{ fontSize: `${labelSettings.fontSize + 8}px` }}>
                     {STAGES.find(s => s.id === lastTransaction.stageId)?.name}
                   </span>
                 </div>
               </div>
 
               {/* Route / Destination */}
-              <div className="w-full border-2 border-black rounded p-2 mb-3 text-center text-black">
-                <span className="text-[10px] font-black uppercase block mb-1">Đích tiếp theo:</span>
-                <div className="flex items-center justify-center gap-4 font-black italic" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
+              <div className="w-full border-2 border-black rounded p-1 mb-1 text-center text-black">
+                <span className="text-[12px] font-black uppercase block mb-1">Đích tiếp theo:</span>
+                <div className="flex items-center justify-center gap-4 font-black italic" style={{ fontSize: `${labelSettings.fontSize + 8}px` }}>
                   <span className="uppercase">{STAGES.find(s => s.id === lastTransaction.stageId)?.name}</span>
                   <span className="text-xl">→</span>
                   <span className="uppercase">
@@ -3399,10 +3399,11 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
       
       // Calculate productivity percentage
       // Fixed peoplePerHour = 8, Target = 64 for 2h slots (if specified) or 128
-      const targetQD = (slot.label === '6h-8h' || slot.label === '19h-20h') ? 64 : 128;
+      const targetQDSon = (slot.label === '6h-8h' || slot.label === '19h-20h') ? 64 : 128;
+      const targetQDDanKinh = 80;
       
-      slotData['NSLD_Son'] = targetQD > 0 ? (sonConverted / targetQD) : 0;
-      slotData['NSLD_DanKinh'] = targetQD > 0 ? (danKinhConverted / targetQD) : 0;
+      slotData['NSLD_Son'] = targetQDSon > 0 ? (sonConverted / targetQDSon) : 0;
+      slotData['NSLD_DanKinh'] = targetQDDanKinh > 0 ? (danKinhConverted / targetQDDanKinh) : 0;
 
       return slotData;
     });
