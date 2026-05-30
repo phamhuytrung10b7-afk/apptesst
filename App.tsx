@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import * as XLSX from 'xlsx-js-style';
 import { 
   LayoutDashboard, 
@@ -302,6 +302,46 @@ export function GlobalDialogs() {
   );
 }
 
+const getGlazingHSQD = (pId: string, dclrNormsMap: Map<string, number>, dclrNorms: ProductivityNorm[], parts: Part[]) => {
+  // 1. Precise lookup
+  const upperId = pId.trim().toUpperCase();
+  if (dclrNormsMap.has(upperId)) return dclrNormsMap.get(upperId) || 0;
+  if (dclrNormsMap.has(pId)) return dclrNormsMap.get(pId) || 0;
+
+  // 2. Extract name if it's a pseudo part
+  if (pId.startsWith('GLZ-OUT-')) {
+     const cleanId = pId.replace('GLZ-OUT-', '').replace(/\s*-\s*Dán kính$/i, '').trim().toUpperCase();
+     
+     // Try matching clean middle name against norms
+     if (dclrNormsMap.has(cleanId)) return dclrNormsMap.get(cleanId) || 0;
+
+     // Search for a part in catalog whose name matches the cleanId or partId
+     const matchedPart = parts.find((p: any) => 
+       p.name.toUpperCase().trim() === cleanId || 
+       p.id.toUpperCase() === cleanId
+     );
+     if (matchedPart && dclrNormsMap.has(matchedPart.id.toUpperCase().trim())) {
+       return dclrNormsMap.get(matchedPart.id.toUpperCase().trim()) || 0;
+     }
+
+     // Final search: loop through all DCLR norms and check their associated part's name
+     for (const norm of dclrNorms) {
+       const normPart = parts.find((p: any) => p.id === norm.partId);
+       if (normPart && (
+         normPart.name.toUpperCase().trim() === cleanId || 
+         normPart.name.toUpperCase().trim() === pId.toUpperCase().trim()
+       )) {
+         return norm.secondsPerUnit;
+       }
+       // Also check if the norm's partId itself matches the pseudo id
+       if (norm.partId.toUpperCase().trim() === pId.toUpperCase().trim()) {
+         return norm.secondsPerUnit;
+       }
+     }
+  }
+  return 0;
+};
+
 export default function App() {
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
@@ -321,6 +361,26 @@ export default function App() {
 
   const [labelSettings, setLabelSettings] = useState(storageService.getLabelSettings());
   const [defectModal, setDefectModal] = useState<{ partId: string, stageId: StageId, poId?: string } | null>(null);
+
+  const dclrNorms = useMemo(() => storageService.getNorms().filter(n => n.stageId === 'DCLR'), [isImportingNorms, parts]);
+  const dclrNormsMap = useMemo(() => new Map(dclrNorms.map(n => [n.partId, n.secondsPerUnit])), [dclrNorms]);
+
+  const glazingHSQD = useCallback((pId: string) => getGlazingHSQD(pId, dclrNormsMap, dclrNorms, parts), [dclrNormsMap, dclrNorms, parts]);
+
+  const aggregatedGlazingOut = useMemo(() => {
+    const map = new Map<string, import('./types').InventoryItem>();
+    inventory.filter(i => i.stageId === 'GLAZING' && i.location === 'OUT' && i.quantity > 0).forEach(i => {
+      // Use case-insensitive trimmed partId as aggregation key
+      const canonicalKey = i.partId.trim().toUpperCase();
+      const existing = map.get(canonicalKey);
+      if (existing) {
+        existing.quantity += i.quantity;
+      } else {
+        map.set(canonicalKey, { ...i });
+      }
+    });
+    return Array.from(map.values());
+  }, [inventory]);
 
   useEffect(() => {
     // Migration: ensure transformations use part IDs instead of part names
@@ -903,7 +963,18 @@ export default function App() {
           <div className="w-full max-w-[1600px] mx-auto">
             <AnimatePresence mode="wait">
               {currentView === 'dashboard' && (
-                <DashboardView key="dashboard" labels={labels} transactions={transactions} inventory={inventory} parts={parts} refreshData={refreshData} setDefectModal={setDefectModal} />
+                <DashboardView 
+                  key="dashboard" 
+                  labels={labels} 
+                  transactions={transactions} 
+                  inventory={inventory} 
+                  parts={parts} 
+                  refreshData={refreshData} 
+                  setDefectModal={setDefectModal} 
+                  dclrNorms={dclrNorms}
+                  dclrNormsMap={dclrNormsMap}
+                  glazingHSQD={glazingHSQD}
+                />
               )}
               {currentView === 'produce' && (
                 <ProduceView 
@@ -964,6 +1035,7 @@ export default function App() {
                   refreshData={refreshData}
                   labels={labels}
                   onPrint={handlePrint}
+                  aggregatedGlazingOut={aggregatedGlazingOut}
                 />
               )}
               {currentView === 'manual_inbound' && (
@@ -2568,6 +2640,10 @@ const exportDailyProductionReport = (transactions: Transaction[], parts: Part[])
 };
 
 const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[], dateStr: string, peoplePerHour: number = 8) => {
+  const dclrNorms = storageService.getNorms().filter(n => n.stageId === 'DCLR');
+  const dclrNormsMap = new Map(dclrNorms.map(n => [n.partId, n.secondsPerUnit]));
+  const glazingHSQD = (partId: string) => getGlazingHSQD(partId, dclrNormsMap, dclrNorms, parts);
+
   const start = new Date(dateStr);
   start.setHours(0, 0, 0, 0);
   const startMs = start.getTime();
@@ -2614,8 +2690,6 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
     border: borderStyle
   };
   
-  const dclrNorms = storageService.getNorms().filter(n => n.stageId === 'DCLR');
-  const dclrNormsMap = new Map(dclrNorms.map(n => [n.partId, n.secondsPerUnit]));
 
   const timeSlots = [
     { label: '6h-8h', start: 6, end: 8 },
@@ -2675,8 +2749,7 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
     activeParts.sort().forEach(partId => {
        const part = parts.find(p => p.id === partId);
        const partName = part?.name || partId;
-       const cleanId = partId.startsWith('GLZ-OUT-') ? partId.replace('GLZ-OUT-', '').replace(/\s*-\s*Dán kính$/i, '').trim() : partId;
-       const hsqd = dclrNormsMap.get(cleanId) || dclrNormsMap.get(partId) || 0;
+       const hsqd = glazingHSQD(partId);
        const thucHien = partTotals.get(partId) || 0;
        
        // get KHSX based on Stage
@@ -2856,6 +2929,10 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
 
   const wb = XLSX.utils.book_new();
 
+  const dclrNorms = storageService.getNorms().filter(n => n.stageId === 'DCLR');
+  const dclrNormsMap = new Map(dclrNorms.map(n => [n.partId, n.secondsPerUnit]));
+  const glazingHSQD = (partId: string) => getGlazingHSQD(partId, dclrNormsMap, dclrNorms, parts);
+
   const stagesToExport = [
     { id: 'LASER', name: 'Cắt laser' },
     { id: 'BENDING', name: 'Chấn dập' },
@@ -2989,8 +3066,6 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
   });
 
   // ========== BÁO CÁO LẮP RÁP ==========
-  const dclrNorms = storageService.getNorms().filter(n => n.stageId === 'DCLR'); 
-  const dclrNormsMap = new Map(dclrNorms.map(n => [n.partId, n.secondsPerUnit]));
 
   const masterOrders = storageService.getProductionOrders().filter(o => !o.masterPoId && !o.id.startsWith('REPAIR'));
   
@@ -3072,8 +3147,7 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
   const lapRapRows = Array.from(allLapRapParts).sort().map(partId => {
     const part = parts.find(p => p.id === partId);
     const partName = part?.name || partId;
-    const cleanId = partId.startsWith('GLZ-OUT-') ? partId.replace('GLZ-OUT-', '').replace(/\s*-\s*Dán kính$/i, '').trim() : partId;
-    const hsqd = dclrNormsMap.get(cleanId) || dclrNormsMap.get(partId) || 0;
+    const hsqd = glazingHSQD(partId);
     
     const rowData: any[] = [partId, partName, hsqd];
     let totalKHSX = 0;
@@ -3244,7 +3318,7 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
   XLSX.writeFile(wb, `BaoCao_SanLuong_${format(start, 'ddMMyy')}-${format(end, 'ddMMyy')}.xlsx`);
 };
 
-function DashboardView({ inventory, parts, transactions, labels, refreshData, setDefectModal }: DashboardProps & { setDefectModal: any }) {
+function DashboardView({ inventory, parts, transactions, labels, refreshData, setDefectModal, dclrNorms, dclrNormsMap, glazingHSQD }: any) {
   const [selectedStageDetail, setSelectedStageDetail] = useState<StageId | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showExportModal, setShowExportModal] = useState(false);
@@ -3301,8 +3375,6 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
 
     const targetStages = ['LASER', 'BENDING', 'WELDING', 'PAINTING', 'GLAZING'];
     
-    const dclrNorms = storageService.getNorms().filter(n => n.stageId === 'DCLR');
-    const dclrNormsMap = new Map(dclrNorms.map(n => [n.partId, n.secondsPerUnit]));
     
     // Filter transactions by date and type STAGE_OUT (location IN -> processing done)
     const txFilterFn = (t: any) => {
@@ -3375,8 +3447,7 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
            const hsqd = dclrNormsMap.get(t.partId) || 0;
            sonConverted += ((t.quantity || 0) * hsqd);
         } else if (t.stageId === 'GLAZING') {
-           const cleanId = t.partId.startsWith('GLZ-OUT-') ? t.partId.replace('GLZ-OUT-', '').replace(/\s*-\s*Dán kính$/i, '').trim() : t.partId;
-           const hsqd = dclrNormsMap.get(cleanId) || dclrNormsMap.get(t.partId) || 0;
+           const hsqd = glazingHSQD(t.partId);
            danKinhConverted += ((t.quantity || 0) * hsqd);
         }
       });
@@ -3397,8 +3468,7 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
           slotData.details[stageName].push({ partName, quantity: (t.quantity || 0), unit });
         }
         
-        const cleanId = t.partId.startsWith('GLZ-OUT-') ? t.partId.replace('GLZ-OUT-', '').replace(/\s*-\s*Dán kính$/i, '').trim() : t.partId;
-        const hsqd = dclrNormsMap.get(cleanId) || dclrNormsMap.get(t.partId) || 0;
+        const hsqd = glazingHSQD(t.partId);
         danKinhConverted += ((t.quantity || 0) * hsqd);
       });
       
@@ -6023,7 +6093,7 @@ function GlazingComponentPrintCard({ norm, plan, idx, onPrint, onRecordProductio
   );
 }
 
-function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDefectModal, refreshData, labels, onPrint }: any) {
+function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDefectModal, refreshData, labels, onPrint, aggregatedGlazingOut }: any) {
   const inventory = globalInventory || [];
   const [activeTab, setActiveTab] = useState<'INVENTORY' | 'INBOUND' | 'OUTBOUND' | 'QUICK_PRINT' | 'PLANNING' | 'CONFIG'>('INVENTORY');
   const [configs, setConfigs] = useState<import('./types').GlazingConfig[]>([]);
@@ -6062,18 +6132,6 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
     return (labels || []).filter((l: any) => l.stageId === 'GLAZING' && l.type === 'STAGE_OUT' && l.printed === false);
   }, [labels]);
   
-  const aggregatedGlazingOut = useMemo(() => {
-    const map = new Map<string, import('./types').InventoryItem>();
-    inventory.filter(i => i.stageId === 'GLAZING' && i.location === 'OUT' && i.quantity > 0).forEach(i => {
-      const existing = map.get(i.partId);
-      if (existing) {
-        existing.quantity += i.quantity;
-      } else {
-        map.set(i.partId, { ...i });
-      }
-    });
-    return Array.from(map.values());
-  }, [inventory]);
 
   useEffect(() => {
     const loadedConfigs = storageService.getGlazingConfigs();
