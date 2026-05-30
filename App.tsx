@@ -5985,7 +5985,7 @@ function GlazingComponentPrintCard({ norm, plan, idx, onPrint, onRecordProductio
                       const txId = `GLZ-${Date.now()}-${norm.id}`;
                       const formatQR = `${norm.id}|${printInputQty}|GLAZING|${Date.now()}|${txId}|DCLR|${norm.id}|||`;
                       
-                      const labelTx = {
+                      const labelTx: import('./types').Transaction = {
                         id: txId,
                         partId: norm.id,
                         partName: norm.partName,
@@ -5996,7 +5996,8 @@ function GlazingComponentPrintCard({ norm, plan, idx, onPrint, onRecordProductio
                         timestamp: Date.now(),
                         qrData: formatQR,
                         planId: plan.id,
-                        printed: false // wait for print confirmation
+                        printed: false, // wait for print confirmation
+                        kpiRecorded: true
                       };
                       
                       onPrint(labelTx, printInputQty);
@@ -6296,6 +6297,23 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
       };
       
       storageService.saveTransactions([transaction, ...storageService.getTransactions()]);
+      
+      // Label awaiting printing
+      const formatQR = `${pseudoPartId}|${qty}|GLAZING|${ts}|${txId}|DCLR|${pseudoPartId}|||`;
+      const labelTx: import('./types').Transaction = {
+         id: txId,
+         partId: pseudoPartId,
+         partName: finalPartName,
+         quantity: qty,
+         type: 'STAGE_OUT',
+         stageId: 'GLAZING',
+         targetStageId: 'DCLR',
+         timestamp: ts,
+         qrData: formatQR,
+         printed: false,
+         kpiRecorded: true
+      };
+      storageService.saveLabel(labelTx);
       
       setOutboundQty({...outboundQty, [finalPartName]: ''});
       refreshData();

@@ -1039,7 +1039,8 @@ export const storageService = {
       timestamp: customTimestamp || Date.now(),
       qrData,
       poId: linkedPoId,
-      printed: stageId === 'GLAZING' && sourceLocation === 'OUT' ? false : undefined
+      printed: stageId === 'GLAZING' && sourceLocation === 'OUT' ? false : undefined,
+      kpiRecorded: stageId === 'GLAZING' && sourceLocation === 'OUT' ? true : undefined
     };
     transactions.unshift(newTransaction);
     this.saveTransactions(transactions);

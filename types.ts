@@ -43,6 +43,7 @@ export interface Transaction {
   printed?: boolean;
   defectReason?: string;
   defectCategory?: string;
+  kpiRecorded?: boolean;
 }
 
 export interface BOMDefinition {
