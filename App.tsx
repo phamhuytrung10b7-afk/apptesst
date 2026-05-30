@@ -2675,7 +2675,8 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
     activeParts.sort().forEach(partId => {
        const part = parts.find(p => p.id === partId);
        const partName = part?.name || partId;
-       const hsqd = dclrNormsMap.get(partId) || 0;
+       const cleanId = partId.startsWith('GLZ-OUT-') ? partId.replace('GLZ-OUT-', '').replace(/\s*-\s*Dán kính$/i, '').trim() : partId;
+       const hsqd = dclrNormsMap.get(cleanId) || dclrNormsMap.get(partId) || 0;
        const thucHien = partTotals.get(partId) || 0;
        
        // get KHSX based on Stage
@@ -3071,7 +3072,8 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
   const lapRapRows = Array.from(allLapRapParts).sort().map(partId => {
     const part = parts.find(p => p.id === partId);
     const partName = part?.name || partId;
-    const hsqd = dclrNormsMap.get(partId) || 0;
+    const cleanId = partId.startsWith('GLZ-OUT-') ? partId.replace('GLZ-OUT-', '').replace(/\s*-\s*Dán kính$/i, '').trim() : partId;
+    const hsqd = dclrNormsMap.get(cleanId) || dclrNormsMap.get(partId) || 0;
     
     const rowData: any[] = [partId, partName, hsqd];
     let totalKHSX = 0;
@@ -3373,7 +3375,7 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
            const hsqd = dclrNormsMap.get(t.partId) || 0;
            sonConverted += ((t.quantity || 0) * hsqd);
         } else if (t.stageId === 'GLAZING') {
-           const cleanId = t.partId.startsWith('GLZ-OUT-') ? t.partId.replace('GLZ-OUT-', '').trim() : t.partId;
+           const cleanId = t.partId.startsWith('GLZ-OUT-') ? t.partId.replace('GLZ-OUT-', '').replace(/\s*-\s*Dán kính$/i, '').trim() : t.partId;
            const hsqd = dclrNormsMap.get(cleanId) || dclrNormsMap.get(t.partId) || 0;
            danKinhConverted += ((t.quantity || 0) * hsqd);
         }
@@ -3395,7 +3397,7 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
           slotData.details[stageName].push({ partName, quantity: (t.quantity || 0), unit });
         }
         
-        const cleanId = t.partId.startsWith('GLZ-OUT-') ? t.partId.replace('GLZ-OUT-', '').trim() : t.partId;
+        const cleanId = t.partId.startsWith('GLZ-OUT-') ? t.partId.replace('GLZ-OUT-', '').replace(/\s*-\s*Dán kính$/i, '').trim() : t.partId;
         const hsqd = dclrNormsMap.get(cleanId) || dclrNormsMap.get(t.partId) || 0;
         danKinhConverted += ((t.quantity || 0) * hsqd);
       });
@@ -6060,6 +6062,19 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
     return (labels || []).filter((l: any) => l.stageId === 'GLAZING' && l.type === 'STAGE_OUT' && l.printed === false);
   }, [labels]);
   
+  const aggregatedGlazingOut = useMemo(() => {
+    const map = new Map<string, import('./types').InventoryItem>();
+    inventory.filter(i => i.stageId === 'GLAZING' && i.location === 'OUT' && i.quantity > 0).forEach(i => {
+      const existing = map.get(i.partId);
+      if (existing) {
+        existing.quantity += i.quantity;
+      } else {
+        map.set(i.partId, { ...i });
+      }
+    });
+    return Array.from(map.values());
+  }, [inventory]);
+
   useEffect(() => {
     const loadedConfigs = storageService.getGlazingConfigs();
     const loadedOutConfigs = storageService.getGlazingOutConfigs();
@@ -7274,7 +7289,7 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
               </h3>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {inventory.filter(i => i.stageId === 'GLAZING' && i.location === 'OUT' && i.quantity > 0).map(i => {
+                {aggregatedGlazingOut.map(i => {
                   const isPseudo = i.partId.startsWith('GLZ-OUT-');
                   const displayName = isPseudo ? i.partId.replace('GLZ-OUT-', '') : (parts.find((p: any) => p.id === i.partId)?.name || i.partId);
                   
@@ -7311,7 +7326,7 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                     </div>
                   );
                 })}
-                {inventory.filter(i => i.stageId === 'GLAZING' && i.location === 'OUT' && i.quantity > 0).length === 0 && (
+                {aggregatedGlazingOut.length === 0 && (
                   <div className="col-span-full text-center py-12 text-gray-400 italic bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
                     Chưa có linh kiện nào trong kho OUT Dán Kính...
                   </div>
