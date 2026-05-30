@@ -357,10 +357,19 @@ export const storageService = {
       const producedQuantities = { ...(plan.producedQuantities || {}) };
       producedQuantities[partId] = (producedQuantities[partId] || 0) + quantity;
       
-      // Update status if all components are "completed"?
-      // But typically plans are completed manually or when 100% components done.
-      // Let's just update the count.
       plans[planIndex] = { ...plan, producedQuantities, status: 'IN_PROGRESS' };
+      this.saveGlazingPlans(plans);
+    }
+  },
+
+  updateGlazingPlanPrinted(planId: string, partId: string, quantity: number) {
+    const plans = this.getGlazingPlans();
+    const planIndex = plans.findIndex(p => p.id === planId);
+    if (planIndex !== -1) {
+      const plan = plans[planIndex];
+      const printedQuantities = { ...(plan.printedQuantities || {}) };
+      printedQuantities[partId] = (printedQuantities[partId] || 0) + quantity;
+      plans[planIndex] = { ...plan, printedQuantities };
       this.saveGlazingPlans(plans);
     }
   },
@@ -449,8 +458,10 @@ export const storageService = {
       if (!label) return;
       
       // Rollback logic for label (Export)
-      // 1. Add back to inventory (OUT location is "OK" stock for the stage)
-      this.updateInventory(label.partId, label.stageId, 'OUT', label.quantity);
+      // 1. Add back to inventory (OUT location is "OK" stock for the stage) (Only if it's not a Quick Print label which doesn't deduct inventory)
+      if (!label.planId) {
+        this.updateInventory(label.partId, label.stageId, 'OUT', label.quantity);
+      }
       
       // 2. Update PO exportedQuantity if label has poId
       if (label.poId) {
@@ -472,6 +483,20 @@ export const storageService = {
         }
       }
       
+      // Rollback Glazing Plan progress if planId exists
+      if (label.planId) {
+        const plans = this.getGlazingPlans();
+        const planIndex = plans.findIndex(p => p.id === label.planId);
+        if (planIndex > -1) {
+          const plan = plans[planIndex];
+          if (plan.producedQuantities && plan.producedQuantities[label.partId]) {
+            plan.producedQuantities[label.partId] = Math.max(0, plan.producedQuantities[label.partId] - label.quantity);
+          }
+          plan.status = 'IN_PROGRESS';
+          this.saveGlazingPlans(plans);
+        }
+      }
+
       this.deleteLabel(txId);
       return;
     }
@@ -873,7 +898,7 @@ export const storageService = {
     return null;
   },
 
-  recordStageOut(partId: string, stageId: StageId, quantity: number, sourceLocation: 'IN' | 'OUT' = 'IN', targetStageId?: StageId, poId?: string, force?: boolean) {
+  recordStageOut(partId: string, stageId: StageId, quantity: number, sourceLocation: 'IN' | 'OUT' = 'IN', targetStageId?: StageId, poId?: string, force?: boolean, customTimestamp?: number) {
     const cleanId = partId.startsWith('GLZ-OUT-') ? partId.trim().toUpperCase() : partId.split(' - ')[0].trim().toUpperCase();
     const pos = this.getProductionOrders();
     const poIndex = poId 
@@ -918,8 +943,10 @@ export const storageService = {
     const totalStock = matchingStocks.reduce((sum, item) => sum + item.quantity, 0);
 
     if (totalStock < quantity) {
-      const part = this.getParts().find(p => p.id.toUpperCase() === effectiveId.toUpperCase());
-      throw new Error(`Lỗi: Số lượng xuất (${quantity}) lớn hơn tổng tồn kho ${part?.name || effectiveId} tại ${STAGES.find(s => s.id === stageId)?.name}_${sourceLocation} (Hiện có ${totalStock})`);
+      if (!force) {
+        const part = this.getParts().find(p => p.id.toUpperCase() === effectiveId.toUpperCase());
+        throw new Error(`Lỗi: Số lượng xuất (${quantity}) lớn hơn tổng tồn kho ${part?.name || effectiveId} tại ${STAGES.find(s => s.id === stageId)?.name}_${sourceLocation} (Hiện có ${totalStock})`);
+      }
     }
 
     // 0. Update Production Order progress
@@ -1009,7 +1036,7 @@ export const storageService = {
       stageId,
       location: sourceLocation,
       targetStageId,
-      timestamp: Date.now(),
+      timestamp: customTimestamp || Date.now(),
       qrData,
       poId: linkedPoId,
       printed: stageId === 'GLAZING' && sourceLocation === 'OUT' ? false : undefined
@@ -1096,7 +1123,7 @@ export const storageService = {
       throw new Error(`Lỗi: Nhãn này được chỉ định cho công đoạn ${targetStageName}. Bạn đang ở công đoạn ${STAGES.find(s => s.id === currentStageId)?.name}.`);
     }
 
-    if (!linkedPoId && !partId.startsWith('GLZ-OUT-')) {
+    if (!linkedPoId && !partId.startsWith('GLZ-OUT-') && sourceStageId !== 'GLAZING') {
       throw new Error('Lỗi: Nhãn QR này không chứa thông tin Lệnh sản xuất (PO). Không thể nhập kho.');
     }
 
@@ -1137,7 +1164,7 @@ export const storageService = {
     return newTransaction;
   },
 
-  recordManualInbound(partId: string, stageId: StageId, location: 'IN' | 'OUT', quantity: number, poId?: string, force?: boolean) {
+  recordManualInbound(partId: string, stageId: StageId, location: 'IN' | 'OUT', quantity: number, poId?: string, force?: boolean, customTimestamp?: number) {
     const cleanId = partId.startsWith('GLZ-OUT-') ? partId.trim().toUpperCase() : partId.split(' - ')[0].trim().toUpperCase();
     let linkedPoId = poId;
 
@@ -1205,7 +1232,7 @@ export const storageService = {
       quantity,
       stageId,
       location, // Store the target location (IN/OUT)
-      timestamp: Date.now(),
+      timestamp: customTimestamp || Date.now(),
       qrData: 'MANUAL_ENTRY',
       poId: linkedPoId
     };

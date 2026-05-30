@@ -2584,7 +2584,7 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
   ).filter(t => t.timestamp >= startMs && t.timestamp <= endMs);
 
   const rangeLabels = labels.filter(l => 
-    l.type === 'STAGE_OUT' && l.stageId === 'GLAZING' && l.timestamp >= startMs && l.timestamp <= endMs
+    l.type === 'STAGE_OUT' && l.stageId === 'GLAZING' && !(l as any).kpiRecorded && l.timestamp >= startMs && l.timestamp <= endMs
   );
 
   const wb = XLSX.utils.book_new();
@@ -2629,7 +2629,7 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
 
   stagesToExport.forEach(stageInfo => {
     const stageTx = stageInfo.id === 'GLAZING' 
-      ? rangeLabels 
+      ? [...rangeTx.filter(t => t.stageId === stageInfo.id), ...rangeLabels] 
       : rangeTx.filter(t => t.stageId === stageInfo.id);
     
     const partTotals = new Map<string, number>();
@@ -2726,13 +2726,13 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
     });
     
     // Total row
-    const totalRow = ['Tổng số lượng chưa quy đổi', sumKHSX > 0 ? sumKHSX : '', sumTH > 0 ? sumTH : '', sumKHSX - sumTH !== 0 ? sumKHSX - sumTH : '', sumKHSX > 0 ? (sumTH/sumKHSX) : '', '', sumKHSX_QD > 0 ? sumKHSX_QD : ''];
+    const totalRow: any[] = ['Tổng số lượng chưa quy đổi', sumKHSX > 0 ? sumKHSX : '', sumTH > 0 ? sumTH : '', sumKHSX - sumTH !== 0 ? sumKHSX - sumTH : '', sumKHSX > 0 ? (sumTH/sumKHSX) : '', '', sumKHSX_QD > 0 ? sumKHSX_QD : ''];
     sumSlots.forEach(s => totalRow.push(s > 0 ? s : ''));
     totalRow.push(sumTH > 0 ? sumTH : '');
     sheetData.push(totalRow);
     
     // San pham quy doi
-    const qdRow = ['Sản phẩm quy đổi', '', '', '', '', '', ''];
+    const qdRow: any[] = ['Sản phẩm quy đổi', '', '', '', '', '', ''];
     sumSlots_QD.forEach(s => qdRow.push(Math.round(s)));
     qdRow.push(Math.round(totalQD));
     sheetData.push(qdRow);
@@ -2741,7 +2741,7 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
     const targetQDs = timeSlots.map(s => (s.label === '6h-8h' || s.label === '19h-20h') ? 64 : 128);
     const totalTarget = targetQDs.reduce((a,b) => a+b, 0);
 
-    const tlRow = ['Năng suất lao động', '', '', '', '', '', ''];
+    const tlRow: any[] = ['Năng suất lao động', '', '', '', '', '', ''];
     sumSlots_QD.forEach((s, i) => {
         const tgt = targetQDs[i];
         tlRow.push(tgt > 0 ? (s/tgt) : 0);
@@ -2750,13 +2750,13 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
     sheetData.push(tlRow);
     
     // Nhân sự mỗi giờ
-    const nhanSuRow = ['Nhân sự mỗi giờ', '', '', '', '', '', ''];
+    const nhanSuRow: any[] = ['Nhân sự mỗi giờ', '', '', '', '', '', ''];
     timeSlots.forEach(() => nhanSuRow.push(peoplePerHour));
     nhanSuRow.push(''); 
     sheetData.push(nhanSuRow);
     
     // Số lượng sản phẩm quy đổi cần đạt được
-    const tgtRow = ['Số lượng sản phẩm quy đổi cần đạt được', '', '', '', '', '', ''];
+    const tgtRow: any[] = ['Số lượng sản phẩm quy đổi cần đạt được', '', '', '', '', '', ''];
     targetQDs.forEach(t => tgtRow.push(t));
     tgtRow.push(totalTarget);
     sheetData.push(tgtRow);
@@ -2796,14 +2796,14 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
                 let rowStyle = { ...dataStyle };
                 
                 if (R === frOffset) {
-                    rowStyle = { ...dataStyle, font: { bold: true, color: { rgb: "0000FF" } } };
+                    rowStyle = { ...dataStyle, font: { ...dataStyle.font, bold: true, color: { rgb: "0000FF" } } } as any;
                 } else if (R >= frOffset + 1 && R <= frOffset + 4) {
-                    rowStyle = { ...dataStyle, font: { bold: true, color: { rgb: "0000FF" } } };
+                    rowStyle = { ...dataStyle, font: { ...dataStyle.font, bold: true, color: { rgb: "0000FF" } } } as any;
                     if (R === frOffset + 4) {
-                        rowStyle = { ...dataStyle, font: { bold: true } };
+                        rowStyle = { ...dataStyle, font: { ...dataStyle.font, bold: true } } as any;
                     }
                     if (R === frOffset + 3) {
-                        rowStyle = { ...dataStyle, font: { bold: true }, fill: { fgColor: { rgb: "92D050" } } };
+                        rowStyle = { ...dataStyle, font: { ...dataStyle.font, bold: true }, fill: { fgColor: { rgb: "92D050" } } } as any;
                     }
                 }
                 
@@ -2850,7 +2850,7 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
   );
 
   const rangeLabels = labels.filter(l => 
-    l.type === 'STAGE_OUT' && l.stageId === 'GLAZING' && l.timestamp >= startMs && l.timestamp <= endMs
+    l.type === 'STAGE_OUT' && l.stageId === 'GLAZING' && !(l as any).kpiRecorded && l.timestamp >= startMs && l.timestamp <= endMs
   );
 
   const wb = XLSX.utils.book_new();
@@ -2900,7 +2900,7 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
 
   stagesToExport.forEach(stageInfo => {
     const stageTx = stageInfo.id === 'GLAZING' 
-      ? rangeLabels 
+      ? [...rangeTx.filter(t => t.stageId === stageInfo.id), ...rangeLabels] 
       : rangeTx.filter(t => t.stageId === stageInfo.id);
     
     const partTotals = new Map<string, number>();
@@ -3326,7 +3326,7 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
     // Specifically for GLAZING, we might need to also count STAGE_OUT labels
     // similar to how export reports work.
     const glazingLabels = labels.filter(l => {
-       if (l.type !== 'STAGE_OUT' || l.stageId !== 'GLAZING') return false;
+       if (l.type !== 'STAGE_OUT' || l.stageId !== 'GLAZING' || (l as any).kpiRecorded) return false;
        const txDateObj = new Date(l.timestamp);
        const offset = txDateObj.getTimezoneOffset();
        const localDate = new Date(txDateObj.getTime() - (offset*60*1000));
@@ -3355,8 +3355,6 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
       let danKinhConverted = 0;
 
       slotTxs.forEach(t => {
-        if (t.stageId === 'GLAZING') return; // Handled below with labels if prefered, or combine.
-        // Actually, combining transactions for standard view, but maybe they don't produce tx, only labels for glazing.
         const stageName = STAGES.find(s => s.id === t.stageId)?.name || t.stageId;
         slotData[stageName] += (t.quantity || 0);
         
@@ -3374,6 +3372,9 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
         if (t.stageId === 'PAINTING') {
            const hsqd = dclrNormsMap.get(t.partId) || 0;
            sonConverted += ((t.quantity || 0) * hsqd);
+        } else if (t.stageId === 'GLAZING') {
+           const hsqd = dclrNormsMap.get(t.partId) || 0;
+           danKinhConverted += ((t.quantity || 0) * hsqd);
         }
       });
       
@@ -5849,12 +5850,28 @@ function ManualInboundView({ parts, onManualInbound, setDefectModal, productionO
   );
 }
 
-function GlazingComponentPrintCard({ norm, plan, idx, onPrint, onUpdateProgress }: any) {
-  const printed = (plan.producedQuantities || {})[norm.id] || 0;
+function GlazingComponentPrintCard({ norm, plan, idx, onPrint, onRecordProduction }: any) {
+  const produced = (plan.producedQuantities || {})[norm.id] || 0;
+  const printed = (plan.printedQuantities || {})[norm.id] || 0;
   const total = plan.targetQuantity;
-  const remaining = total - printed;
-  const [printQty, setPrintQty] = useState(remaining > 0 ? remaining : 1);
-  const progress = Math.min(100, (printed / total) * 100);
+  const remainingProduce = total - produced;
+  const remainingPrint = produced - printed;
+
+  const [producedInputQty, setProducedInputQty] = useState(remainingProduce > 0 ? remainingProduce : 1);
+  const [printInputQty, setPrintInputQty] = useState(remainingPrint > 0 ? remainingPrint : 1);
+  const [timeSlot, setTimeSlot] = useState<string>('');
+
+  const timeSlots = [
+    { label: '6h-8h', start: 6, end: 8 },
+    { label: '8h-10h', start: 8, end: 10 },
+    { label: '10h-12h', start: 10, end: 12 },
+    { label: '13h-15h', start: 13, end: 15 },
+    { label: '15h-17h', start: 15, end: 17 },
+    { label: '17h-19h', start: 17, end: 19 },
+    { label: '19h-20h', start: 19, end: 20 },
+  ];
+
+  const progress = Math.min(100, (produced / total) * 100);
 
   return (
     <div key={`${norm.id}-${idx}`} className="bg-white p-6 rounded-3xl shadow-xl border border-gray-100 flex flex-col gap-6 group hover:shadow-2xl transition-all">
@@ -5870,9 +5887,9 @@ function GlazingComponentPrintCard({ norm, plan, idx, onPrint, onUpdateProgress 
 
       <div className="space-y-2">
         <div className="flex justify-between text-xs font-black uppercase">
-          <span className="text-gray-400">Tiến độ in label:</span>
+          <span className="text-gray-400">Tiến độ Kế hoạch:</span>
           <span className={cn(progress >= 100 ? "text-green-600" : "text-blue-600")}>
-            {printed.toLocaleString()} / {total.toLocaleString()}
+            {produced.toLocaleString()} / {total.toLocaleString()}
           </span>
         </div>
         <div className="h-3 bg-gray-100 rounded-full overflow-hidden p-0.5 border border-gray-50">
@@ -5887,45 +5904,115 @@ function GlazingComponentPrintCard({ norm, plan, idx, onPrint, onUpdateProgress 
         </div>
       </div>
 
-      <div className="flex items-center gap-4 bg-gray-50 p-4 rounded-2xl border border-gray-100">
-        <div className="flex-1">
-          <span className="text-[10px] font-black text-gray-400 uppercase block mb-1">Số lượng in</span>
-          <input 
-            type="number"
-            min="1"
-            max={remaining}
-            value={printQty}
-            onChange={(e) => setPrintQty(parseInt(e.target.value) || 0)}
-            className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2 font-black text-blue-700 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
-          />
-        </div>
-        <button 
-          disabled={printed >= total || printQty <= 0}
-          onClick={() => {
-            onPrint({
-              id: `GLZ-${Date.now()}-${norm.id}`,
-              partId: norm.id,
-              partName: norm.partName,
-              quantity: printQty,
-              type: 'STAGE_OUT',
-              stageId: 'GLAZING',
-              targetStageId: 'DCLR',
-              timestamp: Date.now(),
-              qrData: norm.id,
-              planId: plan.id
-            });
-            onUpdateProgress(printQty);
-          }}
-          className={cn(
-            "h-12 px-6 rounded-xl flex items-center justify-center gap-2 transition-all font-black uppercase text-xs tracking-tight shadow-lg",
-            (printed >= total || printQty <= 0)
-              ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-              : "bg-blue-600 text-white hover:bg-blue-700 hover:scale-105 active:scale-95 shadow-blue-200"
-          )}
-        >
-          <Printer size={16} />
-          IN {printQty} NHÃN
-        </button>
+      <div className="space-y-4 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+          <div className="flex flex-col gap-3">
+              <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <span className="text-[10px] font-black text-gray-400 uppercase block mb-1">Khung giờ</span>
+                    <select
+                      value={timeSlot}
+                      onChange={(e) => setTimeSlot(e.target.value)}
+                      className="w-full bg-white border border-gray-200 rounded-xl px-2 py-2 font-black text-gray-700 outline-none transition-all text-xs"
+                    >
+                      <option value="">-- Hiện tại --</option>
+                      {timeSlots.map(s => <option key={s.label} value={s.label}>{s.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black text-gray-400 uppercase block mb-1">SL Đã Làm</span>
+                    <input 
+                      type="number"
+                      min="1"
+                      max={remainingProduce}
+                      value={producedInputQty}
+                      onChange={(e) => {
+                          const val = parseInt(e.target.value) || 0;
+                          setProducedInputQty(val);
+                      }}
+                      className="w-full bg-white border border-gray-200 rounded-xl px-2 py-2 font-black text-blue-700 outline-none transition-all text-xs"
+                    />
+                  </div>
+              </div>
+              <button 
+                disabled={produced >= total || producedInputQty <= 0 || producedInputQty > remainingProduce}
+                onClick={() => {
+                  let timestamp = Date.now();
+                  if (timeSlot) {
+                      const slot = timeSlots.find(s => s.label === timeSlot);
+                      if (slot) {
+                          const d = new Date();
+                          d.setHours(slot.start + 1, 0, 0, 0);
+                          timestamp = d.getTime();
+                      }
+                  }
+                  onRecordProduction(producedInputQty, timestamp);
+                  // reset remaining appropriately
+                  setProducedInputQty(1);
+                }}
+                className={cn(
+                  "h-10 px-4 rounded-xl flex items-center justify-center gap-2 transition-all font-black uppercase text-xs tracking-tight shadow-md",
+                  (produced >= total || producedInputQty <= 0 || producedInputQty > remainingProduce)
+                    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                    : "bg-blue-600 text-white hover:bg-blue-700 active:scale-95 shadow-blue-200"
+                )}
+              >
+               <PackagePlus size={16} /> LƯU SẢN LƯỢNG
+              </button>
+          </div>
+          
+          <div className="flex flex-col gap-3 pt-4 border-t border-gray-200 mt-2">
+              <div className="flex justify-between items-center text-xs font-black uppercase">
+                <span className="text-gray-400">Đã in nhãn:</span>
+                <span className={cn(printed >= produced && produced > 0 ? "text-green-600" : "text-gray-700")}>
+                  {printed.toLocaleString()} / {produced.toLocaleString()}
+                </span>
+              </div>
+              <div className="flex items-center gap-4">
+                  <div className="flex-1">
+                    <span className="text-[10px] font-black text-gray-400 uppercase block mb-1">Số lượng IN</span>
+                    <input 
+                      type="number"
+                      min="1"
+                      max={remainingPrint}
+                      value={printInputQty}
+                      onChange={(e) => setPrintInputQty(parseInt(e.target.value) || 0)}
+                      className="w-full bg-white border border-gray-200 rounded-xl px-2 py-2 font-black text-green-700 outline-none transition-all text-xs"
+                    />
+                  </div>
+                  <button 
+                    disabled={produced === 0 || printed >= produced || printInputQty <= 0 || printInputQty > remainingPrint}
+                    onClick={() => {
+                      const txId = `GLZ-${Date.now()}-${norm.id}`;
+                      const formatQR = `${norm.id}|${printInputQty}|GLAZING|${Date.now()}|${txId}|DCLR|${norm.id}|||`;
+                      
+                      const labelTx = {
+                        id: txId,
+                        partId: norm.id,
+                        partName: norm.partName,
+                        quantity: printInputQty,
+                        type: 'STAGE_OUT',
+                        stageId: 'GLAZING',
+                        targetStageId: 'DCLR',
+                        timestamp: Date.now(),
+                        qrData: formatQR,
+                        planId: plan.id,
+                        printed: false // wait for print confirmation
+                      };
+                      
+                      onPrint(labelTx, printInputQty);
+                      setPrintInputQty(1);
+                    }}
+                    className={cn(
+                      "h-14 mt-[18px] px-6 rounded-xl flex items-center justify-center gap-2 transition-all font-black uppercase text-xs tracking-tight shadow-lg",
+                      (produced === 0 || printed >= produced || printInputQty <= 0 || printInputQty > remainingPrint)
+                        ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                        : "bg-green-600 text-white hover:bg-green-700 hover:scale-105 active:scale-95 shadow-green-200"
+                    )}
+                  >
+                   <Printer size={16} /> IN NHÃN
+                  </button>
+              </div>
+          </div>
       </div>
     </div>
   );
@@ -5961,6 +6048,10 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
       setEstimatedGlazingEnd(null);
     }
   }, [selectedModel, planQuantity, targetCompletion, glazingPlanNorms]);
+
+  useEffect(() => {
+    setGlazingPlans(storageService.getGlazingPlans());
+  }, [labels]);
 
   const pendingGlazingLabels = useMemo(() => {
     return (labels || []).filter((l: any) => l.stageId === 'GLAZING' && l.type === 'STAGE_OUT' && l.printed === false);
@@ -6189,6 +6280,22 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
       // We use finalPartName as the "partId" for the final compiled object in inventory OUT
       const pseudoPartId = `GLZ-OUT-${finalPartName}`;
       storageService.updateInventory(pseudoPartId, 'GLAZING', 'OUT', qty);
+      
+      const ts = Date.now();
+      const txId = `GLZ-${ts}-${pseudoPartId}`;
+      
+      // STAGE_IN transaction into OUT for KPIs
+      const transaction: import('./types').Transaction = {
+         id: txId,
+         type: 'STAGE_IN',
+         partId: pseudoPartId,
+         quantity: qty,
+         stageId: 'GLAZING',
+         location: 'OUT',
+         timestamp: ts,
+      };
+      
+      storageService.saveTransactions([transaction, ...storageService.getTransactions()]);
       
       setOutboundQty({...outboundQty, [finalPartName]: ''});
       refreshData();
@@ -6777,13 +6884,27 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                         norm={norm}
                         plan={plan}
                         idx={idx}
-                        onPrint={(label) => {
-                          storageService.saveLabel(label);
-                          onPrint(label);
-                        }}
-                        onUpdateProgress={(qty) => {
-                          storageService.updateGlazingPlanProgress(plan.id, norm.id, qty);
+                        onRecordProduction={(producedQty: number, timestamp: number) => {
+                          // 1. Record production (STAGE_OUT) for KPI
+                          storageService.recordStageOut(norm.id, 'GLAZING', producedQty, 'IN', 'DCLR', undefined, true, timestamp);
+                          
+                          // 2. Update Progress
+                          storageService.updateGlazingPlanProgress(plan.id, norm.id, producedQty);
                           setGlazingPlans(storageService.getGlazingPlans());
+                          refreshData();
+                          // notification can be nice here
+                        }}
+                        onPrint={(labelTx: any, printQty: number) => {
+                          // 1. Save the label into WipLabels for printing 
+                          // Remove the mock `planId` if necessary or just save it
+                          storageService.saveLabel(labelTx);
+                          
+                          // 2. Update Printed stats
+                          storageService.updateGlazingPlanPrinted(plan.id, norm.id, printQty);
+                          setGlazingPlans(storageService.getGlazingPlans());
+                          
+                          // 3. Trigger print modal
+                          onPrint(labelTx);
                           refreshData();
                         }}
                       />

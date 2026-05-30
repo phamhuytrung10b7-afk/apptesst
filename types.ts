@@ -39,6 +39,7 @@ export interface Transaction {
   sourceStageId?: StageId; // For STAGE_IN, where it came from
   targetStageId?: StageId; // For STAGE_OUT, where it is intended to go
   poId?: string; // Link to production order
+  planId?: string; // Link to glazing plan
   printed?: boolean;
   defectReason?: string;
   defectCategory?: string;
