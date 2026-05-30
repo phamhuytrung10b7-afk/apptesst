@@ -3373,7 +3373,8 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
            const hsqd = dclrNormsMap.get(t.partId) || 0;
            sonConverted += ((t.quantity || 0) * hsqd);
         } else if (t.stageId === 'GLAZING') {
-           const hsqd = dclrNormsMap.get(t.partId) || 0;
+           const cleanId = t.partId.startsWith('GLZ-OUT-') ? t.partId.replace('GLZ-OUT-', '').trim() : t.partId;
+           const hsqd = dclrNormsMap.get(cleanId) || dclrNormsMap.get(t.partId) || 0;
            danKinhConverted += ((t.quantity || 0) * hsqd);
         }
       });
@@ -3394,7 +3395,8 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
           slotData.details[stageName].push({ partName, quantity: (t.quantity || 0), unit });
         }
         
-        const hsqd = dclrNormsMap.get(t.partId) || 0;
+        const cleanId = t.partId.startsWith('GLZ-OUT-') ? t.partId.replace('GLZ-OUT-', '').trim() : t.partId;
+        const hsqd = dclrNormsMap.get(cleanId) || dclrNormsMap.get(t.partId) || 0;
         danKinhConverted += ((t.quantity || 0) * hsqd);
       });
       
@@ -6279,7 +6281,8 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
       }
 
       // We use finalPartName as the "partId" for the final compiled object in inventory OUT
-      const pseudoPartId = `GLZ-OUT-${finalPartName}`;
+      const cleanFinalName = finalPartName.trim();
+      const pseudoPartId = `GLZ-OUT-${cleanFinalName}`;
       storageService.updateInventory(pseudoPartId, 'GLAZING', 'OUT', qty);
       
       const ts = Date.now();
@@ -6303,7 +6306,7 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
       const labelTx: import('./types').Transaction = {
          id: txId,
          partId: pseudoPartId,
-         partName: finalPartName,
+         partName: cleanFinalName,
          quantity: qty,
          type: 'STAGE_OUT',
          stageId: 'GLAZING',
