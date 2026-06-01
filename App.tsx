@@ -3173,8 +3173,9 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
         const dEnd = daysEndMs[i];
         
         const dayKHSX_Painting = allPaintingOrders.filter(o => o.partId === partId && (o.plannedStartTime || o.createdAt) >= dStart && (o.plannedStartTime || o.createdAt) <= dEnd).reduce((sum, o) => sum + o.targetQuantity, 0);
-        const dayKHSX_Glazing = glazingPlanNorms.find(n => n.id === partId) 
-           ? glazingPlans.filter(p => p.modelId === glazingPlanNorms.find(n => n.id === partId)?.appliedModel && (p.plannedStartTime || p.createdAt) >= dStart && (p.plannedStartTime || p.createdAt) <= dEnd).reduce((sum, p) => sum + p.targetQuantity, 0)
+        const modelsForPart = glazingPlanNorms.filter(n => n.id === partId).map(n => n.appliedModel);
+        const dayKHSX_Glazing = modelsForPart.length > 0 
+           ? glazingPlans.filter(p => modelsForPart.includes(p.modelId) && (p.plannedStartTime || p.createdAt) >= dStart && (p.plannedStartTime || p.createdAt) <= dEnd).reduce((sum, p) => sum + p.targetQuantity, 0)
            : 0;
 
         const dayKHSX = dayKHSX_Painting + dayKHSX_Glazing;
