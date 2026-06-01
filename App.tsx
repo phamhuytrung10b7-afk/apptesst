@@ -1534,12 +1534,16 @@ function ProductionOrderView({ parts, onUpdate, productionOrders }: { parts: Par
                       const subOrders = orders.filter(o => o.masterPoId === master.id);
                       const totalTarget = subOrders.reduce((sum, o) => sum + o.targetQuantity, 0);
                       const totalProduced = subOrders.reduce((sum, o) => sum + o.producedQuantity, 0);
-                      const overallProgress = totalTarget > 0 ? (totalProduced / totalTarget) * 100 : 0;
+                      let overallProgress = totalTarget > 0 ? (totalProduced / totalTarget) * 100 : 0;
                       const isExpanded = expandedMasterPos.has(master.id);
                       
                       const allCompleted = subOrders.length > 0 && subOrders.every(so => so.status === 'COMPLETED');
                       const hasInProgress = subOrders.some(so => so.status === 'IN_PROGRESS');
-                      const overallStatus: string = allCompleted ? 'COMPLETED' : (hasInProgress ? 'IN_PROGRESS' : 'PENDING');
+                      const overallStatus: string = (master.status === 'COMPLETED' || allCompleted) ? 'COMPLETED' : (hasInProgress ? 'IN_PROGRESS' : 'PENDING');
+                      
+                      if (overallStatus === 'COMPLETED') {
+                        overallProgress = 100;
+                      }
                       
                       let currentStageText = 'MODEL';
                       let displayStatusText = overallStatus === 'COMPLETED' ? 'HOÀN THÀNH' : overallStatus === 'PENDING' ? 'CHỜ SẢN XUẤT' : overallStatus === 'PAUSED' ? 'TẠM DỪNG' : 'ĐANG CHẠY';
@@ -1632,15 +1636,15 @@ function ProductionOrderView({ parts, onUpdate, productionOrders }: { parts: Par
                       </td>
                       <td className="px-8 py-5 text-center flex items-center justify-center gap-2">
                         <button 
-                          onClick={(e) => {
+                          onClick={async (e) => {
                             e.stopPropagation();
-                            const pwd = prompt("Nhập mật khẩu để hoàn thành PO tổng này:");
+                            const pwd = await customPrompt("Nhập mật khẩu để hoàn thành PO tổng này:", "", true);
                             if (pwd === "admin123") {
-                              if (confirm("Bạn có muốn hoàn thành kế hoạch này không?")) {
+                              if (await customConfirm("Bạn có muốn hoàn thành kế hoạch này không?")) {
                                 handleCompleteMasterPO(master.id);
                               }
                             } else if (pwd !== null) {
-                              alert("Mật khẩu không đúng");
+                              await customAlert("Mật khẩu không đúng");
                             }
                           }}
                           className="p-2 text-green-600 hover:text-green-800 hover:bg-green-50 rounded-lg transition-all"
@@ -1664,7 +1668,7 @@ function ProductionOrderView({ parts, onUpdate, productionOrders }: { parts: Par
                       const orderB = STAGES.findIndex(s => s.id === b.stageId);
                       return orderB - orderA; // order from latest stage (Painting) down to earliest (Mechanics like Laser)
                     }).map((sub, subIdx) => {
-                      const progress = (sub.producedQuantity / sub.targetQuantity) * 100;
+                      const progress = sub.status === 'COMPLETED' ? 100 : (sub.producedQuantity / sub.targetQuantity) * 100;
                       return (
                         <tr key={`${sub.id}-${subIdx}`} className="text-base text-gray-600 bg-gray-50/50">
                           <td className="px-8 py-4 pl-16 font-mono opacity-50 text-sm">{sub.id}</td>
