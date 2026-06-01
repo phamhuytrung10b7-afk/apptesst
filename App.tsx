@@ -1236,6 +1236,11 @@ function ProductionOrderView({ parts, onUpdate, productionOrders }: { parts: Par
     }
   };
 
+  const handleCompleteMasterPO = (masterPoId: string) => {
+    storageService.forceCompleteMasterPO(masterPoId);
+    onUpdate();
+  };
+
   const handleCreatePO = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPart || quantity <= 0) return;
@@ -1532,9 +1537,13 @@ function ProductionOrderView({ parts, onUpdate, productionOrders }: { parts: Par
                       const overallProgress = totalTarget > 0 ? (totalProduced / totalTarget) * 100 : 0;
                       const isExpanded = expandedMasterPos.has(master.id);
                       
+                      const allCompleted = subOrders.length > 0 && subOrders.every(so => so.status === 'COMPLETED');
+                      const hasInProgress = subOrders.some(so => so.status === 'IN_PROGRESS');
+                      const overallStatus: string = allCompleted ? 'COMPLETED' : (hasInProgress ? 'IN_PROGRESS' : 'PENDING');
+                      
                       let currentStageText = 'MODEL';
-                      let displayStatusText = master.status === 'COMPLETED' ? 'HOÀN THÀNH' : master.status === 'PENDING' ? 'CHỜ SẢN XUẤT' : master.status === 'PAUSED' ? 'TẠM DỪNG' : 'ĐANG CHẠY';
-                      let statusBadgeClass = master.status === 'COMPLETED' ? "bg-green-100 text-green-700" : master.status === 'PENDING' ? "bg-gray-100 text-gray-700" : master.status === 'PAUSED' ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700";
+                      let displayStatusText = overallStatus === 'COMPLETED' ? 'HOÀN THÀNH' : overallStatus === 'PENDING' ? 'CHỜ SẢN XUẤT' : overallStatus === 'PAUSED' ? 'TẠM DỪNG' : 'ĐANG CHẠY';
+                      let statusBadgeClass = overallStatus === 'COMPLETED' ? "bg-green-100 text-green-700" : overallStatus === 'PENDING' ? "bg-gray-100 text-gray-700" : overallStatus === 'PAUSED' ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700";
 
                       if (master.id.startsWith('REPAIR')) {
                         const sortedSubOrders = [...subOrders].sort((a, b) => {
@@ -1548,14 +1557,6 @@ function ProductionOrderView({ parts, onUpdate, productionOrders }: { parts: Par
                         } else {
                           currentStageText = 'Đang chờ';
                         }
-                        
-                        // Override displayStatusText for REPAIR sub POs aggregated status
-                        const allCompleted = subOrders.length > 0 && subOrders.every(so => so.status === 'COMPLETED');
-                        const hasInProgress = subOrders.some(so => so.status === 'IN_PROGRESS');
-                        const overallStatus: string = allCompleted ? 'COMPLETED' : (hasInProgress ? 'IN_PROGRESS' : 'PENDING');
-                        
-                        displayStatusText = overallStatus === 'COMPLETED' ? 'HOÀN THÀNH' : overallStatus === 'PENDING' ? 'CHỜ SẢN XUẤT' : overallStatus === 'PAUSED' ? 'TẠM DỪNG' : 'ĐANG CHẠY';
-                        statusBadgeClass = overallStatus === 'COMPLETED' ? "bg-green-100 text-green-700" : overallStatus === 'PENDING' ? "bg-gray-100 text-gray-700" : overallStatus === 'PAUSED' ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700";
                       }
 
                       return (
@@ -1585,8 +1586,8 @@ function ProductionOrderView({ parts, onUpdate, productionOrders }: { parts: Par
                         )}
                       </td>
                       <td className="px-8 py-5 text-right text-xl">{master.targetQuantity}</td>
-                      <td className="px-8 py-5 text-right text-xl text-blue-600">{master.producedQuantity}</td>
-                      <td className="px-8 py-5 text-right text-xl text-orange-600">{master.exportedQuantity || 0}</td>
+                      <td className="px-8 py-5 text-right text-xl text-blue-600">-</td>
+                      <td className="px-8 py-5 text-right text-xl text-orange-600">-</td>
                       <td className="px-8 py-5">
                         <div className="w-full bg-gray-200 rounded-full h-2.5">
                           <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: `${overallProgress}%` }}></div>
@@ -1624,12 +1625,29 @@ function ProductionOrderView({ parts, onUpdate, productionOrders }: { parts: Par
                       <td className="px-8 py-5">
                         <span className={cn(
                           "px-3 py-1 rounded-full text-xs font-bold",
-                          master.status === 'COMPLETED' ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
+                          statusBadgeClass
                         )}>
-                          {master.status === 'COMPLETED' ? 'HOÀN THÀNH' : 'ĐANG CHẠY'}
+                          {displayStatusText}
                         </span>
                       </td>
-                      <td className="px-8 py-5 text-center">
+                      <td className="px-8 py-5 text-center flex items-center justify-center gap-2">
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const pwd = prompt("Nhập mật khẩu để hoàn thành PO tổng này:");
+                            if (pwd === "admin123") {
+                              if (confirm("Bạn có muốn hoàn thành kế hoạch này không?")) {
+                                handleCompleteMasterPO(master.id);
+                              }
+                            } else if (pwd !== null) {
+                              alert("Mật khẩu không đúng");
+                            }
+                          }}
+                          className="p-2 text-green-600 hover:text-green-800 hover:bg-green-50 rounded-lg transition-all"
+                          title="Hoàn thành PO"
+                        >
+                          <Check size={18} />
+                        </button>
                         <button 
                           onClick={(e) => {
                             e.stopPropagation();

@@ -1623,6 +1623,25 @@ export const storageService = {
     return currentTime;
   },
 
+  forceCompleteMasterPO(masterPoId: string) {
+    const pos = this.getProductionOrders();
+    const masterPo = pos.find(p => p.id === masterPoId);
+    if (!masterPo) return;
+    
+    // Complete master PO
+    masterPo.status = 'COMPLETED';
+    if (!masterPo.completedAt) masterPo.completedAt = Date.now();
+    
+    // Complete sub POs that are not already completed
+    const subPos = pos.filter(p => p.masterPoId === masterPoId);
+    subPos.forEach(sub => {
+      sub.status = 'COMPLETED';
+      if (!sub.completedAt) sub.completedAt = Date.now();
+    });
+    
+    this.saveProductionOrders(pos);
+  },
+
   createMasterPO(modelId: string, quantity: number, plannedStartTime?: number, customLeadTime?: number, idPrefix: string = "PO", targetStageId?: string) {
     const { masterPo, allChildPOs } = this.calculateMasterPOSchedule(modelId, quantity, plannedStartTime, customLeadTime, idPrefix, targetStageId);
     const pos = this.getProductionOrders();
