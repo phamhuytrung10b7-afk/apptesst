@@ -2532,10 +2532,13 @@ const exportDailyProductionReport = (transactions: Transaction[], parts: Part[])
   const now = new Date();
   const startOfToday = startOfDay(now).getTime();
 
-  // Filter transactions for STAGE_OUT in the current day
-  const todayTransactions = transactions.filter(t => 
-    t.type === 'STAGE_OUT' && t.timestamp >= startOfToday
-  );
+  // Filter transactions for produced items in the current day
+  const todayTransactions = transactions.filter(t => {
+    const isProducedAtStage = 
+      (t.type === 'STAGE_OUT' && t.location === 'IN') ||
+      (t.type === 'STAGE_IN' && t.location === 'OUT');
+    return isProducedAtStage && t.timestamp >= startOfToday;
+  });
 
   if (todayTransactions.length === 0) {
     alert('Không có dữ liệu sản xuất xuất kho trong ngày hôm nay.');
@@ -2681,10 +2684,6 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
     (t.type === 'STAGE_IN' && t.location === 'OUT') // Năng lực sản xuất includes this
   ).filter(t => t.timestamp >= startMs && t.timestamp <= endMs);
 
-  const rangeLabels = labels.filter(l => 
-    l.type === 'STAGE_OUT' && l.stageId === 'GLAZING' && !(l as any).kpiRecorded && l.timestamp >= startMs && l.timestamp <= endMs
-  );
-
   const wb = XLSX.utils.book_new();
 
   const stagesToExport = [
@@ -2724,9 +2723,7 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
   ];
 
   stagesToExport.forEach(stageInfo => {
-    const stageTx = stageInfo.id === 'GLAZING' 
-      ? [...rangeTx.filter(t => t.stageId === stageInfo.id), ...rangeLabels] 
-      : rangeTx.filter(t => t.stageId === stageInfo.id);
+    const stageTx = rangeTx.filter(t => t.stageId === stageInfo.id);
     
     const partTotals = new Map<string, number>();
     const partSlots = new Map<string, number[]>();
@@ -2942,11 +2939,9 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
   const labels = storageService.getLabels();
 
   const rangeTx = transactions.filter(t => 
-    t.type === 'STAGE_OUT' && t.timestamp >= startMs && t.timestamp <= endMs
-  );
-
-  const rangeLabels = labels.filter(l => 
-    l.type === 'STAGE_OUT' && l.stageId === 'GLAZING' && !(l as any).kpiRecorded && l.timestamp >= startMs && l.timestamp <= endMs
+    ((t.type === 'STAGE_OUT' && t.location === 'IN') ||
+     (t.type === 'STAGE_IN' && t.location === 'OUT')) && 
+    t.timestamp >= startMs && t.timestamp <= endMs
   );
 
   const wb = XLSX.utils.book_new();
@@ -2999,9 +2994,7 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
   };
 
   stagesToExport.forEach(stageInfo => {
-    const stageTx = stageInfo.id === 'GLAZING' 
-      ? [...rangeTx.filter(t => t.stageId === stageInfo.id), ...rangeLabels] 
-      : rangeTx.filter(t => t.stageId === stageInfo.id);
+    const stageTx = rangeTx.filter(t => t.stageId === stageInfo.id);
     
     const partTotals = new Map<string, number>();
     stageTx.forEach(t => {
@@ -3186,10 +3179,12 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
 
         const dayKHSX = dayKHSX_Painting + dayKHSX_Glazing;
         
-        const dayTH_Painting = transactions.filter(t => t.timestamp >= dStart && t.timestamp <= dEnd && t.partId === partId && t.type === 'STAGE_OUT' && t.stageId === 'PAINTING').reduce((sum, t) => sum + Math.abs(t.quantity), 0);
-        const dayTH_Glazing = labels.filter(l => l.timestamp >= dStart && l.timestamp <= dEnd && l.partId === partId && l.type === 'STAGE_OUT' && l.stageId === 'GLAZING').reduce((sum, l) => sum + Math.abs(l.quantity), 0);
-        
-        const dayTH = dayTH_Painting + dayTH_Glazing;
+        // Lấy số lượng thực hiện của các công đoạn Lắp Ráp (Sơn, Dán Kính) khi hoàn thành chi tiết đưa vào kho OUT
+        const dayTH = transactions.filter(t => 
+           t.timestamp >= dStart && t.timestamp <= dEnd && 
+           t.partId === partId && t.type === 'STAGE_OUT' && t.location === 'IN' && 
+           (t.stageId === 'PAINTING' || t.stageId === 'GLAZING')
+        ).reduce((sum, t) => sum + Math.abs(t.quantity), 0);
         
         rowData.push(dayKHSX > 0 ? dayKHSX : '', dayTH > 0 ? dayTH : '');
         totalKHSX += dayKHSX;
