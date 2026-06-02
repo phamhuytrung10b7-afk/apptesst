@@ -2070,6 +2070,20 @@ export const storageService = {
     this.saveProductionOrders(pos);
   },
 
+  updateSubPoTime(id: string, newExpectedTime: number) {
+    const pos = this.getProductionOrders();
+    const targetPo = pos.find(p => p.id === id);
+    if (!targetPo || !targetPo.expectedCompletionTime) return;
+
+    const timeDiff = newExpectedTime - targetPo.expectedCompletionTime;
+    targetPo.expectedCompletionTime = newExpectedTime;
+    if (targetPo.plannedStartTime) {
+      targetPo.plannedStartTime += timeDiff;
+    }
+
+    this.saveProductionOrders(pos);
+  },
+
   resetAllData() {
     localStorage.removeItem(STORAGE_KEYS.INVENTORY);
     localStorage.removeItem(STORAGE_KEYS.TRANSACTIONS);
