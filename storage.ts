@@ -666,6 +666,33 @@ export const storageService = {
     return targetCatalogPart ? targetCatalogPart.id : targetPartIdStr;
   },
 
+  setAbsoluteInventory(partId: string, stageId: StageId, location: 'IN' | 'OUT' | 'DEFECT', newQuantity: number) {
+    const inventory = this.getInventory();
+    const cleanIdUpper = partId.trim().toUpperCase();
+    const parts = this.getParts();
+    const partInCatalog = parts.find(p => p.id.toUpperCase() === cleanIdUpper || p.name.toUpperCase().trim() === cleanIdUpper);
+    const targetNameUpper = partInCatalog ? partInCatalog.name.toUpperCase().trim() : '';
+
+    // Remove all existing matching entries
+    const newInventory = inventory.filter(item => {
+      const itemPartId = item.partId.toUpperCase().trim();
+      const matchesPart = itemPartId === cleanIdUpper || (targetNameUpper && itemPartId === targetNameUpper);
+      return !(matchesPart && item.stageId === stageId && item.location === location);
+    });
+
+    // Add back the new quantity if > 0
+    if (newQuantity > 0) {
+      newInventory.push({
+        partId: partInCatalog ? partInCatalog.id : cleanIdUpper,
+        stageId,
+        location,
+        quantity: newQuantity
+      });
+    }
+
+    this.saveInventory(newInventory);
+  },
+
   updateInventory(partId: string, stageId: StageId, location: 'IN' | 'OUT' | 'DEFECT', delta: number, originalPartId?: string) {
     const inventory = this.getInventory();
     const parts = this.getParts();
