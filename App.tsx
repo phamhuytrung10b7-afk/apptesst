@@ -9744,6 +9744,7 @@ function DefectModal({ data, onClose, onDefectRecorded, inventory }: { data: any
   const [reasonId, setReasonId] = useState(DEFECT_REASONS[0].id);
   const [note, setNote] = useState("");
   const [selectedPartId, setSelectedPartId] = useState(data.partId || "");
+  const [errorMsg, setErrorMsg] = useState("");
 
   const allParts = storageService.getParts();
   
@@ -9765,11 +9766,11 @@ function DefectModal({ data, onClose, onDefectRecorded, inventory }: { data: any
     e.preventDefault();
     const finalPartId = selectedPartId || data.partId;
     if (!finalPartId) {
-      alert('Vui lòng chọn mã linh kiện');
+      setErrorMsg('Vui lòng chọn mã linh kiện');
       return;
     }
     if (qty <= 0) {
-      alert('Vui lòng nhập số lượng lỗi hợp lệ');
+      setErrorMsg('Vui lòng nhập số lượng lỗi hợp lệ');
       return;
     }
     try {
@@ -9779,7 +9780,7 @@ function DefectModal({ data, onClose, onDefectRecorded, inventory }: { data: any
       onDefectRecorded();
       onClose();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Lỗi');
+      setErrorMsg(err instanceof Error ? err.message : 'Lỗi');
     }
   };
 
@@ -9875,6 +9876,34 @@ function DefectModal({ data, onClose, onDefectRecorded, inventory }: { data: any
           </button>
         </form>
       </motion.div>
+
+      {/* Error Message Modal */}
+      <AnimatePresence>
+        {errorMsg && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl flex flex-col items-center text-center space-y-6 border-4 border-red-500/10"
+            >
+              <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center">
+                <AlertCircle size={32} />
+              </div>
+              <div>
+                <h4 className="text-xl font-bold text-gray-900 mb-2">Lỗi thao tác</h4>
+                <p className="text-gray-600 font-medium">{errorMsg}</p>
+              </div>
+              <button 
+                onClick={() => setErrorMsg("")}
+                className="w-full py-4 bg-gray-900 text-white rounded-xl font-bold uppercase tracking-widest hover:bg-gray-800 transition-colors"
+              >
+                Đóng
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

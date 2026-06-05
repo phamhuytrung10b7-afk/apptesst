@@ -1298,7 +1298,7 @@ export const storageService = {
     });
     const totalStock = matchingStocks.reduce((sum, item) => sum + item.quantity, 0);
 
-    if (totalStock < quantity) {
+    if (stageId !== 'GLAZING' && totalStock < quantity) {
       const part = this.getParts().find(p => p.id === effectiveId);
       throw new Error(`Lỗi: Số lượng báo lỗi (${quantity}) lớn hơn tổng tồn kho IN của ${part?.name || effectiveId} tại ${STAGES.find(s => s.id === stageId)?.name} (Hiện có ${totalStock})`);
     }
@@ -1316,6 +1316,11 @@ export const storageService = {
       this.updateInventory(effectiveId, stageId, 'DEFECT', toTake, stock.originalPartId);
       deductedFromOriginalId = stock.originalPartId;
       remainingToDeduct -= toTake;
+    }
+
+    if (remainingToDeduct > 0) {
+      // Bypassed check cases (e.g. GLAZING)
+      this.updateInventory(effectiveId, stageId, 'DEFECT', remainingToDeduct, deductedFromOriginalId);
     }
 
     // 3. Record transaction
