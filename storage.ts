@@ -1355,7 +1355,7 @@ export const storageService = {
     return newTransaction;
   },
 
-  recordDisposal(partId: string, stageId: StageId, quantity: number) {
+  recordDisposal(partId: string, stageId: StageId, quantity: number, reasonName?: string, categoryName?: string) {
     const cleanId = partId.startsWith('GLZ-OUT-') ? partId.trim().toUpperCase() : partId.split(' - ')[0].trim().toUpperCase();
     
     // 1. Validation
@@ -1392,7 +1392,7 @@ export const storageService = {
     const timestamp = Date.now();
     
     // QR data for disposal
-    const qrData = `DISPOSAL|${quantity}|${stageId}|${timestamp}|${txId}|DISPOSAL_ONLY`;
+    const qrData = `DISPOSAL|${quantity}|${stageId}|${timestamp}|${txId}|DISPOSAL_ONLY|${reasonName || ''}|${categoryName || ''}`;
 
     const newTransaction: Transaction = {
       id: txId,
@@ -1403,6 +1403,8 @@ export const storageService = {
       stageId,
       timestamp,
       qrData,
+      defectReason: reasonName,
+      defectCategory: categoryName,
     };
     transactions.unshift(newTransaction);
     this.saveTransactions(transactions);

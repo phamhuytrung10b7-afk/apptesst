@@ -660,6 +660,17 @@ export default function App() {
                 <span className="text-sm font-black block text-black">CẤM NHẬP KHO - CHỜ TIÊU HỦY</span>
               </div>
 
+              {/* Defect Note */}
+              {lastTransaction.defectReason && (
+                <div className="w-full border-2 border-black border-dashed rounded p-1 flex flex-col items-center justify-center text-center text-black mb-1">
+                  <span className="text-[12px] font-black uppercase mb-0.5">Lý do lỗi (NG):</span>
+                  <span className="font-black text-sm uppercase leading-tight">{lastTransaction.defectReason}</span>
+                  {lastTransaction.defectCategory && (
+                    <span className="text-[10px] font-black italic mt-0.5 max-w-full break-words line-clamp-2">Ghi chú: {lastTransaction.defectCategory}</span>
+                  )}
+                </div>
+              )}
+
               {/* Footer */}
               <div className="mt-auto w-full justify-between items-end font-mono border-t border-black pt-2 pb-1 hidden" style={{ fontSize: `${labelSettings.fontSize - 6}px` }}>
                 <div className="flex flex-col leading-tight">
@@ -1110,6 +1121,7 @@ export default function App() {
         <DefectModal 
           data={defectModal} 
           inventory={inventory}
+          setLastTransaction={setLastTransaction}
           onClose={() => setDefectModal(null)} 
           onDefectRecorded={() => {
             setSuccess('Đã ghi nhận hàng lỗi thành công!');
@@ -9739,12 +9751,13 @@ function WorkingHoursView() {
   );
 }
 
-function DefectModal({ data, onClose, onDefectRecorded, inventory }: { data: any, onClose: () => void, onDefectRecorded: () => void, inventory: InventoryItem[] }) {
+function DefectModal({ data, onClose, onDefectRecorded, inventory, setLastTransaction }: { data: any, onClose: () => void, onDefectRecorded: () => void, inventory: InventoryItem[], setLastTransaction: (tx: Transaction) => void }) {
   const [qty, setQty] = useState(0);
   const [reasonId, setReasonId] = useState(DEFECT_REASONS[0].id);
   const [note, setNote] = useState("");
   const [selectedPartId, setSelectedPartId] = useState(data.partId || "");
   const [errorMsg, setErrorMsg] = useState("");
+  const [recordedTx, setRecordedTx] = useState<Transaction | null>(null);
 
   const allParts = storageService.getParts();
   
@@ -9777,12 +9790,71 @@ function DefectModal({ data, onClose, onDefectRecorded, inventory }: { data: any
       const reasonName = DEFECT_REASONS.find(r => r.id === reasonId)?.name || reasonId;
       const targetLocation = data.location || 'IN';
       storageService.recordDefect(finalPartId, data.stageId, targetLocation, qty, reasonName, note, data.poId);
-      onDefectRecorded();
-      onClose();
+      
+      if (data.stageId === 'GLAZING') {
+        const tx = storageService.recordDisposal(finalPartId, data.stageId, qty, reasonName, note);
+        setRecordedTx(tx);
+        onDefectRecorded();
+      } else {
+        onDefectRecorded();
+        onClose();
+      }
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Lỗi');
     }
   };
+
+  const handlePrint = () => {
+    if (recordedTx) {
+      setLastTransaction(recordedTx);
+      setTimeout(() => {
+        window.print();
+      }, 200);
+    }
+  };
+
+  if (recordedTx) {
+    return (
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4 no-print">
+        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl relative text-gray-900">
+          <button onClick={onClose} className="absolute right-6 top-6 text-gray-400 hover:text-black"><X size={24} /></button>
+          <div className="text-center">
+            <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
+              <CheckCircle2 size={40} />
+            </div>
+            <h2 className="text-2xl font-bold mb-2">Báo lỗi & Xuất hủy thành công!</h2>
+            <p className="text-gray-500 mb-8">Vui lòng in mã QR dưới đây để dán lên hàng đi hủy (GLAZING).</p>
+            
+            <div className="bg-gray-50 p-6 rounded-2xl mb-8 border border-gray-100 inline-block mx-auto w-full">
+              <div className="flex justify-center mb-4">
+                <QRCodeSVG value={recordedTx.qrData || ''} size={200} level="H" />
+              </div>
+              <div className="font-mono font-bold text-sm uppercase">{recordedTx.id}</div>
+              <div className="text-[10px] text-gray-500 uppercase mt-1 tracking-widest font-bold">NHÃN ĐEM HỦY (DISPOSAL)</div>
+              {recordedTx.defectReason && (
+                <div className="mt-4 p-3 bg-red-50 text-red-700 rounded-xl border border-red-100">
+                  <span className="text-[10px] uppercase tracking-widest font-bold block mb-1">Lỗi:</span>
+                  <span className="font-black text-sm uppercase">{recordedTx.defectReason}</span>
+                  {recordedTx.defectCategory && (
+                    <div className="text-xs mt-1 italic break-words">Ghi chú: {recordedTx.defectCategory}</div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-4 line-clamp-1">
+              <button onClick={handlePrint} className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 uppercase tracking-tight">
+                IN MÃ HỦY
+              </button>
+              <button onClick={onClose} className="flex-1 bg-gray-100 text-gray-600 py-4 rounded-xl font-bold hover:bg-gray-200 uppercase tracking-tight">
+                ĐÓNG
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 text-gray-900">
@@ -9914,7 +9986,7 @@ function DisposalModal({ data, onClose, onDisposed, setLastTransaction }: { data
 
   const handleDispose = () => {
     try {
-      const tx = storageService.recordDisposal(data.partId, data.stageId, qty);
+      const tx = storageService.recordDisposal(data.partId, data.stageId, qty, data.defectReason, data.defectCategory);
       setRecordedTx(tx);
       onDisposed(tx);
     } catch (err) {
@@ -9943,10 +10015,21 @@ function DisposalModal({ data, onClose, onDisposed, setLastTransaction }: { data
             <h2 className="text-2xl font-bold mb-2">Đã xuất hủy thành công!</h2>
             <p className="text-gray-500 mb-8">Vui lòng in mã QR dưới đây để dán lên hàng đi hủy.</p>
             
-            <div className="bg-gray-50 p-6 rounded-2xl mb-8 border border-gray-100 inline-block mx-auto">
-              <QRCodeSVG value={recordedTx.qrData || ''} size={200} level="H" />
-              <div className="mt-4 font-mono font-bold text-sm uppercase">{recordedTx.id}</div>
+            <div className="bg-gray-50 p-6 rounded-2xl mb-8 border border-gray-100 inline-block mx-auto w-full">
+              <div className="flex justify-center mb-4">
+                <QRCodeSVG value={recordedTx.qrData || ''} size={200} level="H" />
+              </div>
+              <div className="font-mono font-bold text-sm uppercase">{recordedTx.id}</div>
               <div className="text-[10px] text-gray-500 uppercase mt-1 tracking-widest font-bold">NHÃN ĐEM HỦY (DISPOSAL)</div>
+              {recordedTx.defectReason && (
+                <div className="mt-4 p-3 bg-red-50 text-red-700 rounded-xl border border-red-100">
+                  <span className="text-[10px] uppercase tracking-widest font-bold block mb-1">Lỗi:</span>
+                  <span className="font-black text-sm uppercase">{recordedTx.defectReason}</span>
+                  {recordedTx.defectCategory && (
+                    <div className="text-xs mt-1 italic break-words">Ghi chú: {recordedTx.defectCategory}</div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="flex gap-4 line-clamp-1">
@@ -10043,6 +10126,7 @@ function DefectView({ parts, transactions, inventory, refreshData, setLastTransa
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredItems.map((item: any) => {
               const part = parts.find((p: any) => p.id === item.partId);
+              const lastDefectTx = combinedTxs.find((tx: any) => tx.partId === item.partId && tx.stageId === item.stageId && tx.type === 'DEFECT');
               return (
                 <div key={`${item.partId}-${item.stageId}`} className="p-6 rounded-2xl bg-gray-50 border border-gray-100 flex flex-col justify-between text-left">
                   <div>
@@ -10054,6 +10138,12 @@ function DefectView({ parts, transactions, inventory, refreshData, setLastTransa
                     </div>
                     <h3 className="font-bold text-gray-900 mb-1">{item.partId}</h3>
                     <p className="text-xs text-gray-500 uppercase truncate mb-4">{part?.name}</p>
+                    {lastDefectTx && lastDefectTx.defectReason && (
+                      <div className="mb-4 text-xs font-medium text-red-600 bg-red-50 p-2 rounded truncate break-all">
+                        Lỗi: {lastDefectTx.defectReason}
+                        {lastDefectTx.defectCategory && ` - ${lastDefectTx.defectCategory}`}
+                      </div>
+                    )}
                   </div>
                   <button 
                     onClick={() => setDisposalModal({ 
@@ -10062,7 +10152,9 @@ function DefectView({ parts, transactions, inventory, refreshData, setLastTransa
                       stageId: item.stageId,
                       stageName: STAGES.find(s => s.id === item.stageId)?.name,
                       quantity: item.quantity,
-                      unit: part?.unit
+                      unit: part?.unit,
+                      defectReason: lastDefectTx?.defectReason,
+                      defectCategory: lastDefectTx?.defectCategory
                     })}
                     className="w-full bg-red-600 text-white py-3 rounded-xl font-bold uppercase tracking-widest text-xs hover:bg-red-700 transition-all flex items-center justify-center gap-2"
                   >
