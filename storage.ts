@@ -1327,6 +1327,9 @@ export const storageService = {
     const transactions = this.getTransactions();
     const txId = `DF-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
     
+    const timestamp = Date.now();
+    const qrData = stageId === 'GLAZING' ? `DISPOSAL|${quantity}|${stageId}|${timestamp}|${txId}|DEFECT_ONLY|${reason || ''}|${category || ''}` : undefined;
+    
     const newTransaction: Transaction = {
       id: txId,
       type: 'DEFECT',
@@ -1334,10 +1337,11 @@ export const storageService = {
       originalPartId: deductedFromOriginalId,
       quantity,
       stageId,
-      timestamp: Date.now(),
+      timestamp,
       defectReason: reason,
       defectCategory: category,
-      poId: poId
+      poId: poId,
+      qrData
     };
     transactions.unshift(newTransaction);
     this.saveTransactions(transactions);

@@ -611,7 +611,7 @@ export default function App() {
       {/* Hidden Print Area */}
       <div id="print-area" className="hidden print:block">
         {lastTransaction && (
-          lastTransaction.type === 'DISPOSAL' ? (
+          (lastTransaction.type === 'DISPOSAL' || (lastTransaction.type === 'DEFECT' && lastTransaction.qrData)) ? (
             <div className="w-full h-full bg-white text-black flex flex-col items-center p-4 box-border border-4 border-black border-dashed">
               {/* NG Watermark */}
               <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none overflow-hidden">
@@ -620,7 +620,7 @@ export default function App() {
 
               {/* Top NG bar */}
               <div className="w-full bg-black text-white text-center py-1 mb-2 font-black text-xl tracking-tighter">
-                NHÃN XUẤT HỦY (DISPOSAL ONLY)
+                NHÃN XUẤT HỦY {lastTransaction.type === 'DEFECT' ? '(DEFECT)' : '(DISPOSAL ONLY)'}
               </div>
 
               {/* QR Code Section */}
@@ -2325,17 +2325,17 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
               
               <div id="qr-label-display" className={cn(
                 "w-[420px] bg-white border-4 p-6 flex flex-col items-center relative overflow-hidden",
-                selectedLabel.type === 'DISPOSAL' ? "border-black border-dashed" : "border-black"
+                (selectedLabel.type === 'DISPOSAL' || selectedLabel.type === 'DEFECT') ? "border-black border-dashed" : "border-black"
               )}>
-                {selectedLabel.type === 'DISPOSAL' && (
+                {(selectedLabel.type === 'DISPOSAL' || selectedLabel.type === 'DEFECT') && (
                   <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none rotate-45">
                     <span className="text-[100px] font-black whitespace-nowrap">HÀNG HỦY NG</span>
                   </div>
                 )}
                 
-                {selectedLabel.type === 'DISPOSAL' && (
+                {(selectedLabel.type === 'DISPOSAL' || selectedLabel.type === 'DEFECT') && (
                   <div className="w-full bg-black text-white text-center py-2 mb-6 font-black text-lg tracking-widest relative z-10">
-                    NHÃN XUẤT HỦY (DISPOSAL)
+                    NHÃN XUẤT HỦY {(selectedLabel.type === 'DEFECT' ? '(DEFECT)' : '(DISPOSAL)')}
                   </div>
                 )}
 
@@ -9789,10 +9789,9 @@ function DefectModal({ data, onClose, onDefectRecorded, inventory, setLastTransa
     try {
       const reasonName = DEFECT_REASONS.find(r => r.id === reasonId)?.name || reasonId;
       const targetLocation = data.location || 'IN';
-      storageService.recordDefect(finalPartId, data.stageId, targetLocation, qty, reasonName, note, data.poId);
+      const tx = storageService.recordDefect(finalPartId, data.stageId, targetLocation, qty, reasonName, note, data.poId);
       
       if (data.stageId === 'GLAZING') {
-        const tx = storageService.recordDisposal(finalPartId, data.stageId, qty, reasonName, note);
         setRecordedTx(tx);
         onDefectRecorded();
       } else {
@@ -9822,15 +9821,15 @@ function DefectModal({ data, onClose, onDefectRecorded, inventory, setLastTransa
             <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
               <CheckCircle2 size={40} />
             </div>
-            <h2 className="text-2xl font-bold mb-2">Báo lỗi & Xuất hủy thành công!</h2>
-            <p className="text-gray-500 mb-8">Vui lòng in mã QR dưới đây để dán lên hàng đi hủy (GLAZING).</p>
+            <h2 className="text-2xl font-bold mb-2">Báo lỗi thành công!</h2>
+            <p className="text-gray-500 mb-8">Vui lòng in mã QR dưới đây để dán lên hàng lỗi (GLAZING).</p>
             
             <div className="bg-gray-50 p-6 rounded-2xl mb-8 border border-gray-100 inline-block mx-auto w-full">
               <div className="flex justify-center mb-4">
                 <QRCodeSVG value={recordedTx.qrData || ''} size={200} level="H" />
               </div>
               <div className="font-mono font-bold text-sm uppercase">{recordedTx.id}</div>
-              <div className="text-[10px] text-gray-500 uppercase mt-1 tracking-widest font-bold">NHÃN ĐEM HỦY (DISPOSAL)</div>
+              <div className="text-[10px] text-gray-500 uppercase mt-1 tracking-widest font-bold">NHÃN LỖI (DEFECT)</div>
               {recordedTx.defectReason && (
                 <div className="mt-4 p-3 bg-red-50 text-red-700 rounded-xl border border-red-100">
                   <span className="text-[10px] uppercase tracking-widest font-bold block mb-1">Lỗi:</span>
