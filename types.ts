@@ -170,6 +170,8 @@ export const STAGES: { id: StageId; name: string; nextStageId?: StageId }[] = [
 ];
 
 export const DEFECT_REASONS = [
+  { id: 'OPERATOR', name: 'Lỗi thao tác' },
+  { id: 'SUPPLIER', name: 'Lỗi NCC' },
   { id: 'SCRATCH', name: 'Trầy xước / Móp méo' },
   { id: 'DIMENSION', name: 'Sai kích thước / Bản vẽ' },
   { id: 'WELD_FAIL', name: 'Mối hàn lỗi / Thủng' },

@@ -1191,7 +1191,6 @@ function ProductionOrderView({ parts, onUpdate, productionOrders }: { parts: Par
   const [showDeleteModal, setShowDeleteModal] = useState<string | null>(null);
   const [showEditModal, setShowEditModal] = useState<{ id: string, qty: number } | null>(null);
   const [showEditTimeModal, setShowEditTimeModal] = useState<{ id: string, timeStr: string } | null>(null);
-  const [showEditInventoryModal, setShowEditInventoryModal] = useState<{ partId: string, quantity: number, stageId: any, location: any } | null>(null);
   const [password, setPassword] = useState("");
   const [expandedMasterPos, setExpandedMasterPos] = useState<Set<string>>(new Set());
   const [expandedModels, setExpandedModels] = useState<Set<string>>(new Set());
@@ -1244,20 +1243,6 @@ function ProductionOrderView({ parts, onUpdate, productionOrders }: { parts: Par
         storageService.updateSubPoTime(showEditTimeModal.id, new Date(showEditTimeModal.timeStr).getTime());
         onUpdate();
         setShowEditTimeModal(null);
-        setPassword("");
-      }
-    } else {
-      alert('Mật khẩu không chính xác!');
-    }
-  };
-
-  const handleEditInventory = () => {
-    if (password === 'admin123') {
-      if (showEditInventoryModal) {
-        const { partId, stageId, location, quantity } = showEditInventoryModal;
-        storageService.setAbsoluteInventory(partId, stageId, location, quantity);
-        onUpdate();
-        setShowEditInventoryModal(null);
         setPassword("");
       }
     } else {
@@ -1832,64 +1817,6 @@ function ProductionOrderView({ parts, onUpdate, productionOrders }: { parts: Par
                   className="flex-1 py-4 bg-red-600 text-white rounded-lg font-bold text-sm uppercase hover:bg-red-700 transition-all shadow-lg shadow-red-200"
                 >
                   Xác nhận xóa
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Edit Inventory Modal */}
-      <AnimatePresence>
-        {showEditInventoryModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl space-y-6"
-            >
-              <div className="flex items-center gap-4 text-blue-600">
-                <Edit2 size={32} />
-                <h3 className="text-xl font-bold">Chỉnh sửa Tồn Kho</h3>
-              </div>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase opacity-50">Số lượng tồn kho (Đặt 0 để xóa)</label>
-                  <input 
-                    type="number"
-                    min="0"
-                    value={showEditInventoryModal.quantity}
-                    onChange={e => setShowEditInventoryModal({...showEditInventoryModal, quantity: parseInt(e.target.value) || 0})}
-                    className="w-full p-4 rounded-lg border border-gray-200 focus:border-blue-500 outline-none text-lg font-bold"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase opacity-50">Mật khẩu xác nhận (Admin)</label>
-                  <input 
-                    type="password"
-                    autoComplete="off"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    className="w-full p-4 rounded-lg border border-gray-200 focus:border-blue-500 outline-none text-lg"
-                    placeholder="Nhập mật khẩu..."
-                    onKeyDown={(e) => e.key === 'Enter' && handleEditInventory()}
-                  />
-                </div>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button 
-                  onClick={() => { setShowEditInventoryModal(null); setPassword(''); }}
-                  className="flex-1 py-4 bg-gray-100 rounded-lg font-bold text-sm uppercase hover:bg-gray-200 transition-all"
-                >
-                  Hủy
-                </button>
-                <button 
-                  onClick={handleEditInventory}
-                  disabled={showEditInventoryModal.quantity < 0 || !password}
-                  className="flex-1 py-4 bg-blue-600 text-white rounded-lg font-bold text-sm uppercase hover:bg-blue-700 transition-all shadow-lg disabled:opacity-50"
-                >
-                  Cập nhật
                 </button>
               </div>
             </motion.div>
@@ -6093,7 +6020,7 @@ function ManualInboundView({ parts, onManualInbound, setDefectModal, productionO
   );
 }
 
-function GlazingComponentPrintCard({ norm, plan, idx, onPrint, onRecordProduction }: any) {
+function GlazingComponentPrintCard({ norm, plan, idx, onPrint, onRecordProduction, onReportDefect }: any) {
   const produced = (plan.producedQuantities || {})[norm.id] || 0;
   const printed = (plan.printedQuantities || {})[norm.id] || 0;
   const total = plan.targetQuantity;
@@ -6123,8 +6050,17 @@ function GlazingComponentPrintCard({ norm, plan, idx, onPrint, onRecordProductio
           <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest">{norm.id}</span>
           <h5 className="font-black text-gray-900 leading-tight text-lg">{norm.partName}</h5>
         </div>
-        <div className="bg-blue-50 px-3 py-1 rounded-full text-[10px] font-black text-blue-600 uppercase">
-          Norm: {norm.norm}
+        <div className="flex flex-col items-end gap-2">
+          <div className="bg-blue-50 px-3 py-1 rounded-full text-[10px] font-black text-blue-600 uppercase">
+            Norm: {norm.norm}
+          </div>
+          <button
+            type="button"
+            onClick={() => onReportDefect && onReportDefect()}
+            className="text-[10px] font-black text-red-500 hover:text-red-700 bg-red-50 px-2 py-1 border border-red-100 flex items-center gap-1 transition-all rounded-lg shadow-sm"
+          >
+            <AlertCircle size={12} /> BÁO LỖI
+          </button>
         </div>
       </div>
 
@@ -6265,10 +6201,26 @@ function GlazingComponentPrintCard({ norm, plan, idx, onPrint, onRecordProductio
 function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDefectModal, refreshData, labels, onPrint, aggregatedGlazingOut }: any) {
   const inventory = globalInventory || [];
   const [activeTab, setActiveTab] = useState<'INVENTORY' | 'INBOUND' | 'OUTBOUND' | 'QUICK_PRINT' | 'PLANNING' | 'CONFIG'>('INVENTORY');
+  const [showEditInventoryModal, setShowEditInventoryModal] = useState<{ partId: string, quantity: number, stageId: any, location: any } | null>(null);
+  const [editPassword, setEditPassword] = useState("");
   const [configs, setConfigs] = useState<import('./types').GlazingConfig[]>([]);
   const [outConfigs, setOutConfigs] = useState<import('./types').GlazingOutConfig[]>([]);
   const [quickPrintParts, setQuickPrintParts] = useState<{id: string, name: string, quantity: number}[]>(() => storageService.getQuickPrintParts());
   
+  const handleEditInventory = () => {
+    if (editPassword === 'admin123') {
+      if (showEditInventoryModal) {
+        const { partId, stageId, location, quantity } = showEditInventoryModal;
+        storageService.setAbsoluteInventory(partId, stageId, location, quantity);
+        refreshData();
+        setShowEditInventoryModal(null);
+        setEditPassword("");
+      }
+    } else {
+      alert('Mật khẩu không chính xác!');
+    }
+  };
+
   // Planning state
   const [selectedModel, setSelectedModel] = useState("");
   const [planQuantity, setPlanQuantity] = useState(0);
@@ -7170,6 +7122,7 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                           onPrint(labelTx);
                           refreshData();
                         }}
+                        onReportDefect={() => setDefectModal({ partId: norm.id, stageId: 'GLAZING', location: 'IN', poId: plan.id })}
                       />
                     );
                   })}
@@ -7568,56 +7521,68 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                   </div>
                 )}
               </div>
-
-              {pendingGlazingLabels.length > 0 && (
-                <div className="mt-12 bg-white rounded-3xl border-4 border-[#F27D26] shadow-2xl overflow-hidden">
-                  <div className="bg-[#F27D26] p-6 flex justify-between items-center">
-                    <div>
-                      <h3 className="text-white font-black text-2xl tracking-tighter uppercase italic flex items-center gap-3">
-                        <Printer size={28} />
-                        DANH SÁCH CHỜ IN NHÃN QR XUẤT KHO
-                      </h3>
-                    </div>
-                    <div className="bg-white/20 px-4 py-2 rounded-full text-white font-black">
-                      {pendingGlazingLabels.length} Nhãn
-                    </div>
-                  </div>
-                  <div className="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 bg-orange-50/30">
-                    {pendingGlazingLabels.map((l: any) => {
-                      const isPseudo = l.partId.startsWith('GLZ-OUT-');
-                      const displayName = isPseudo ? l.partId.replace('GLZ-OUT-', '') : (parts.find((p: any) => p.id === l.partId)?.name || l.partId);
-                      
-                      return (
-                        <div key={l.id} className="bg-white p-6 rounded-2xl shadow-lg border-2 border-orange-200 hover:border-orange-500 transition-all group relative overflow-hidden">
-                          <div className="flex flex-col gap-4">
-                            <div>
-                              <div className="text-[10px] uppercase font-black tracking-widest text-[#F27D26] mb-1">Mã: {l.partId}</div>
-                              <div className="font-bold text-gray-900 leading-tight h-10 line-clamp-2">{displayName}</div>
-                            </div>
-                            <div className="flex items-end justify-between border-t border-orange-100 pt-4">
-                              <div>
-                                <div className="text-[10px] uppercase font-bold text-gray-400">Số lượng:</div>
-                                <div className="text-3xl font-black text-[#F27D26]">{l.quantity}</div>
-                              </div>
-                              <button 
-                                onClick={() => onPrint({ ...l, partName: displayName })}
-                                className="bg-[#F27D26] text-white p-4 rounded-xl shadow-lg hover:shadow-orange-200 hover:scale-110 active:scale-95 transition-all flex items-center gap-2"
-                              >
-                                <Printer size={20} />
-                                <span className="font-black uppercase tracking-tighter">IN NHÃN QC</span>
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         )}
       </div>
+
+      {/* Edit Inventory Modal */}
+      <AnimatePresence>
+        {showEditInventoryModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl space-y-6"
+            >
+              <div className="flex items-center gap-4 text-blue-600">
+                <Edit2 size={32} />
+                <h3 className="text-xl font-bold">Chỉnh sửa Tồn Kho</h3>
+              </div>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase opacity-50">Số lượng tồn kho (Đặt 0 để xóa)</label>
+                  <input 
+                    type="number"
+                    min="0"
+                    value={showEditInventoryModal.quantity}
+                    onChange={e => setShowEditInventoryModal({...showEditInventoryModal, quantity: parseInt(e.target.value) || 0})}
+                    className="w-full p-4 rounded-lg border border-gray-200 focus:border-blue-500 outline-none text-lg font-bold"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase opacity-50">Mật khẩu xác nhận (Admin)</label>
+                  <input 
+                    type="password"
+                    autoComplete="off"
+                    value={editPassword}
+                    onChange={e => setEditPassword(e.target.value)}
+                    className="w-full p-4 rounded-lg border border-gray-200 focus:border-blue-500 outline-none text-lg"
+                    placeholder="Nhập mật khẩu..."
+                    onKeyDown={(e) => e.key === 'Enter' && handleEditInventory()}
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button 
+                  onClick={() => { setShowEditInventoryModal(null); setEditPassword(''); }}
+                  className="flex-1 py-4 bg-gray-100 rounded-lg font-bold text-sm uppercase hover:bg-gray-200 transition-all"
+                >
+                  Hủy
+                </button>
+                <button 
+                  onClick={handleEditInventory}
+                  disabled={showEditInventoryModal.quantity < 0 || !editPassword}
+                  className="flex-1 py-4 bg-blue-600 text-white rounded-lg font-bold text-sm uppercase hover:bg-blue-700 transition-all shadow-lg disabled:opacity-50"
+                >
+                  Cập nhật
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
