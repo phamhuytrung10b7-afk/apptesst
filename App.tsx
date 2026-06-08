@@ -3294,6 +3294,7 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
   const footerPeople: any[] = ['Tổng số người', '', ''];
   const footerCapacity: any[] = ['Năng lực sản xuất dây chuyền (8h)', '', ''];
   const footerRatio: any[] = ['KHSX / NLSX', '', ''];
+  const footerDailyProductivity: any[] = ['Năng suất lao động ngày', '', ''];
 
   let grandKHSX_un = 0;
   let grandTH_un = 0;
@@ -3322,6 +3323,7 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
       footerPeople.push(people, people);
       footerCapacity.push(capacity, capacity);
       footerRatio.push(dayKHSX_conv > 0 ? (capacity > 0 ? Math.round((dayKHSX_conv / capacity)*100) + '%' : '0%') : '0%', ''); 
+      footerDailyProductivity.push('', capacity > 0 && dayTH_conv > 0 ? Math.round((dayTH_conv / capacity)*100) + '%' : '');
       
       grandKHSX_un += dayKHSX_un;
       grandTH_un += dayTH_un;
@@ -3343,9 +3345,10 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
   footerPeople.push('Năng suất Tuần', '', '');
   footerCapacity.push('Kế hoạch', 'Thực hiện', '% thực hiện');
   footerRatio.push(64, Math.round(thucHienAvg), Math.round(phanTramAvg) + '%'); 
+  footerDailyProductivity.push('', '', '');
 
 
-  lrSheetData.push(footerUnconverted, footerConverted, footerPeople, footerCapacity, footerRatio);
+  lrSheetData.push(footerUnconverted, footerConverted, footerPeople, footerCapacity, footerRatio, footerDailyProductivity);
 
   const wsLR = XLSX.utils.aoa_to_sheet(lrSheetData);
 
@@ -3364,8 +3367,8 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
     { s: {r:0, c: 3 + numDays*2 + 2}, e: {r:1, c: 3 + numDays*2 + 2} }  
   );
   
-  const footerStartR = lrSheetData.length - 5;
-  for (let i = 0; i < 5; i++) {
+  const footerStartR = lrSheetData.length - 6;
+  for (let i = 0; i < 6; i++) {
      mergesLR.push({ s: {r:footerStartR + i, c:0}, e: {r:footerStartR + i, c:2} });
   }
 
@@ -3393,7 +3396,7 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
          wsLR[cellAddress].s = {
             ...dataStyle,
             font: { bold: true, sz: 11 },
-            fill: { fgColor: { rgb: R === footerStartR ? "E2E8F0" : R === footerStartR + 1 ? "FED7AA" : R === footerStartR + 4 ? "F3F4F6" : "FEF3C7" } }
+            fill: { fgColor: { rgb: R === footerStartR ? "E2E8F0" : R === footerStartR + 1 ? "FED7AA" : R === footerStartR + 4 ? "F3F4F6" : R === footerStartR + 5 ? "FFFF00" : "FEF3C7" } }
          };
          if (C > 2) wsLR[cellAddress].s.alignment = { horizontal: "center", vertical: "center" };
       } else {
