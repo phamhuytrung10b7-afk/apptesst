@@ -24,6 +24,14 @@ const STORAGE_KEYS = {
   QUICK_PRINT_PARTS: 'wip_quick_print_parts',
   GLAZING_PLAN_NORMS: 'wip_glazing_plan_norms',
   GLAZING_PLANS: 'wip_glazing_plans',
+  PEOPLE_PER_DAY: 'wip_people_per_day',
+  MANDAYS_PER_DAY: 'wip_mandays_per_day',
+  EXPORT_WEEK_NAME: 'wip_export_week_name',
+  HOURLY_PEOPLE_PAINTING: 'wip_hourly_people_painting',
+  HOURLY_PEOPLE_GLAZING: 'wip_hourly_people_glazing',
+  HOURLY_PEOPLE_BENDING: 'wip_hourly_people_bending',
+  HOURLY_PEOPLE_WELDING: 'wip_hourly_people_welding',
+  BENDING_WELDING_HSQD: 'wip_bending_welding_hsqd',
 };
 
 // In-memory cache to reduce localStorage hits
@@ -55,17 +63,17 @@ export const storageService = {
   getLabelSettings() {
     return getCached(STORAGE_KEYS.LABEL_SETTINGS, () => {
       const data = localStorage.getItem(STORAGE_KEYS.LABEL_SETTINGS);
-      // Force migration to A7 for existing users who still have the old 100x50 default
+      // Force migration to standard A7 (75x100mm) for existing users
       if (data) {
          let parsed = JSON.parse(data);
-         if (parsed.width === 100 && parsed.height === 50) {
-            parsed = { width: 74, height: 105, fontSize: 18, qrSize: 220 };
+         if (parsed.width === 100 || parsed.width === 74 || parsed.height === 50 || parsed.height === 105 || parsed.qrSize > 180) {
+            parsed = { width: 75, height: 100, fontSize: 12, qrSize: 160 };
             localStorage.setItem(STORAGE_KEYS.LABEL_SETTINGS, JSON.stringify(parsed));
             return parsed;
          }
          return parsed;
       }
-      return { width: 74, height: 105, fontSize: 18, qrSize: 220 };
+      return { width: 75, height: 100, fontSize: 12, qrSize: 160 };
     });
   },
 
@@ -273,6 +281,101 @@ export const storageService = {
     cache[STORAGE_KEYS.GLAZING_PLANS] = plans;
   },
 
+  getPeoplePerDay(): Record<string, number> {
+    return getCached(STORAGE_KEYS.PEOPLE_PER_DAY, () => {
+      const data = localStorage.getItem(STORAGE_KEYS.PEOPLE_PER_DAY);
+      return data ? JSON.parse(data) : {};
+    });
+  },
+
+  savePeoplePerDay(record: Record<string, number>) {
+    localStorage.setItem(STORAGE_KEYS.PEOPLE_PER_DAY, JSON.stringify(record));
+    cache[STORAGE_KEYS.PEOPLE_PER_DAY] = record;
+  },
+
+  getMandaysPerDay(): Record<string, number> {
+    return getCached(STORAGE_KEYS.MANDAYS_PER_DAY, () => {
+      const data = localStorage.getItem(STORAGE_KEYS.MANDAYS_PER_DAY);
+      return data ? JSON.parse(data) : {};
+    });
+  },
+
+  saveMandaysPerDay(record: Record<string, number>) {
+    localStorage.setItem(STORAGE_KEYS.MANDAYS_PER_DAY, JSON.stringify(record));
+    cache[STORAGE_KEYS.MANDAYS_PER_DAY] = record;
+  },
+
+  getExportWeekName(): string {
+    return getCached(STORAGE_KEYS.EXPORT_WEEK_NAME, () => {
+      return localStorage.getItem(STORAGE_KEYS.EXPORT_WEEK_NAME) || "";
+    });
+  },
+
+  saveExportWeekName(weekName: string) {
+    localStorage.setItem(STORAGE_KEYS.EXPORT_WEEK_NAME, weekName);
+    cache[STORAGE_KEYS.EXPORT_WEEK_NAME] = weekName;
+  },
+
+  getHourlyPeoplePainting(): Record<string, number> {
+    return getCached(STORAGE_KEYS.HOURLY_PEOPLE_PAINTING, () => {
+      const data = localStorage.getItem(STORAGE_KEYS.HOURLY_PEOPLE_PAINTING);
+      return data ? JSON.parse(data) : {};
+    });
+  },
+
+  saveHourlyPeoplePainting(record: Record<string, number>) {
+    localStorage.setItem(STORAGE_KEYS.HOURLY_PEOPLE_PAINTING, JSON.stringify(record));
+    cache[STORAGE_KEYS.HOURLY_PEOPLE_PAINTING] = record;
+  },
+
+  getHourlyPeopleGlazing(): Record<string, number> {
+    return getCached(STORAGE_KEYS.HOURLY_PEOPLE_GLAZING, () => {
+      const data = localStorage.getItem(STORAGE_KEYS.HOURLY_PEOPLE_GLAZING);
+      return data ? JSON.parse(data) : {};
+    });
+  },
+
+  saveHourlyPeopleGlazing(record: Record<string, number>) {
+    localStorage.setItem(STORAGE_KEYS.HOURLY_PEOPLE_GLAZING, JSON.stringify(record));
+    cache[STORAGE_KEYS.HOURLY_PEOPLE_GLAZING] = record;
+  },
+
+  getHourlyPeopleBending(): Record<string, number> {
+    return getCached(STORAGE_KEYS.HOURLY_PEOPLE_BENDING, () => {
+      const data = localStorage.getItem(STORAGE_KEYS.HOURLY_PEOPLE_BENDING);
+      return data ? JSON.parse(data) : {};
+    });
+  },
+
+  saveHourlyPeopleBending(record: Record<string, number>) {
+    localStorage.setItem(STORAGE_KEYS.HOURLY_PEOPLE_BENDING, JSON.stringify(record));
+    cache[STORAGE_KEYS.HOURLY_PEOPLE_BENDING] = record;
+  },
+
+  getHourlyPeopleWelding(): Record<string, number> {
+    return getCached(STORAGE_KEYS.HOURLY_PEOPLE_WELDING, () => {
+      const data = localStorage.getItem(STORAGE_KEYS.HOURLY_PEOPLE_WELDING);
+      return data ? JSON.parse(data) : {};
+    });
+  },
+
+  saveHourlyPeopleWelding(record: Record<string, number>) {
+    localStorage.setItem(STORAGE_KEYS.HOURLY_PEOPLE_WELDING, JSON.stringify(record));
+    cache[STORAGE_KEYS.HOURLY_PEOPLE_WELDING] = record;
+  },
+
+  getBendingWeldingHSQD(): { partId: string; hsqd: number }[] {
+    return getCached(STORAGE_KEYS.BENDING_WELDING_HSQD, () => {
+      const data = localStorage.getItem(STORAGE_KEYS.BENDING_WELDING_HSQD);
+      return data ? JSON.parse(data) : [];
+    });
+  },
+
+  saveBendingWeldingHSQD(data: { partId: string; hsqd: number }[]) {
+    localStorage.setItem(STORAGE_KEYS.BENDING_WELDING_HSQD, JSON.stringify(data));
+    cache[STORAGE_KEYS.BENDING_WELDING_HSQD] = data;
+  },
+
   createGlazingPlan(modelId: string, quantity: number, targetCompletion: number) {
     const plans = this.getGlazingPlans();
     const schedule = this.getGlazingSchedule(modelId, quantity, targetCompletion);
@@ -302,29 +405,24 @@ export const storageService = {
       ? norms.reduce((sum, n) => sum + (n.norm * quantity * 1000) / workerCount, 0)
       : (quantity * 300 * 1000) / workerCount; // Default 5 min per unit if no norms
 
-    const existingPlans = this.getGlazingPlans().filter(p => p.status !== 'COMPLETED' && p.expectedCompletionTime);
-    const maxExistingEnd = existingPlans.length > 0 ? Math.max(...existingPlans.map(p => p.expectedCompletionTime!)) : Date.now();
-
     const runForward = (baseStartTime: number) => {
-      const actualStart = this.getNextWorkingTime(Math.max(baseStartTime, maxExistingEnd), 'GLAZING', shiftConfigs);
+      const actualStart = this.getNextWorkingTime(baseStartTime, 'GLAZING', shiftConfigs);
       const end = this.calculateEndTime(actualStart, totalDurationMs, 'GLAZING', shiftConfigs);
       return { start: actualStart, end };
     };
 
-    let low = Date.now();
-    let high = targetCompletion > low ? targetCompletion : low;
+    let low = targetCompletion - 60 * 24 * 60 * 60 * 1000;
+    let high = targetCompletion;
     let best = runForward(low);
 
-    if (high > low) {
-      for (let i = 0; i < 20; i++) {
-        const mid = Math.floor((low + high) / 2);
-        const res = runForward(mid);
-        if (res.end <= targetCompletion) {
-          best = res;
-          low = mid + 1;
-        } else {
-          high = mid - 1;
-        }
+    for (let i = 0; i < 60; i++) {
+      const mid = low + Math.floor((high - low) / 2);
+      const res = runForward(mid);
+      if (res.end <= targetCompletion) {
+        best = res;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
       }
     }
     return best;
@@ -1813,18 +1911,6 @@ export const storageService = {
 
     const laserNesting = this.getLaserNesting();
 
-    const existingPOs = pos.filter(p => ['PENDING', 'IN_PROGRESS'].includes(p.status) && p.expectedCompletionTime);
-    const getMaxExisting = (stageId: StageId) => {
-      const stagePOs = existingPOs.filter(p => p.stageId === stageId && p.expectedCompletionTime);
-      if (stagePOs.length === 0) return 0;
-      return Math.max(...stagePOs.map(p => p.expectedCompletionTime!));
-    };
-
-    const maxExistingLaserEnd = getMaxExisting('LASER');
-    const maxExistingBendingEnd = getMaxExisting('BENDING');
-    const maxExistingWeldingEnd = getMaxExisting('WELDING');
-    const maxExistingPaintingEnd = getMaxExisting('PAINTING');
-
     const runForwardPass = (globalStart: number) => {
       const outChildPOs: ProductionOrder[] = [];
       const partStageFinishTime = new Map<string, Map<StageId, number>>(); 
@@ -1841,7 +1927,7 @@ export const storageService = {
       };
 
       // 1. LASER
-      let fFreeLaser = Math.max(globalStart, maxExistingLaserEnd);
+      let fFreeLaser = globalStart;
       const laserConfig = shiftConfigs.find(c => c.stageId === 'LASER');
       
       if (laserNesting.length > 0) {
@@ -1934,7 +2020,7 @@ export const storageService = {
       }
 
       // 2. BENDING
-      let fFreeBending = Math.max(globalStart, maxExistingBendingEnd);
+      let fFreeBending = globalStart;
       const bendConfig = shiftConfigs.find(c => c.stageId === 'BENDING');
       bendingPOs.forEach(po => {
         const p = {...po};
@@ -1955,7 +2041,7 @@ export const storageService = {
       });
 
       // 3. WELDING
-      let fFreeWelding = Math.max(globalStart, maxExistingWeldingEnd);
+      let fFreeWelding = globalStart;
       const weldConfig = shiftConfigs.find(c => c.stageId === 'WELDING');
       weldingPOs.forEach(po => {
         const p = {...po};
@@ -1988,7 +2074,7 @@ export const storageService = {
       });
 
       // 4. PAINTING
-      let fFreePainting = Math.max(globalStart, maxExistingPaintingEnd);
+      let fFreePainting = globalStart;
       const paintConfig = shiftConfigs.find(c => c.stageId === 'PAINTING');
       paintingPOs.forEach(po => {
         const p = {...po};
@@ -2025,18 +2111,18 @@ export const storageService = {
 
     // Backward scheduling logic: find the latest globalStart that meets the target date
     // while respecting the machine queuing (maxExisting...End)
-    let low = timestamp;
-    let high = targetCompletionTime && targetCompletionTime > timestamp ? targetCompletionTime : timestamp;
+    let low = targetCompletionTime ? targetCompletionTime - 60 * 24 * 60 * 60 * 1000 : timestamp;
+    let high = targetCompletionTime ? targetCompletionTime : timestamp;
     let bestChildPOs: ProductionOrder[] = [];
     let bestStart = low;
     let bestEnd = low;
 
-    if (high > low) {
+    if (targetCompletionTime) {
         // Binary search for the latest start time that finishes by the deadline
-        for (let i = 0; i < 30; i++) {
+        for (let i = 0; i < 60; i++) {
             const mid = low + Math.floor((high - low) / 2);
             const { outChildPOs, maxEnd, minStart } = runForwardPass(mid);
-            if (maxEnd <= targetCompletionTime!) {
+            if (maxEnd <= targetCompletionTime) {
                 bestChildPOs = outChildPOs;
                 bestStart = minStart;
                 bestEnd = maxEnd;

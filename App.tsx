@@ -63,10 +63,116 @@ import { twMerge } from 'tailwind-merge';
 
 import { STAGES, INITIAL_PARTS, StageId, Part, InventoryItem, Transaction, BOMDefinition, BOMDefinitionV2, ProductionOrder, ModelBOMDefinition, ProductivityNorm, LaserNesting, ShiftConfig, PartTransformation, DEFECT_REASONS } from './types';
 import { storageService } from './storage';
+import { exportPreparationReport } from './exportPreparationReport';
 
 // Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+function formatInventoryAge(timestamp: number): { text: string; colorClass: string } {
+  const diffMs = Date.now() - timestamp;
+  const hours = diffMs / (1000 * 60 * 60);
+  const days = Math.floor(hours / 24);
+  
+  let colorClass = "text-gray-500";
+  if (days >= 30) {
+    colorClass = "text-red-600";
+  } else if (days >= 14) {
+    colorClass = "text-yellow-600";
+  }
+
+  if (hours < 72) {
+    return { text: `Tồn ${Math.floor(hours)} giờ`, colorClass };
+  } else if (days > 35) {
+    return { text: `Tồn > 35 ngày`, colorClass };
+  } else {
+    return { text: `Tồn ${days} ngày`, colorClass };
+  }
+}
+
+export interface AgeBatch {
+  quantity: number;
+  timestamp: number;
+  ageInfo: { text: string; colorClass: string };
+}
+
+function getInventoryBatches(
+  item: InventoryItem,
+  transactions: Transaction[]
+): AgeBatch[] {
+  const targetQty = item.quantity;
+
+  if (targetQty <= 0) return [];
+
+  const additions = transactions.filter(t => {
+    if (t.partId !== item.partId) return false;
+    if (t.originalPartId !== item.originalPartId) return false;
+    if (t.stageId !== item.stageId) return false;
+    
+    const tLoc = t.location || 'IN'; // Fallback for older transactions
+
+    if (item.location === 'IN') {
+      return t.type === 'STAGE_IN' && tLoc === 'IN';
+    } else if (item.location === 'OUT') {
+      return (t.type === 'STAGE_OUT' && tLoc === 'IN') || (t.type === 'STAGE_IN' && tLoc === 'OUT');
+    } else if (item.location === 'DEFECT' || item.location === 'NG' as any) {
+      return t.type === 'DEFECT';
+    }
+    return false;
+  }).sort((a, b) => b.timestamp - a.timestamp);
+
+  if (additions.length === 0) {
+    const anyTx = transactions
+      .filter(t => t.partId === item.partId && t.originalPartId === item.originalPartId)
+      .sort((a, b) => a.timestamp - b.timestamp)[0];
+    const ts = anyTx ? anyTx.timestamp : Date.now();
+    return [{
+      quantity: targetQty,
+      timestamp: ts,
+      ageInfo: formatInventoryAge(ts)
+    }];
+  }
+
+  let accumulated = 0;
+  const batches: AgeBatch[] = [];
+
+  for (const add of additions) {
+    const remaining = targetQty - accumulated;
+    if (remaining <= 0) break;
+    const qtyToTake = Math.min(add.quantity, remaining);
+    batches.push({
+      quantity: qtyToTake,
+      timestamp: add.timestamp,
+      ageInfo: formatInventoryAge(add.timestamp)
+    });
+    accumulated += qtyToTake;
+  }
+  
+  if (accumulated < targetQty) {
+    const lastTx = additions[additions.length - 1];
+    batches.push({
+      quantity: targetQty - accumulated,
+      timestamp: lastTx.timestamp,
+      ageInfo: formatInventoryAge(lastTx.timestamp)
+    });
+  }
+
+  const groupedBatches: AgeBatch[] = [];
+  for (const b of batches) {
+    if (b.ageInfo.text === 'Tồn > 35 ngày') {
+      const existing = groupedBatches.find(x => x.ageInfo.text === 'Tồn > 35 ngày');
+      if (existing) {
+        existing.quantity += b.quantity;
+      } else {
+        groupedBatches.push(b);
+      }
+    } else {
+      groupedBatches.push(b);
+    }
+  }
+
+  return groupedBatches;
 }
 
 function getProcessValue(value: string | undefined, part: Part | undefined, stageId: StageId, location: 'IN' | 'OUT') {
@@ -342,6 +448,185 @@ const getGlazingHSQD = (pId: string, dclrNormsMap: Map<string, number>, dclrNorm
   return 0;
 };
 
+function A7QRLabelCard({ 
+  label, 
+  parts, 
+  labelSettings, 
+  isPrintArea = false 
+}: { 
+  label: Transaction; 
+  parts: Part[]; 
+  labelSettings: any; 
+  isPrintArea?: boolean; 
+}) {
+  if (!label) return null;
+
+  const part = parts.find(p => p.id === label.partId);
+  const isDisposal = label.type === 'DISPOSAL' || label.type === 'DEFECT';
+
+  const partNameDisplay = isDisposal 
+    ? (label.partName || part?.name || label.partId)
+    : getProcessValue(label.partName || part?.name, part, label.stageId, 'OUT');
+
+  const partIdDisplay = isDisposal 
+    ? label.partId 
+    : getProcessValue(label.partId, part, label.stageId, 'OUT');
+
+  const sourceStageName = STAGES.find(s => s.id === label.stageId)?.name || label.stageId;
+  const rawTargetStage = label.targetStageId || label.qrData?.split('|')?.[5];
+  const targetStageName = STAGES.find(s => s.id === rawTargetStage)?.name || 
+    (rawTargetStage === 'DCLR' ? 'Lắp ráp (DCLR)' : 'HOÀN THÀNH');
+
+  const po = storageService.getProductionOrders().find(p => p.id === label.poId);
+  const masterId = po?.masterPoId || label.qrData?.split('|')?.[7];
+
+  const qrSize = isPrintArea ? (labelSettings?.qrSize || 160) : 160;
+
+  return (
+    <div 
+      id={isPrintArea ? undefined : "qr-label-display"}
+      className={cn(
+        isPrintArea 
+          ? "w-full h-full bg-white text-black flex flex-col items-center justify-between box-border overflow-hidden"
+          : "w-[350px] min-h-[467px] bg-white border-2 border-black p-3 flex flex-col items-center justify-between relative overflow-hidden rounded-xl shadow-xl text-black"
+      )}
+      style={isPrintArea ? {
+        width: `${labelSettings?.width || 75}mm`,
+        height: `${labelSettings?.height || 100}mm`,
+        padding: '2.5mm 3mm',
+        boxSizing: 'border-box'
+      } : undefined}
+    >
+      {/* 1. HEADER / BANNER */}
+      {isDisposal ? (
+        <div className="w-full bg-black text-white text-center py-1 font-black text-xs uppercase tracking-wider relative z-10">
+          NHÃN XUẤT HỦY {label.type === 'DEFECT' ? '(DEFECT)' : '(DISPOSAL)'}
+        </div>
+      ) : (
+        <div className="w-full text-center border-b-2 border-black pb-1">
+          <h1 className="font-black uppercase tracking-widest text-xs text-black">PHIẾU ĐIỀU CHUYỂN</h1>
+        </div>
+      )}
+
+      {/* 2. QR CODE */}
+      <div className="my-0.5 border-2 border-black p-1 bg-white inline-block relative z-10">
+        <QRCodeSVG value={label.qrData || ''} size={qrSize} level="H" includeMargin={true} />
+      </div>
+
+      {/* 3. PART NAME & PART CODE */}
+      <div className="w-full text-center my-0.5 relative z-10 text-black px-1">
+        <h2 className="text-base sm:text-lg font-black uppercase leading-tight tracking-tight break-words line-clamp-2 text-black">
+          {partNameDisplay}
+        </h2>
+        <p className="font-mono font-bold text-xs text-black mt-0.5 break-words">
+          Mã LK: {partIdDisplay}
+        </p>
+      </div>
+
+      {/* 4. QUANTITY & SOURCE STAGE GRID */}
+      <div className="w-full grid grid-cols-2 border-t-2 border-b-2 border-black py-1 my-0.5 relative z-10 text-black items-center text-center">
+        <div className="border-r-2 border-black px-1 flex flex-col justify-center">
+          <span className="text-[9px] font-black uppercase text-black">Số lượng</span>
+          <span className="text-lg font-black leading-tight text-black">{label.quantity} {part?.unit || 'Cái'}</span>
+        </div>
+        <div className="px-1 flex flex-col justify-center">
+          <span className="text-[9px] font-black uppercase text-black">
+            {isDisposal ? 'Từ kho:' : 'Từ công đoạn:'}
+          </span>
+          <span className="text-xs font-black uppercase leading-tight text-black">
+            {sourceStageName} {isDisposal && '(NG)'}
+          </span>
+        </div>
+      </div>
+
+      {/* 5. DESTINATION BOX OR DEFECT WARNING */}
+      {isDisposal ? (
+        <div className="w-full border-2 border-black rounded p-1 my-0.5 text-center bg-transparent relative z-10 text-black">
+          <span className="text-xs font-black uppercase block tracking-tighter text-black">HÀNG LỖI - CẤM NHẬP KHO</span>
+          {label.defectReason && (
+            <span className="text-[10px] font-bold block text-black truncate">Lý do: {label.defectReason}</span>
+          )}
+        </div>
+      ) : (
+        <div className="w-full border-2 border-black rounded p-1 my-0.5 text-center text-black">
+          <span className="text-[9px] font-black uppercase block text-black leading-none mb-0.5">Đích tiếp theo:</span>
+          <div className="flex items-center justify-center gap-2 font-black text-xs italic text-black">
+            <span>{sourceStageName}</span>
+            <ArrowRight size={14} strokeWidth={3} className="text-black inline" />
+            <span>{targetStageName}</span>
+          </div>
+        </div>
+      )}
+
+      {/* 6. GLAZING PLAN TIMES (IF ANY) */}
+      {(label as any).planId && (() => {
+        const plan = storageService.getGlazingPlans().find(p => p.id === (label as any).planId);
+        if (plan) {
+          return (
+            <div className="w-full flex justify-between font-mono font-bold text-black border-t border-b border-black py-1 my-0.5 text-[9px]">
+               <div className="flex flex-col text-left">
+                 <span className="uppercase font-black text-[8px]">HT Dự Kiến</span>
+                 <span>{plan.expectedCompletionTime ? format(plan.expectedCompletionTime, 'HH:mm dd/MM') : '--:--'}</span>
+               </div>
+               <div className="flex flex-col text-right">
+                 <span className="uppercase font-black text-[8px]">HT Thực Tế</span>
+                 <span>{format(label.timestamp, 'HH:mm dd/MM')}</span>
+               </div>
+            </div>
+          );
+        }
+        return null;
+      })()}
+
+      {/* 7. PO DETAILS SECTION */}
+      <div className="w-full space-y-[1px] text-[9.5px] font-mono font-bold border-2 border-black p-1 rounded text-black leading-tight my-0.5">
+        <div className="flex justify-between items-center">
+          <span className="uppercase text-[9px]">LOẠI PO:</span>
+          <span className="text-[9px] uppercase font-black">
+            {po?.masterPoId ? 'PO Con (Sub)' : 'PO Tổng (Master)'}
+          </span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="uppercase text-[9px]">MÃ PO:</span>
+          <span className="font-mono text-[9.5px] font-black">{label.poId || 'N/A'}</span>
+        </div>
+        <div className="flex justify-between items-center text-[8.5px] italic">
+          <span>KH PO Con:</span>
+          <span>{label.qrData?.split('|')?.[8] || po?.targetQuantity || 0} linh kiện</span>
+        </div>
+        {po?.plannedStartTime && (
+          <div className="flex justify-between items-center pt-[1px] border-t border-black/50">
+            <span className="uppercase text-[8.5px]">KH Bắt đầu PO:</span>
+            <span className="font-mono">{format(po.plannedStartTime, 'dd/MM HH:mm')}</span>
+          </div>
+        )}
+        {po?.expectedCompletionTime && (
+          <div className="flex justify-between items-center">
+            <span className="uppercase text-[8.5px]">KH Kết thúc PO:</span>
+            <span className="font-mono">{format(po.expectedCompletionTime, 'dd/MM HH:mm')}</span>
+          </div>
+        )}
+        {masterId && (
+          <>
+            <div className="flex justify-between items-center pt-[1px] border-t border-black/50">
+              <span className="uppercase text-[8.5px]">Thuộc PO Tổng:</span>
+              <span className="font-mono text-[9px] font-black">{masterId}</span>
+            </div>
+            <div className="flex justify-between items-center text-[8.5px] italic">
+              <span>KH PO Tổng:</span>
+              <span>{label.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0} máy</span>
+            </div>
+          </>
+        )}
+        <div className="flex justify-between items-center pt-[1px] border-t border-black/50">
+          <span className="uppercase text-[8.5px]">Hoàn thành:</span>
+          <span className="font-mono font-black">{format(label.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
@@ -611,219 +896,7 @@ export default function App() {
       {/* Hidden Print Area */}
       <div id="print-area" className="hidden print:block">
         {lastTransaction && (
-          (lastTransaction.type === 'DISPOSAL' || (lastTransaction.type === 'DEFECT' && lastTransaction.qrData)) ? (
-            <div className="w-full h-full bg-white text-black flex flex-col items-center p-4 box-border border-4 border-black border-dashed">
-              {/* NG Watermark */}
-              <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none overflow-hidden">
-                <span className="text-[120px] font-black rotate-45 whitespace-nowrap">NG - HỦY - NG</span>
-              </div>
-
-              {/* Top NG bar */}
-              <div className="w-full bg-black text-white text-center py-1 mb-2 font-black text-xl tracking-tighter">
-                NHÃN XUẤT HỦY {lastTransaction.type === 'DEFECT' ? '(DEFECT)' : '(DISPOSAL ONLY)'}
-              </div>
-
-              {/* QR Code Section */}
-              <div className="mb-2 border-2 border-black p-1 bg-white relative z-10">
-                <QRCodeSVG value={lastTransaction.qrData || ''} size={labelSettings.qrSize} level="H" />
-              </div>
-
-              {/* Part Name & ID */}
-              <div className="text-center w-full mb-2 relative z-10 text-black px-1 flex-1 flex flex-col justify-center">
-                <h1 className="font-black uppercase leading-tight text-balance break-words" style={{ fontSize: `${labelSettings.fontSize + 8}px` }}>
-                  {parts.find(p => p.id === lastTransaction.partId)?.name || lastTransaction.partId}
-                </h1>
-                <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
-                  Mã LK: {lastTransaction.partId}
-                </p>
-              </div>
-
-              {/* Quantity & Source Stage */}
-              <div className="grid grid-cols-2 w-full border-t-2 border-b-2 border-black py-2 mb-2 relative z-10 text-black">
-                <div className="flex flex-col items-center border-r-2 border-black">
-                  <span className="text-[12px] font-black uppercase mb-1 text-black">Số lượng:</span>
-                  <span className="font-black text-black leading-none" style={{ fontSize: `${labelSettings.fontSize + 16}px` }}>
-                    {lastTransaction.quantity} {parts.find(p => p.id === lastTransaction.partId)?.unit}
-                  </span>
-                </div>
-                <div className="flex flex-col items-center text-black justify-center">
-                  <span className="text-[12px] font-black uppercase mb-1 text-black">Từ kho:</span>
-                  <span className="font-black uppercase text-center leading-none text-black" style={{ fontSize: `${labelSettings.fontSize + 8}px` }}>
-                    {STAGES.find(s => s.id === lastTransaction.stageId)?.name} (NG)
-                  </span>
-                </div>
-              </div>
-
-              {/* Warnings */}
-              <div className="w-full border-2 border-black rounded p-1 mb-1 text-center bg-transparent text-black">
-                <span className="text-lg font-black uppercase block text-black">HÀNG KHÔNG ĐẠT (NG)</span>
-                <span className="text-sm font-black block text-black">CẤM NHẬP KHO - CHỜ TIÊU HỦY</span>
-              </div>
-
-              {/* Defect Note */}
-              {lastTransaction.defectReason && (
-                <div className="w-full border-2 border-black border-dashed rounded p-1 flex flex-col items-center justify-center text-center text-black mb-1">
-                  <span className="text-[12px] font-black uppercase mb-0.5">Lý do lỗi (NG):</span>
-                  <span className="font-black text-sm uppercase leading-tight">{lastTransaction.defectReason}</span>
-                  {lastTransaction.defectCategory && (
-                    <span className="text-[10px] font-black italic mt-0.5 max-w-full break-words line-clamp-2">Ghi chú: {lastTransaction.defectCategory}</span>
-                  )}
-                </div>
-              )}
-
-              {/* Footer */}
-              <div className="mt-auto w-full justify-between items-end font-mono border-t border-black pt-2 pb-1 hidden" style={{ fontSize: `${labelSettings.fontSize - 6}px` }}>
-                <div className="flex flex-col leading-tight">
-                  <span className="font-bold">TX ID: {lastTransaction.id}</span>
-                  <span>Thời gian: {format(lastTransaction.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
-                </div>
-                <div className="font-black italic bg-black text-white px-2 py-0.5">
-                  DISPOSAL
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="w-full h-full bg-white text-black flex flex-col p-1 box-border">
-              <div className="w-full text-center pb-1">
-                <h1 className="font-black uppercase tracking-tight" style={{ fontSize: `${labelSettings.fontSize + 4}px` }}>PHIẾU ĐIỀU CHUYỂN</h1>
-              </div>
-              <div className="flex-1 w-full border-2 border-black flex flex-col items-center p-1">
-              {/* QR Code Section */}
-              <div className="mt-1 mb-1 border-2 border-black p-1">
-                <QRCodeSVG value={lastTransaction.qrData || ''} size={labelSettings.qrSize} level="H" />
-              </div>
-
-              {/* Part Name & ID */}
-              <div className="text-center w-full mb-1 px-1 flex-1 flex flex-col justify-center">
-                <h1 className="font-black uppercase leading-tight text-balance break-words" style={{ fontSize: `${labelSettings.fontSize + 8}px` }}>
-                  {lastTransaction.partName || getProcessValue(parts.find(p => p.id === lastTransaction.partId)?.name, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
-                </h1>
-                <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize + 6}px` }}>
-                  Mã LK: {lastTransaction.id?.startsWith('QUICK-') ? lastTransaction.partId : (lastTransaction.partId)}
-                </p>
-              </div>
-
-              {/* Quantity & Source Stage */}
-              <div className="grid grid-cols-2 w-full border-t-2 border-b-2 border-black py-2 mb-1 text-black">
-                <div className="flex flex-col items-center border-r-2 border-black justify-center">
-                  <span className="text-[12px] font-black uppercase mb-1">Số lượng:</span>
-                  <span className="font-black leading-none" style={{ fontSize: `${labelSettings.fontSize + 16}px` }}>
-                    {lastTransaction.quantity} {parts.find(p => p.id === lastTransaction.partId)?.unit}
-                  </span>
-                </div>
-                <div className="flex flex-col items-center justify-center">
-                  <span className="text-[12px] font-black uppercase mb-1">Từ công đoạn:</span>
-                  <span className="font-black uppercase text-center leading-none" style={{ fontSize: `${labelSettings.fontSize + 8}px` }}>
-                    {STAGES.find(s => s.id === lastTransaction.stageId)?.name}
-                  </span>
-                </div>
-              </div>
-
-              {/* Route / Destination */}
-              <div className="w-full border-2 border-black rounded p-1 mb-1 text-center text-black">
-                <span className="text-[12px] font-black uppercase block mb-1">Đích tiếp theo:</span>
-                <div className="flex items-center justify-center gap-4 font-black italic" style={{ fontSize: `${labelSettings.fontSize + 8}px` }}>
-                  <span className="uppercase">{STAGES.find(s => s.id === lastTransaction.stageId)?.name}</span>
-                  <span className="text-xl">→</span>
-                  <span className="uppercase">
-                    {STAGES.find(s => s.id === (lastTransaction.targetStageId || lastTransaction.qrData?.split('|')?.[5]))?.name || 
-                     ((lastTransaction.targetStageId || lastTransaction.qrData?.split('|')?.[5]) === 'DCLR' ? 'Lắp ráp (DCLR)' : 'KẾ THÚC')}
-                  </span>
-                </div>
-              </div>
-              
-              {/* Optional Glazing Times */}
-              {(lastTransaction as any).planId && (() => {
-                const plan = storageService.getGlazingPlans().find(p => p.id === (lastTransaction as any).planId);
-                if (plan) {
-                  return (
-                    <div className="w-full flex justify-between font-mono font-bold text-black border-t border-b border-black py-2 mb-2" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
-                       <div className="flex flex-col text-left">
-                         <span className="text-[14px] uppercase font-black">HT Dự Kiến</span>
-                         <span>{plan.expectedCompletionTime ? format(plan.expectedCompletionTime, 'HH:mm dd/MM') : '--:--'}</span>
-                       </div>
-                       <div className="flex flex-col text-right">
-                         <span className="text-[14px] uppercase font-black">HT Thực Tế</span>
-                         <span>{format(lastTransaction.timestamp, 'HH:mm dd/MM')}</span>
-                       </div>
-                    </div>
-                  );
-                }
-                return null;
-              })()}
-
-              {/* PO Details Section (NEW) */}
-              <div className="mb-1 w-full space-y-[2px] text-[10px] font-black border-2 border-black p-1 rounded text-black leading-none">
-                <div className="flex justify-between items-center">
-                  <span className="uppercase">LOẠI PO:</span>
-                  {(() => {
-                    const po = storageService.getProductionOrders().find(p => p.id === lastTransaction.poId);
-                    return (
-                      <span className="text-[9px] uppercase font-black">
-                        {po?.masterPoId ? 'PO Con (Sub)' : 'PO Tổng (Master)'}
-                      </span>
-                    );
-                  })()}
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="uppercase">MÃ PO:</span>
-                  <span className="font-mono text-[10px] font-black">{lastTransaction.poId || 'N/A'}</span>
-                </div>
-                <div className="flex justify-between items-center text-[9px] italic font-black">
-                  <span>Kế hoạch PO Con:</span>
-                  <span>{lastTransaction.qrData?.split('|')?.[8] || storageService.getProductionOrders().find(p => p.id === lastTransaction.poId)?.targetQuantity || 0} linh kiện</span>
-                </div>
-                {(() => {
-                  const po = storageService.getProductionOrders().find(p => p.id === lastTransaction.poId);
-                  const masterId = po?.masterPoId || lastTransaction.qrData?.split('|')?.[7];
-                  return (
-                    <>
-                      {po?.plannedStartTime && (
-                        <div className="flex justify-between items-center pt-[2px] border-t border-black">
-                          <span className="uppercase">KH Bắt đầu PO:</span>
-                          <span className="font-mono font-black">{format(po.plannedStartTime, 'dd/MM HH:mm')}</span>
-                        </div>
-                      )}
-                      {po?.expectedCompletionTime && (
-                        <div className="flex justify-between items-center">
-                          <span className="uppercase">KH Kết thúc PO:</span>
-                          <span className="font-mono font-black">{format(po.expectedCompletionTime, 'dd/MM HH:mm')}</span>
-                        </div>
-                      )}
-                      {masterId && (
-                        <>
-                          <div className="flex justify-between items-center pt-[2px] border-t border-black">
-                            <span className="uppercase font-black text-black">PO TỔNG:</span>
-                            <span className="font-mono text-[10px] font-black text-black">{masterId}</span>
-                          </div>
-                          <div className="flex justify-between items-center text-[9px] italic font-black text-black">
-                            <span>Kế hoạch PO Tổng:</span>
-                            <span>{lastTransaction.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0} máy</span>
-                          </div>
-                        </>
-                      )}
-                    </>
-                  );
-                })()}
-                <div className="flex justify-between items-center pt-[2px] border-t border-black">
-                  <span className="uppercase text-[9px]">Hoàn thành thực tế:</span>
-                  <span className="font-mono font-black">{format(lastTransaction.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
-                </div>
-              </div>
-
-              {/* Footer: ID & Time */}
-              <div className="mt-auto w-full justify-between items-end font-mono border-t border-black pt-2 hidden" style={{ fontSize: `${labelSettings.fontSize - 6}px` }}>
-                <div className="flex flex-col leading-tight">
-                  <span className="font-bold">ID: {lastTransaction.id}</span>
-                  <span>Thời gian: {format(lastTransaction.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
-                </div>
-                <div className="font-black italic">
-                  WIP TRACKING
-                </div>
-              </div>
-              </div>
-            </div>
-          )
+          <A7QRLabelCard label={lastTransaction} parts={parts} labelSettings={labelSettings} isPrintArea={true} />
         )}
       </div>
 
@@ -2323,161 +2396,7 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
                 </button>
               </div>
               
-              <div id="qr-label-display" className={cn(
-                "w-[420px] bg-white border-4 p-6 flex flex-col items-center relative overflow-hidden",
-                (selectedLabel.type === 'DISPOSAL' || selectedLabel.type === 'DEFECT') ? "border-black border-dashed" : "border-black"
-              )}>
-                {(selectedLabel.type === 'DISPOSAL' || selectedLabel.type === 'DEFECT') && (
-                  <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none rotate-45">
-                    <span className="text-[100px] font-black whitespace-nowrap">HÀNG HỦY NG</span>
-                  </div>
-                )}
-                
-                {(selectedLabel.type === 'DISPOSAL' || selectedLabel.type === 'DEFECT') && (
-                  <div className="w-full bg-black text-white text-center py-2 mb-6 font-black text-lg tracking-widest relative z-10">
-                    NHÃN XUẤT HỦY {(selectedLabel.type === 'DEFECT' ? '(DEFECT)' : '(DISPOSAL)')}
-                  </div>
-                )}
-
-                {/* QR Section */}
-                <div className="mb-6 border-[3px] border-black p-1 bg-white relative z-10">
-                  <QRCodeSVG value={selectedLabel.qrData || ''} size={240} level="H" />
-                </div>
-
-                {/* Part Info */}
-                <div className="w-full text-center mb-6 relative z-10 text-black">
-                  <h2 className="text-4xl font-black uppercase tracking-tight leading-none mb-2">
-                    {selectedLabel.type === 'DISPOSAL' 
-                      ? (selectedLabel.partName || parts.find(p => p.id === selectedLabel.partId)?.name || selectedLabel.partId)
-                      : getProcessValue(selectedLabel.partName || parts.find(p => p.id === selectedLabel.partId)?.name, parts.find(p => p.id === selectedLabel.partId), selectedLabel.stageId, 'OUT')}
-                  </h2>
-                  <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize + 4}px` }}>
-                    Mã LK: {selectedLabel.type === 'DISPOSAL' 
-                      ? selectedLabel.partId 
-                      : getProcessValue(selectedLabel.partId, parts.find(p => p.id === selectedLabel.partId), selectedLabel.stageId, 'OUT')}
-                  </p>
-                </div>
-
-                {/* Main Stats */}
-                <div className="w-full grid grid-cols-2 border-t-[3px] border-black py-4 relative z-10 text-black">
-                  <div className="text-center border-r-[3px] border-black px-2 flex flex-col justify-center">
-                    <span className="text-[10px] font-black uppercase mb-1">Số lượng:</span>
-                    <span className="text-3xl font-black">{selectedLabel.quantity} {parts.find(p => p.id === selectedLabel.partId)?.unit}</span>
-                  </div>
-                  <div className="text-center px-2 flex flex-col justify-center">
-                    <span className="text-[10px] font-black uppercase mb-1 text-black">
-                      {selectedLabel.type === 'DISPOSAL' ? 'Kho xuất:' : 'Từ công đoạn:'}
-                    </span>
-                    <span className="text-2xl font-black uppercase leading-tight">
-                      {STAGES.find(s => s.id === selectedLabel.stageId)?.name} {selectedLabel.type === 'DISPOSAL' && '(NG)'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Destination Box / Warning */}
-                {selectedLabel.type === 'DISPOSAL' ? (
-                  <div className="w-full border-[3px] border-black rounded-lg p-3 my-4 text-center bg-transparent relative z-10 text-black">
-                    <span className="text-sm font-black uppercase block tracking-tighter text-black">HÀNG LỖI CẤM NHẬP KHO</span>
-                  </div>
-                ) : (
-                  <div className="w-full border-[3px] border-black rounded-lg p-4 my-4 text-center text-black">
-                    <span className="text-[10px] font-black uppercase block mb-2 text-black">Đích tiếp theo:</span>
-                    <div className="flex items-center justify-center gap-4 font-black text-xl italic group">
-                      <span>{STAGES.find(s => s.id === selectedLabel.stageId)?.name}</span>
-                      <ArrowRight size={24} strokeWidth={3} className="text-black" />
-                      <span>{STAGES.find(s => s.id === (selectedLabel.targetStageId || selectedLabel.qrData?.split('|')?.[5]))?.name || 
-                             ((selectedLabel.targetStageId || selectedLabel.qrData?.split('|')?.[5]) === 'DCLR' ? 'Lắp ráp (DCLR)' : 'HOÀN THÀNH')}</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Optional Glazing Times */}
-                {(selectedLabel as any).planId && (() => {
-                  const plan = storageService.getGlazingPlans().find(p => p.id === (selectedLabel as any).planId);
-                  if (plan) {
-                    return (
-                      <div className="w-full flex justify-between font-mono font-bold text-black border-t border-b border-black py-2 mb-2" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
-                         <div className="flex flex-col text-left">
-                           <span className="text-[14px] uppercase font-black">HT Dự Kiến</span>
-                           <span>{plan.expectedCompletionTime ? format(plan.expectedCompletionTime, 'HH:mm dd/MM') : '--:--'}</span>
-                         </div>
-                         <div className="flex flex-col text-right">
-                           <span className="text-[14px] uppercase font-black">HT Thực Tế</span>
-                           <span>{format(selectedLabel.timestamp, 'HH:mm dd/MM')}</span>
-                         </div>
-                      </div>
-                    );
-                  }
-                  return null;
-                })()}
-
-                {/* PO Details Section */}
-                <div className="mb-1 w-full space-y-[2px] text-[10px] font-black bg-transparent p-1 border-2 border-black rounded text-black leading-none">
-                  <div className="flex justify-between items-center">
-                    <span className="uppercase text-black">LOẠI PO:</span>
-                    {(() => {
-                      const po = storageService.getProductionOrders().find(p => p.id === selectedLabel.poId);
-                      return (
-                        <span className="px-1 py-0.5 rounded text-[9px] uppercase font-black text-black">
-                          {po?.masterPoId ? 'PO Con (Sub)' : 'PO Tổng (Master)'}
-                        </span>
-                      );
-                    })()}
-                  </div>
-                  <div className="flex justify-between items-center text-black">
-                    <span className="uppercase text-black">Mã PO:</span>
-                    <span className="font-mono text-[10px] font-black">{selectedLabel.poId || 'N/A'}</span>
-                  </div>
-                  <div className="flex justify-between items-center text-[9px] italic font-black text-black">
-                    <span>Kế hoạch PO Con:</span>
-                    <span>{selectedLabel.qrData?.split('|')?.[8] || storageService.getProductionOrders().find(p => p.id === selectedLabel.poId)?.targetQuantity || 0} linh kiện</span>
-                  </div>
-                  {(() => {
-                    const po = storageService.getProductionOrders().find(p => p.id === selectedLabel.poId);
-                    const masterId = po?.masterPoId || selectedLabel.qrData?.split('|')?.[7];
-                    return (
-                      <>
-                        {po?.plannedStartTime && (
-                          <div className="flex justify-between items-center pt-[2px] border-t border-black">
-                            <span className="uppercase text-black font-black">KH Bắt đầu PO:</span>
-                            <span className="font-mono font-black">{format(po.plannedStartTime, 'dd/MM HH:mm')}</span>
-                          </div>
-                        )}
-                        {po?.expectedCompletionTime && (
-                          <div className="flex justify-between items-center">
-                            <span className="uppercase text-black font-black">KH Kết thúc PO:</span>
-                            <span className="font-mono font-black">{format(po.expectedCompletionTime, 'dd/MM HH:mm')}</span>
-                          </div>
-                        )}
-                        {masterId && (
-                          <>
-                            <div className="flex justify-between items-center pt-[2px] border-t border-black">
-                              <span className="uppercase text-black font-black">Thuộc PO Tổng:</span>
-                              <span className="font-mono text-[10px] font-black text-black">{masterId}</span>
-                            </div>
-                            <div className="flex justify-between items-center text-[9px] italic font-black text-black">
-                              <span>Kế hoạch PO Tổng:</span>
-                              <span>{selectedLabel.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0} máy</span>
-                            </div>
-                          </>
-                        )}
-                      </>
-                    );
-                  })()}
-                  <div className="flex justify-between items-center pt-[2px] border-t border-black">
-                    <span className="uppercase text-[9px] text-black font-black">Hoàn thành thực tế:</span>
-                    <span className="font-mono font-black text-black">{format(selectedLabel.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
-                  </div>
-                </div>
-
-                <div className="w-full border-t-[3px] border-black pt-4 justify-between items-end text-left text-black hidden">
-                  <div className="flex flex-col text-[11px] font-mono leading-none">
-                    <span className="font-black mb-1 text-black">ID: {selectedLabel.id}</span>
-                    <span className="font-black text-black">Thời gian: {format(selectedLabel.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
-                  </div>
-                  <span className="text-[11px] font-black tracking-tighter italic text-black">WIP TRACKING</span>
-                </div>
-              </div>
+              <A7QRLabelCard label={selectedLabel} parts={parts} labelSettings={labelSettings} isPrintArea={false} />
 
               <div className="w-full flex gap-4 no-print">
                 <button 
@@ -2754,12 +2673,21 @@ const exportDailyProductionReport = (transactions: Transaction[], parts: Part[])
   XLSX.writeFile(wb, `BaoCao_SanLuong_${format(new Date(), 'yyyyMMdd')}.xlsx`);
 };
 
-const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[], dateStr: string, peoplePerHour: number = 8) => {
+const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[], dateStr: string) => {
   const dclrNorms = storageService.getNorms().filter(n => n.stageId === 'DCLR');
   const dclrNormsMap = new Map(dclrNorms.map(n => [n.partId, n.secondsPerUnit]));
   const glazingHSQD = (partId: string) => getGlazingHSQD(partId, dclrNormsMap, dclrNorms, parts);
+  const hourlyPeoplePainting = storageService.getHourlyPeoplePainting();
+  const hourlyPeopleGlazing = storageService.getHourlyPeopleGlazing();
+  const hourlyPeopleBending = storageService.getHourlyPeopleBending();
+  const hourlyPeopleWelding = storageService.getHourlyPeopleWelding();
+  
+  const bendingWeldingHSQDArray = storageService.getBendingWeldingHSQD();
+  const bendingWeldingHSQDMap = new Map(bendingWeldingHSQDArray.map(n => [n.partId, n.hsqd]));
+  const getBendingWeldingHSQD = (partId: string) => bendingWeldingHSQDMap.get(partId) || 0;
 
-  const start = new Date(dateStr);
+  const [sY, sM, sD] = dateStr.split('-').map(Number);
+  const start = new Date(sY, sM - 1, sD, 0, 0, 0, 0);
   start.setHours(0, 0, 0, 0);
   const startMs = start.getTime();
 
@@ -2777,6 +2705,8 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
   const wb = XLSX.utils.book_new();
 
   const stagesToExport = [
+    { id: 'BENDING', name: 'Chấn Dập' },
+    { id: 'WELDING', name: 'Hàn' },
     { id: 'PAINTING', name: 'Sơn' },
     { id: 'GLAZING', name: 'Dán kính' },
   ];
@@ -2793,6 +2723,11 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
     fill: { fgColor: { rgb: "FFFF00" } },
     alignment: { horizontal: "center", vertical: "center", wrapText: true },
     border: borderStyle
+  };
+
+  const titleStyle = {
+    font: { bold: true, sz: 16 },
+    alignment: { horizontal: "center", vertical: "center" }
   };
 
   const dataStyle = {
@@ -2837,16 +2772,23 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
 
     const sheetData: any[] = [];
     
+    // Title Row
+    const titleDate = format(new Date(), 'dd/MM/yyyy');
+    const titleRowText = `BÁO CÁO SẢN XUẤT THEO CUNG GIỜ ${stageInfo.name.toUpperCase()} NGÀY ${titleDate}`;
+    const titleRow = [titleRowText];
+    
     // Rows 1 and 2 headers
     const row1 = ['Tên linh kiện', 'KHSX Ngày', 'Thực Hiện', 'Còn Lại', 'Tỉ lệ Hoàn\nThành KHSX', 'HSQĐ', 'KHSX sau QĐ', 'Sản lượng theo múi giờ'];
     for(let i=0; i<timeSlots.length - 1; i++) row1.push('');
     row1.push('Tổng sản\nlượng');
     
+    for(let i=0; i<row1.length - 1; i++) titleRow.push('');
+    
     const row2 = ['', '', '', '', '', '', ''];
     timeSlots.forEach(s => row2.push(s.label));
     row2.push('');
     
-    sheetData.push(row1, row2);
+    sheetData.push(titleRow, row1, row2);
     
     let sumKHSX = 0;
     let sumTH = 0;
@@ -2858,13 +2800,15 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
     activeParts.sort().forEach(partId => {
        const part = parts.find(p => p.id === partId);
        const partName = part?.name || partId;
-       const hsqd = glazingHSQD(partId);
+       const isBW = stageInfo.id === 'BENDING' || stageInfo.id === 'WELDING';
+       const hsqd = isBW ? getBendingWeldingHSQD(partId) : glazingHSQD(partId);
        const thucHien = partTotals.get(partId) || 0;
        
        // get KHSX based on Stage
        let khsx = 0;
-       if (stageInfo.id === 'PAINTING') {
-           const orders = storageService.getProductionOrders().filter(o => o.stageId === 'PAINTING' && o.partId === partId);
+       const isStandardPOStage = stageInfo.id === 'PAINTING' || stageInfo.id === 'BENDING' || stageInfo.id === 'WELDING';
+       if (isStandardPOStage) {
+           const orders = storageService.getProductionOrders().filter(o => o.stageId === stageInfo.id && o.partId === partId);
            khsx = orders.filter(o => {
                const dt = o.plannedStartTime || o.createdAt;
                return dt >= startMs && dt <= endMs;
@@ -2892,7 +2836,7 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
           thucHien > 0 ? thucHien : '',
           conLai !== 0 ? conLai : '',
           khsx > 0 ? (thucHien/khsx) : '',
-          hsqd > 0 ? hsqd : '',
+          hsqd > 0 ? Number(hsqd.toFixed(2)) : '',
           '' // KHSX sau QD de trong for parts
        ];
        
@@ -2921,20 +2865,45 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
     sheetData.push(qdRow);
     
     // Năng suất lao động
-    const targetQDs = timeSlots.map(s => (s.label === '6h-8h' || s.label === '19h-20h') ? 64 : 128);
+    const getWorkerCount = (stageId: string, sLabel: string) => {
+       if (stageId === 'PAINTING') return hourlyPeoplePainting[sLabel] || 8;
+       if (stageId === 'GLAZING') return hourlyPeopleGlazing[sLabel] || 8;
+       if (stageId === 'BENDING') return hourlyPeopleBending[sLabel] || 8;
+       if (stageId === 'WELDING') return hourlyPeopleWelding[sLabel] || 8;
+       return 8;
+    };
+
+    const targetQDs = timeSlots.map(s => {
+       const workerCount = getWorkerCount(stageInfo.id, s.label);
+       if (stageInfo.id === 'BENDING') {
+           return workerCount * 33;
+       }
+       if (stageInfo.id === 'WELDING') {
+           return workerCount * 17.5;
+       }
+       return (s.label === '6h-8h' || s.label === '19h-20h') ? workerCount * 8 : workerCount * 16;
+    });
     const totalTarget = targetQDs.reduce((a,b) => a+b, 0);
 
     const tlRow: any[] = ['Năng suất lao động', '', '', '', '', '', ''];
+    let validProductivities: number[] = [];
     sumSlots_QD.forEach((s, i) => {
         const tgt = targetQDs[i];
-        tlRow.push(tgt > 0 ? (s/tgt) : 0);
+        const prod = tgt > 0 ? (s/tgt) : 0;
+        tlRow.push(prod);
+        if (prod > 0) {
+            validProductivities.push(prod);
+        }
     });
-    tlRow.push(totalTarget > 0 ? (totalQD / totalTarget) : 0);
+    const avgProductivity = validProductivities.length > 0 ? validProductivities.reduce((a,b) => a+b, 0) / validProductivities.length : 0;
+    tlRow.push(avgProductivity);
     sheetData.push(tlRow);
     
     // Nhân sự mỗi giờ
     const nhanSuRow: any[] = ['Nhân sự mỗi giờ', '', '', '', '', '', ''];
-    timeSlots.forEach(() => nhanSuRow.push(peoplePerHour));
+    timeSlots.forEach(s => {
+       nhanSuRow.push(getWorkerCount(stageInfo.id, s.label));
+    });
     nhanSuRow.push(''); 
     sheetData.push(nhanSuRow);
     
@@ -2948,15 +2917,16 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
     
     // Formatting
     const mergeArr = [
-      { s: {r:0, c:0}, e: {r:1, c:0} },
-      { s: {r:0, c:1}, e: {r:1, c:1} },
-      { s: {r:0, c:2}, e: {r:1, c:2} },
-      { s: {r:0, c:3}, e: {r:1, c:3} },
-      { s: {r:0, c:4}, e: {r:1, c:4} },
-      { s: {r:0, c:5}, e: {r:1, c:5} },
-      { s: {r:0, c:6}, e: {r:1, c:6} },
-      { s: {r:0, c:7}, e: {r:0, c:6 + timeSlots.length} }, // Sản lượng theo múi giờ
-      { s: {r:0, c:7 + timeSlots.length}, e: {r:1, c:7 + timeSlots.length} }, // Tổng sản lượng
+      { s: {r:0, c:0}, e: {r:0, c:7 + timeSlots.length} }, // Title ROW
+      { s: {r:1, c:0}, e: {r:2, c:0} },
+      { s: {r:1, c:1}, e: {r:2, c:1} },
+      { s: {r:1, c:2}, e: {r:2, c:2} },
+      { s: {r:1, c:3}, e: {r:2, c:3} },
+      { s: {r:1, c:4}, e: {r:2, c:4} },
+      { s: {r:1, c:5}, e: {r:2, c:5} },
+      { s: {r:1, c:6}, e: {r:2, c:6} },
+      { s: {r:1, c:7}, e: {r:1, c:6 + timeSlots.length} }, // Sản lượng theo múi giờ
+      { s: {r:1, c:7 + timeSlots.length}, e: {r:2, c:7 + timeSlots.length} }, // Tổng sản lượng
     ];
     
     // footer merges
@@ -2973,7 +2943,10 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
             const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
             if (!ws[cellAddress]) ws[cellAddress] = {t: 's', v: ''};
             
-            if (R < 2) {
+            if (R === 0) {
+                ws[cellAddress].s = titleStyle;
+                // Merge rows require the title to be bold across the merged area if we want the rest blank or it handles it nicely as A1 is where the text is.
+            } else if (R === 1 || R === 2) {
                 ws[cellAddress].s = headerStyle;
             } else {
                 let rowStyle = { ...dataStyle };
@@ -3017,13 +2990,13 @@ const exportHourlyProductionReport = (transactions: Transaction[], parts: Part[]
   }
 };
 
-const exportProductionReportRange = (transactions: Transaction[], parts: Part[], startDateStr: string, endDateStr: string, peoplePerDay: Record<string, number> = {}, totalMandays: number = 0) => {
-  const start = new Date(startDateStr);
-  start.setHours(0, 0, 0, 0);
+const exportProductionReportRange = (transactions: Transaction[], parts: Part[], startDateStr: string, endDateStr: string, peoplePerDay: Record<string, number> = {}, mandaysPerDay: Record<string, number> = {}, totalMandays: number = 0, weekName?: string) => {
+  const [sYear, sMonth, sDay] = startDateStr.split('-').map(Number);
+  const start = new Date(sYear, sMonth - 1, sDay, 0, 0, 0, 0);
   const startMs = start.getTime();
 
-  const end = new Date(endDateStr);
-  end.setHours(23, 59, 59, 999);
+  const [eYear, eMonth, eDay] = endDateStr.split('-').map(Number);
+  const end = new Date(eYear, eMonth - 1, eDay, 23, 59, 59, 999);
   const endMs = end.getTime();
 
   const labels = storageService.getLabels();
@@ -3235,7 +3208,10 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
        if (!excludedGlazingParts.has(l.partId)) allLapRapParts.add(l.partId);
     });
 
+  const cleanWeekName = weekName?.replace(/^tuần\s*/i, '') || '';
+  const titleText = weekName ? `BÁO CÁO SẢN XUẤT TUẦN ${cleanWeekName.toUpperCase()}` : `BÁO CÁO SẢN XUẤT TỪ ${format(start, 'dd/MM/yyyy')} ĐẾN ${format(end, 'dd/MM/yyyy')}`;
   const lrSheetData: any[][] = [];
+  const lrTitleRow: any[] = [titleText];
   const lrRow1: any[] = ['Mã thành phẩm', 'Tên thành phẩm', 'HSQĐ'];
   const lrRow2: any[] = ['', '', ''];
   
@@ -3247,12 +3223,14 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
   lrRow1.push('KHSX', 'Tổng TH', 'Chênh lệch');
   lrRow2.push('', '', '');
   
-  lrSheetData.push(lrRow1, lrRow2);
+  for(let i=0; i<lrRow1.length-1; i++) lrTitleRow.push('');
+  
+  lrSheetData.push(lrTitleRow, lrRow1, lrRow2);
 
   const lapRapRows = Array.from(allLapRapParts).sort().map(partId => {
     const part = parts.find(p => p.id === partId);
     const partName = part?.name || partId;
-    const hsqd = glazingHSQD(partId);
+    const hsqd = Number(glazingHSQD(partId).toFixed(2));
     
     const rowData: any[] = [partId, partName, hsqd];
     let totalKHSX = 0;
@@ -3314,8 +3292,9 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
          dayTH_conv += th * r.hsqd;
       });
       
-      const dayDateStr = new Date(daysStartMs[i]).toISOString().split('T')[0];
+      const dayDateStr = format(new Date(daysStartMs[i]), 'yyyy-MM-dd');
       const people = peoplePerDay[dayDateStr] === undefined ? 12 : peoplePerDay[dayDateStr];
+      const mandays = mandaysPerDay[dayDateStr] === undefined ? 12 : mandaysPerDay[dayDateStr];
       const capacity = people * 64;
 
       footerUnconverted.push(dayKHSX_un > 0 ? dayKHSX_un : '-', dayTH_un > 0 ? dayTH_un : '-');
@@ -3323,7 +3302,7 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
       footerPeople.push(people, people);
       footerCapacity.push(capacity, capacity);
       footerRatio.push(dayKHSX_conv > 0 ? (capacity > 0 ? Math.round((dayKHSX_conv / capacity)*100) + '%' : '0%') : '0%', ''); 
-      footerDailyProductivity.push('', capacity > 0 && dayTH_conv > 0 ? Math.round((dayTH_conv / capacity)*100) + '%' : '');
+      footerDailyProductivity.push('', mandays > 0 && dayTH_conv > 0 ? Math.round((dayTH_conv / mandays / 64)*100) + '%' : '');
       
       grandKHSX_un += dayKHSX_un;
       grandTH_un += dayTH_un;
@@ -3333,7 +3312,7 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
   
   let total_people = 0;
   for (let i = 0; i < daysStartMs.length; i++) {
-      const dayDateStr = new Date(daysStartMs[i]).toISOString().split('T')[0];
+      const dayDateStr = format(new Date(daysStartMs[i]), 'yyyy-MM-dd');
       const people = peoplePerDay[dayDateStr] === undefined ? 12 : peoplePerDay[dayDateStr];
       total_people += people;
   }
@@ -3354,17 +3333,18 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
 
   const numDays = daysStartMs.length;
   const mergesLR = [
-    { s: {r:0, c:0}, e: {r:1, c:0} }, 
-    { s: {r:0, c:1}, e: {r:1, c:1} }, 
-    { s: {r:0, c:2}, e: {r:1, c:2} }
+    { s: {r:0, c:0}, e: {r:0, c: 3 + numDays*2 + 2} }, // Title ROW
+    { s: {r:1, c:0}, e: {r:2, c:0} }, 
+    { s: {r:1, c:1}, e: {r:2, c:1} }, 
+    { s: {r:1, c:2}, e: {r:2, c:2} }
   ];
   for (let i = 0; i < numDays; i++) {
-    mergesLR.push({ s: {r:0, c: 3 + i*2}, e: {r:0, c: 3 + i*2 + 1} }); 
+    mergesLR.push({ s: {r:1, c: 3 + i*2}, e: {r:1, c: 3 + i*2 + 1} }); 
   }
   mergesLR.push(
-    { s: {r:0, c: 3 + numDays*2}, e: {r:1, c: 3 + numDays*2} }, 
-    { s: {r:0, c: 3 + numDays*2 + 1}, e: {r:1, c: 3 + numDays*2 + 1} }, 
-    { s: {r:0, c: 3 + numDays*2 + 2}, e: {r:1, c: 3 + numDays*2 + 2} }  
+    { s: {r:1, c: 3 + numDays*2}, e: {r:2, c: 3 + numDays*2} }, 
+    { s: {r:1, c: 3 + numDays*2 + 1}, e: {r:2, c: 3 + numDays*2 + 1} }, 
+    { s: {r:1, c: 3 + numDays*2 + 2}, e: {r:2, c: 3 + numDays*2 + 2} }  
   );
   
   const footerStartR = lrSheetData.length - 6;
@@ -3384,10 +3364,16 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
       const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
       if (!wsLR[cellAddress]) wsLR[cellAddress] = { t: 's', v: '' };
       
-      const isHeader = R < 2;
+      const isTitle = R === 0;
+      const isHeader = R === 1 || R === 2;
       const isFooter = R >= footerStartR;
       
-      if (isHeader) {
+      if (isTitle) {
+         wsLR[cellAddress].s = {
+            font: { bold: true, sz: 16 },
+            alignment: { horizontal: "center", vertical: "center" }
+         };
+      } else if (isHeader) {
          wsLR[cellAddress].s = {
             ...headerStyle,
             font: { bold: true, sz: 10, color: { rgb: "FFFFFF" } },
@@ -3431,10 +3417,15 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
 
 function DashboardView({ inventory, parts, transactions, labels, refreshData, setDefectModal, dclrNorms, dclrNormsMap, glazingHSQD }: any) {
   const [selectedStageDetail, setSelectedStageDetail] = useState<StageId | null>(null);
+  const [expandedInventoryKeys, setExpandedInventoryKeys] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showExportPreparationModal, setShowExportPreparationModal] = useState(false);
   const [showExportHourlyModal, setShowExportHourlyModal] = useState(false);
-  const [hourlyExportPeople, setHourlyExportPeople] = useState('8');
+  const [hourlyPeoplePainting, setHourlyPeoplePainting] = useState<Record<string, number>>(() => storageService.getHourlyPeoplePainting());
+  const [hourlyPeopleGlazing, setHourlyPeopleGlazing] = useState<Record<string, number>>(() => storageService.getHourlyPeopleGlazing());
+  const [hourlyPeopleBending, setHourlyPeopleBending] = useState<Record<string, number>>(() => storageService.getHourlyPeopleBending());
+  const [hourlyPeopleWelding, setHourlyPeopleWelding] = useState<Record<string, number>>(() => storageService.getHourlyPeopleWelding());
   const [showManualAddModal, setShowManualAddModal] = useState<{stageId: StageId, location: 'IN' | 'OUT'} | null>(null);
   const [manualAddPart, setManualAddPart] = useState('');
   const [manualAddPartSearch, setManualAddPartSearch] = useState('');
@@ -3447,10 +3438,23 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
     return local.toISOString().split('T')[0];
   };
 
+  const getPastDateTimeStr = (days: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() - days);
+    const offset = d.getTimezoneOffset();
+    const local = new Date(d.getTime() - (offset*60*1000));
+    return local.toISOString().slice(0, 16);
+  };
+
   const [exportStartDate, setExportStartDate] = useState(() => getPastDateStr(35));
   const [exportEndDate, setExportEndDate] = useState(() => getPastDateStr(0));
-  const [peoplePerDay, setPeoplePerDay] = useState<Record<string, number>>({});
+  const [peoplePerDay, setPeoplePerDay] = useState<Record<string, number>>(() => storageService.getPeoplePerDay());
+  const [mandaysPerDay, setMandaysPerDay] = useState<Record<string, number>>(() => storageService.getMandaysPerDay());
   const [exportTotalMandays, setExportTotalMandays] = useState("");
+  const [exportWeekName, setExportWeekName] = useState(() => storageService.getExportWeekName());
+  const [selectedMasterPoIdsForExport, setSelectedMasterPoIdsForExport] = useState<string[]>([]);
+  const [exportModelSearchTerm, setExportModelSearchTerm] = useState('');
+  const [preparationExpectedDate, setPreparationExpectedDate] = useState(() => getPastDateTimeStr(-2)); // Tương lai 2 ngày (có thể điều chỉnh)
 
   const exportDateRange = useMemo(() => {
     const dates = [];
@@ -3518,6 +3522,10 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
        return localDate.toISOString().split('T')[0] === chartDate;
     });
 
+    const bendingWeldingHSQDArray = storageService.getBendingWeldingHSQD();
+    const bendingWeldingHSQDMap = new Map(bendingWeldingHSQDArray.map(n => [n.partId, n.hsqd]));
+    const getBendingWeldingHSQD = (partId: string) => bendingWeldingHSQDMap.get(partId) || 0;
+
     return timeSlots.map(slot => {
       const slotData: any = { name: slot.label, details: {} };
       targetStages.forEach(stageId => {
@@ -3538,6 +3546,8 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
 
       let sonConverted = 0;
       let danKinhConverted = 0;
+      let chanDapConverted = 0;
+      let hanConverted = 0;
 
       slotTxs.forEach(t => {
         const stageName = STAGES.find(s => s.id === t.stageId)?.name || t.stageId;
@@ -3560,6 +3570,12 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
         } else if (t.stageId === 'GLAZING') {
            const hsqd = glazingHSQD(t.partId);
            danKinhConverted += ((t.quantity || 0) * hsqd);
+        } else if (t.stageId === 'BENDING') {
+           const hsqd = getBendingWeldingHSQD(t.partId);
+           chanDapConverted += ((t.quantity || 0) * hsqd);
+        } else if (t.stageId === 'WELDING') {
+           const hsqd = getBendingWeldingHSQD(t.partId);
+           hanConverted += ((t.quantity || 0) * hsqd);
         }
       });
       
@@ -3584,16 +3600,26 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
       });
       
       // Calculate productivity percentage
-      // Fixed peoplePerHour = 8, Target = 64 for 2h slots (if specified) or 128
-      const targetQDSon = (slot.label === '6h-8h' || slot.label === '19h-20h') ? 64 : 128;
-      const targetQDDanKinh = 80;
+      const workerCountSon = hourlyPeoplePainting[slot.label] || 8;
+      const targetQDSon = (slot.label === '6h-8h' || slot.label === '19h-20h') ? workerCountSon * 8 : workerCountSon * 16;
       
+      const workerCountDanKinh = hourlyPeopleGlazing[slot.label] || 8;
+      const targetQDDanKinh = (slot.label === '6h-8h' || slot.label === '19h-20h') ? workerCountDanKinh * 8 : workerCountDanKinh * 16;
+      
+      const workerCountChanDap = hourlyPeopleBending[slot.label] || 8;
+      const targetQDChanDap = workerCountChanDap * 33;
+      
+      const workerCountHan = hourlyPeopleWelding[slot.label] || 8;
+      const targetQDHan = workerCountHan * 17.5;
+
       slotData['NSLD_Son'] = targetQDSon > 0 ? (sonConverted / targetQDSon) : 0;
       slotData['NSLD_DanKinh'] = targetQDDanKinh > 0 ? (danKinhConverted / targetQDDanKinh) : 0;
+      slotData['NSLD_ChanDap'] = targetQDChanDap > 0 ? (chanDapConverted / targetQDChanDap) : 0;
+      slotData['NSLD_Han'] = targetQDHan > 0 ? (hanConverted / targetQDHan) : 0;
 
       return slotData;
     });
-  }, [transactions, labels, chartDate]);
+  }, [transactions, labels, chartDate, hourlyPeoplePainting, hourlyPeopleGlazing, hourlyPeopleBending, hourlyPeopleWelding]);
 
   const stageSummaries = useMemo(() => {
     return STAGES.map(stage => {
@@ -3621,13 +3647,22 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
     >
       <div className="flex justify-between items-center mb-6">
         <h3 className="text-xl font-bold uppercase text-gray-800">Tổng quan Sản xuất</h3>
-        <button
-          onClick={() => setShowExportModal(true)}
-          className="flex items-center gap-2 px-5 py-3 bg-green-600 text-white rounded-xl shadow-lg hover:bg-green-700 transition-colors font-bold uppercase tracking-wider"
-        >
-          <FileSpreadsheet size={20} />
-          Xuất báo cáo SX
-        </button>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => setShowExportModal(true)}
+            className="flex items-center gap-2 px-5 py-3 bg-green-600 text-white rounded-xl shadow-lg hover:bg-green-700 transition-colors font-bold uppercase tracking-wider"
+          >
+            <FileSpreadsheet size={20} />
+            Xuất báo cáo SX
+          </button>
+          <button
+            onClick={() => setShowExportPreparationModal(true)}
+            className="flex items-center gap-2 px-5 py-3 bg-green-700 text-white rounded-xl shadow-lg hover:bg-green-800 transition-colors font-bold uppercase tracking-wider"
+          >
+            <FileSpreadsheet size={20} />
+            Xuất Báo Cáo SX 2
+          </button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -3817,21 +3852,40 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
                             const qty = item.quantity;
                             const displayQty = (part?.level === 3 || originalPart?.level === 3) ? qty.toFixed(4) : qty;
                             const displayUnit = part?.unit || originalPart?.unit || 'Bộ';
+                            const ageBatches = getInventoryBatches(item, transactions);
+                            const ageInfo = ageBatches.length > 0 ? ageBatches[0].ageInfo : null;
+                            const itemKey = `IN-${item.partId}-${item.originalPartId}`;
+                            const isExpanded = expandedInventoryKeys.has(itemKey);
 
                             return (
-                              <tr key={`${item.partId}-${item.originalPartId}-${idx}`} className="hover:bg-white transition-colors">
-                                <td className="p-4">
-                                  <div className="font-bold text-base">{getProcessValue(part?.name || item.partId, part, selectedStageDetail, 'IN')}</div>
-                                  <div className="text-xs opacity-50 flex flex-wrap gap-2 items-center">
-                                    {getProcessValue(part?.id || item.partId, part, selectedStageDetail, 'IN')}
-                                    {item.originalPartId && (
-                                      <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-medium border border-blue-100">
-                                        Nguồn: {originalPart?.name || item.originalPartId} ({originalPart?.id || item.originalPartId})
-                                      </span>
+                              <React.Fragment key={`${item.partId}-${item.originalPartId}-${idx}`}>
+                                <tr 
+                                  className="hover:bg-white transition-colors cursor-pointer"
+                                  onClick={() => {
+                                    const next = new Set(expandedInventoryKeys);
+                                    if (next.has(itemKey)) next.delete(itemKey);
+                                    else next.add(itemKey);
+                                    setExpandedInventoryKeys(next);
+                                  }}
+                                >
+                                  <td className="p-4">
+                                    <div className="font-bold text-base">{getProcessValue(part?.name || item.partId, part, selectedStageDetail, 'IN')}</div>
+                                    <div className="text-xs opacity-50 flex flex-wrap gap-2 items-center">
+                                      {getProcessValue(part?.id || item.partId, part, selectedStageDetail, 'IN')}
+                                      {item.originalPartId && (
+                                        <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-medium border border-blue-100">
+                                          Nguồn: {originalPart?.name || item.originalPartId} ({originalPart?.id || item.originalPartId})
+                                        </span>
+                                      )}
+                                    </div>
+                                    {ageInfo && (
+                                      <div className={`text-xs mt-1 font-bold ${ageInfo.colorClass} flex items-center gap-1`}>
+                                        {ageInfo.text}
+                                        {ageBatches.length > 1 && <span className="text-[10px] text-gray-500 bg-gray-100 px-1 rounded ml-1">+{ageBatches.length - 1} lần nhập</span>}
+                                      </div>
                                     )}
-                                  </div>
-                                </td>
-                                <td className="p-4 text-right">
+                                  </td>
+                                  <td className="p-4 text-right">
                                   <div className="flex items-center justify-end gap-3">
                                     <span className="font-mono font-bold text-xl">{displayQty}</span>
                                     <span className="text-xs font-mono opacity-40 uppercase mr-4">{displayUnit}</span>
@@ -3880,7 +3934,23 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
                                   </div>
                                 </td>
                               </tr>
-                            );
+                              {isExpanded && ageBatches.length > 1 && (
+                                <tr className="bg-gray-50/50">
+                                  <td colSpan={2} className="px-4 py-3 border-t border-dashed border-gray-200">
+                                    <div className="flex flex-col gap-1.5 pl-4 border-l-[3px] border-blue-300 ml-2">
+                                      <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Chi tiết tuổi tồn kho</div>
+                                      {ageBatches.map((batch, bIdx) => (
+                                        <div key={bIdx} className="flex justify-between items-center text-xs">
+                                          <span className="font-mono text-gray-700">SL: {(part?.level === 3 || originalPart?.level === 3) ? batch.quantity.toFixed(4) : batch.quantity} {displayUnit}</span>
+                                          <span className={`font-bold ${batch.ageInfo.colorClass}`}>{batch.ageInfo.text}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
                           })}
                       </tbody>
                     </table>
@@ -3932,20 +4002,39 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
                             const qty = item.quantity;
                             const displayQty = (part?.level === 3 || originalPart?.level === 3) ? qty.toFixed(4) : qty;
                             const displayUnit = part?.unit || originalPart?.unit || 'Bộ';
+                            const ageBatches = getInventoryBatches(item, transactions);
+                            const ageInfo = ageBatches.length > 0 ? ageBatches[0].ageInfo : null;
+                            const itemKey = `OUT-${item.partId}-${item.originalPartId}`;
+                            const isExpanded = expandedInventoryKeys.has(itemKey);
 
                             return (
-                              <tr key={`${item.partId}-${item.originalPartId}-${idx}`} className="hover:bg-white transition-colors">
-                                <td className="p-4">
-                                  <div className="font-bold text-base">{getProcessValue(part?.name || item.partId, part, selectedStageDetail, 'OUT')}</div>
-                                  <div className="text-xs opacity-50 flex flex-wrap gap-2 items-center">
-                                    {getProcessValue(part?.id || item.partId, part, selectedStageDetail, 'OUT')}
-                                    {item.originalPartId && (
-                                      <span className="px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded text-[10px] font-medium border border-orange-100">
-                                        Nguồn: {originalPart?.name || item.originalPartId} ({originalPart?.id || item.originalPartId})
-                                      </span>
+                              <React.Fragment key={`${item.partId}-${item.originalPartId}-${idx}`}>
+                                <tr 
+                                  className="hover:bg-white transition-colors cursor-pointer"
+                                  onClick={() => {
+                                    const next = new Set(expandedInventoryKeys);
+                                    if (next.has(itemKey)) next.delete(itemKey);
+                                    else next.add(itemKey);
+                                    setExpandedInventoryKeys(next);
+                                  }}
+                                >
+                                  <td className="p-4">
+                                    <div className="font-bold text-base">{getProcessValue(part?.name || item.partId, part, selectedStageDetail, 'OUT')}</div>
+                                    <div className="text-xs opacity-50 flex flex-wrap gap-2 items-center">
+                                      {getProcessValue(part?.id || item.partId, part, selectedStageDetail, 'OUT')}
+                                      {item.originalPartId && (
+                                        <span className="px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded text-[10px] font-medium border border-orange-100">
+                                          Nguồn: {originalPart?.name || item.originalPartId} ({originalPart?.id || item.originalPartId})
+                                        </span>
+                                      )}
+                                    </div>
+                                    {ageInfo && (
+                                      <div className={`text-xs mt-1 font-bold ${ageInfo.colorClass} flex items-center gap-1`}>
+                                        {ageInfo.text}
+                                        {ageBatches.length > 1 && <span className="text-[10px] text-gray-500 bg-gray-100 px-1 rounded ml-1">+{ageBatches.length - 1} lần nhập</span>}
+                                      </div>
                                     )}
-                                  </div>
-                                </td>
+                                  </td>
                                 <td className="p-4 text-right">
                                   <div className="flex items-center justify-end gap-3">
                                     <span className="font-mono font-bold text-xl text-[#F27D26]">{displayQty}</span>
@@ -3995,7 +4084,23 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
                                   </div>
                                 </td>
                               </tr>
-                            );
+                              {isExpanded && ageBatches.length > 1 && (
+                                <tr className="bg-gray-50/50">
+                                  <td colSpan={2} className="px-4 py-3 border-t border-dashed border-gray-200">
+                                    <div className="flex flex-col gap-1.5 pl-4 border-l-[3px] border-[#F27D26] ml-2">
+                                      <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Chi tiết tuổi tồn kho</div>
+                                      {ageBatches.map((batch, bIdx) => (
+                                        <div key={bIdx} className="flex justify-between items-center text-xs">
+                                          <span className="font-mono text-gray-700">SL: {(part?.level === 3 || originalPart?.level === 3) ? batch.quantity.toFixed(4) : batch.quantity} {displayUnit}</span>
+                                          <span className={`font-bold ${batch.ageInfo.colorClass}`}>{batch.ageInfo.text}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
                           })}
                       </tbody>
                     </table>
@@ -4037,20 +4142,39 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
                             const qty = item.quantity;
                             const displayQty = (part?.level === 3 || originalPart?.level === 3) ? qty.toFixed(4) : qty;
                             const displayUnit = part?.unit || originalPart?.unit || 'Bộ';
+                            const ageBatches = getInventoryBatches(item, transactions);
+                            const ageInfo = ageBatches.length > 0 ? ageBatches[0].ageInfo : null;
+                            const itemKey = `DEFECT-${item.partId}-${item.originalPartId}`;
+                            const isExpanded = expandedInventoryKeys.has(itemKey);
 
                             return (
-                              <tr key={`${item.partId}-${item.originalPartId}-${idx}`} className="hover:bg-white transition-colors">
-                                <td className="p-4">
-                                  <div className="font-bold text-base text-gray-900">{getProcessValue(part?.name || item.partId, part, selectedStageDetail || STAGES[0].id, 'OUT')}</div>
-                                  <div className="text-xs opacity-50 text-gray-900 flex flex-wrap gap-2 items-center">
-                                    {getProcessValue(part?.id || item.partId, part, selectedStageDetail || STAGES[0].id, 'OUT')}
-                                    {item.originalPartId && (
-                                      <span className="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[10px] font-medium border border-red-200">
-                                        Nguồn: {originalPart?.name || item.originalPartId} ({originalPart?.id || item.originalPartId})
-                                      </span>
+                              <React.Fragment key={`${item.partId}-${item.originalPartId}-${idx}`}>
+                                <tr 
+                                  className="hover:bg-white transition-colors cursor-pointer"
+                                  onClick={() => {
+                                    const next = new Set(expandedInventoryKeys);
+                                    if (next.has(itemKey)) next.delete(itemKey);
+                                    else next.add(itemKey);
+                                    setExpandedInventoryKeys(next);
+                                  }}
+                                >
+                                  <td className="p-4">
+                                    <div className="font-bold text-base text-gray-900">{getProcessValue(part?.name || item.partId, part, selectedStageDetail || STAGES[0].id, 'OUT')}</div>
+                                    <div className="text-xs opacity-50 text-gray-900 flex flex-wrap gap-2 items-center">
+                                      {getProcessValue(part?.id || item.partId, part, selectedStageDetail || STAGES[0].id, 'OUT')}
+                                      {item.originalPartId && (
+                                        <span className="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[10px] font-medium border border-red-200">
+                                          Nguồn: {originalPart?.name || item.originalPartId} ({originalPart?.id || item.originalPartId})
+                                        </span>
+                                      )}
+                                    </div>
+                                    {ageInfo && (
+                                      <div className={`text-xs mt-1 font-bold ${ageInfo.colorClass} flex items-center gap-1`}>
+                                        {ageInfo.text}
+                                        {ageBatches.length > 1 && <span className="text-[10px] text-gray-500 bg-gray-100 px-1 rounded ml-1">+{ageBatches.length - 1} lần nhập</span>}
+                                      </div>
                                     )}
-                                  </div>
-                                </td>
+                                  </td>
                                 <td className="p-4 text-right">
                                   <div className="flex items-center justify-end gap-3">
                                     <span className="font-mono font-bold text-xl text-red-600">{displayQty}</span>
@@ -4076,7 +4200,23 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
                                   </div>
                                 </td>
                               </tr>
-                            );
+                              {isExpanded && ageBatches.length > 1 && (
+                                <tr className="bg-gray-50/50">
+                                  <td colSpan={2} className="px-4 py-3 border-t border-dashed border-gray-200">
+                                    <div className="flex flex-col gap-1.5 pl-4 border-l-[3px] border-red-300 ml-2">
+                                      <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Chi tiết tuổi tồn kho</div>
+                                      {ageBatches.map((batch, bIdx) => (
+                                        <div key={bIdx} className="flex justify-between items-center text-xs">
+                                          <span className="font-mono text-gray-700">SL: {(part?.level === 3 || originalPart?.level === 3) ? batch.quantity.toFixed(4) : batch.quantity} {displayUnit}</span>
+                                          <span className={`font-bold ${batch.ageInfo.colorClass}`}>{batch.ageInfo.text}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
                           })}
                         {inventory.filter(item => item.stageId === selectedStageDetail && item.location === 'DEFECT' && item.quantity > 0).length === 0 && (
                           <tr>
@@ -4119,85 +4259,99 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
               </div>
             </div>
             
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 flex-wrap">
               <div className="flex items-center gap-2">
                 <div className="w-4 h-4 rounded bg-[#3B82F6]" />
-                <span className="text-sm font-mono uppercase opacity-60">Cắt Laser</span>
+                <span className="text-sm font-bold text-gray-800 uppercase">Cắt Laser</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded bg-[#F27D26]" />
-                <span className="text-sm font-mono uppercase opacity-60">Chấn/Dập</span>
+                <div className="w-4 h-4 rounded bg-[#9333EA]" />
+                <span className="text-sm font-bold text-gray-800 uppercase">Chấn/Dập</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-4 h-4 rounded bg-[#10B981]" />
-                <span className="text-sm font-mono uppercase opacity-60">Hàn</span>
+                <span className="text-sm font-bold text-gray-800 uppercase">Hàn</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-4 h-4 rounded bg-[#EAB308]" />
-                <span className="text-sm font-mono uppercase opacity-60">Sơn</span>
+                <span className="text-sm font-bold text-gray-800 uppercase">Sơn</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-4 h-4 rounded bg-[#EF4444]" />
-                <span className="text-sm font-mono uppercase opacity-60">Dán Kính</span>
+                <span className="text-sm font-bold text-gray-800 uppercase">Dán Kính</span>
               </div>
               <div className="flex items-center gap-2 ml-4">
-                <div className="w-4 h-1 rounded bg-[#EAB308]" />
-                <span className="text-sm font-mono uppercase font-bold opacity-80 text-[#EAB308]">NSLĐ Sơn</span>
+                <div className="w-4 h-1.5 rounded bg-[#9333EA]" />
+                <span className="text-sm font-mono uppercase font-black text-[#9333EA]">NSLĐ Chấn/Dập</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-1 rounded bg-[#EF4444]" />
-                <span className="text-sm font-mono uppercase font-bold opacity-80 text-[#EF4444]">NSLĐ Dán Kính</span>
+                <div className="w-4 h-1.5 rounded bg-[#10B981]" />
+                <span className="text-sm font-mono uppercase font-black text-[#10B981]">NSLĐ Hàn</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-1.5 rounded bg-[#EAB308]" />
+                <span className="text-sm font-mono uppercase font-black text-[#CA8A04]">NSLĐ Sơn</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-1.5 rounded bg-[#EF4444]" />
+                <span className="text-sm font-mono uppercase font-black text-[#EF4444]">NSLĐ Dán Kính</span>
               </div>
             </div>
           </div>
         </div>
-        <div className="h-96 w-full mt-6">
+        <div className="h-[520px] w-full mt-6">
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={productionChartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+            <ComposedChart data={productionChartData} margin={{ top: 35, right: 35, left: -10, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
               <XAxis 
                 dataKey="name" 
                 axisLine={false} 
                 tickLine={false} 
-                tick={{ fontSize: 12, fontWeight: 700 }} 
+                tick={{ fontSize: 13, fontWeight: 800, fill: '#111827' }} 
                 dy={10}
               />
               <YAxis 
                 yAxisId="left"
                 axisLine={false} 
                 tickLine={false} 
-                tick={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 600 }} 
+                tick={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 800, fill: '#111827' }} 
                 dx={-10}
               />
               <YAxis 
                 yAxisId="right"
                 orientation="right"
-                domain={[0, (dataMax: number) => Math.max(dataMax || 0, 1.2)]}
+                domain={[0, (dataMax: number) => Math.max(Math.ceil((dataMax || 0) * 1.25 * 10) / 10, 1.2)]}
                 axisLine={false} 
                 tickLine={false} 
-                tick={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 600 }} 
+                tick={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 800, fill: '#111827' }} 
                 tickFormatter={(value) => `${Math.round(value * 100)}%`}
                 dx={10}
               />
               <Tooltip 
-                cursor={{ fill: '#F9FAFB' }}
+                cursor={{ fill: '#F3F4F6' }}
                 content={({ active, payload, label }: any) => {
                   if (active && payload && payload.length) {
                     const data = payload[0].payload;
                     return (
-                      <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-xl text-sm text-gray-800 min-w-[200px]">
-                        <h4 className="font-bold border-b border-gray-100 pb-2 mb-3 text-lg opacity-80">{label}</h4>
+                      <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-xl text-sm text-gray-800 min-w-[220px]">
+                        <h4 className="font-bold border-b border-gray-100 pb-2 mb-3 text-lg text-gray-900">{label}</h4>
                         {payload.map((entry: any, index: number) => {
                           if (entry.value === 0) return null;
                           
-                          if (entry.dataKey === 'NSLD_Son' || entry.dataKey === 'NSLD_DanKinh') {
+                          if (entry.dataKey.startsWith('NSLD_')) {
+                             const labelMap: Record<string, string> = {
+                               'NSLD_ChanDap': 'NSLĐ Chấn/Dập',
+                               'NSLD_Han': 'NSLĐ Hàn',
+                               'NSLD_Son': 'NSLĐ Sơn',
+                               'NSLD_DanKinh': 'NSLĐ Dán Kính'
+                             };
                              return (
                                <div key={index} className="mb-2 last:mb-0 flex items-center justify-between font-bold">
                                   <div className="flex items-center gap-2" style={{ color: entry.color }}>
-                                    <div className="w-4 h-1 rounded" style={{ backgroundColor: entry.color }} />
-                                    <span className="uppercase tracking-widest">{entry.dataKey === 'NSLD_Son' ? 'NSLĐ Sơn' : 'NSLĐ Dán Kính'}</span>
+                                    <div className="w-4 h-1.5 rounded" style={{ backgroundColor: entry.color }} />
+                                    <span className="uppercase tracking-widest">{labelMap[entry.dataKey] || entry.dataKey}</span>
                                   </div>
-                                  <span className="font-mono bg-gray-100 px-2 py-0.5 rounded text-xs">{(entry.value * 100).toFixed(0)}%</span>
+                                  <span className="font-mono bg-gray-100 px-2 py-0.5 rounded text-xs text-gray-900">{(entry.value * 100).toFixed(0)}%</span>
                                </div>
                              );
                           }
@@ -4210,15 +4364,15 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
                                   <div className="w-3 h-3 rounded" style={{ backgroundColor: entry.color }} />
                                   <span className="uppercase tracking-widest">{entry.dataKey}</span>
                                 </div>
-                                <span className="font-mono bg-gray-100 px-2 py-0.5 rounded text-xs">{entry.value} TOTAL</span>
+                                <span className="font-mono bg-gray-100 px-2 py-0.5 rounded text-xs text-gray-900">{entry.value} TOTAL</span>
                               </div>
                               <div className="pl-5 space-y-2">
                                 {stageDetails.map((detail: any, idx: number) => (
-                                  <div key={idx} className="flex justify-between items-start text-xs text-gray-600 gap-6">
-                                    <span className="break-words flex-1 leading-tight">{detail.partName}</span>
+                                  <div key={idx} className="flex justify-between items-start text-xs text-gray-700 gap-6">
+                                    <span className="break-words flex-1 leading-tight font-medium">{detail.partName}</span>
                                     <div className="flex items-center gap-1">
-                                      <span className="font-mono font-bold bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100">{detail.quantity}</span>
-                                      <span className="text-[10px] opacity-60 font-medium whitespace-nowrap">{detail.unit}</span>
+                                      <span className="font-mono font-bold bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100 text-gray-900">{detail.quantity}</span>
+                                      <span className="text-[10px] opacity-70 font-semibold whitespace-nowrap">{detail.unit}</span>
                                     </div>
                                   </div>
                                 ))}
@@ -4233,14 +4387,56 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
                 }}
               />
               <Bar yAxisId="left" dataKey="Cắt Laser" fill="#3B82F6" radius={[4, 4, 0, 0]} />
-              <Bar yAxisId="left" dataKey="Chấn/Dập" fill="#F27D26" radius={[4, 4, 0, 0]} />
+              <Bar yAxisId="left" dataKey="Chấn/Dập" fill="#9333EA" radius={[4, 4, 0, 0]} />
               <Bar yAxisId="left" dataKey="Hàn" fill="#10B981" radius={[4, 4, 0, 0]} />
               <Bar yAxisId="left" dataKey="Sơn" fill="#EAB308" radius={[4, 4, 0, 0]} />
               <Bar yAxisId="left" dataKey="Dán Kính" fill="#EF4444" radius={[4, 4, 0, 0]} />
               
-              <ReferenceLine y={1} yAxisId="right" stroke="#000000" strokeDasharray="3 3" strokeWidth={2} label={{ position: 'insideTopLeft', value: '100% Target', fill: '#000', fontSize: 10, fontWeight: 'bold' }} />
-              <Line yAxisId="right" type="monotone" dataKey="NSLD_Son" stroke="#EAB308" strokeWidth={3} dot={{ r: 4, fill: '#EAB308', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
-              <Line yAxisId="right" type="monotone" dataKey="NSLD_DanKinh" stroke="#EF4444" strokeWidth={3} dot={{ r: 4, fill: '#EF4444', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+              <ReferenceLine y={1} yAxisId="right" stroke="#111827" strokeDasharray="3 3" strokeWidth={2} label={{ position: 'insideTopLeft', value: '100% Target', fill: '#111827', fontSize: 11, fontWeight: 'bold' }} />
+              <Line yAxisId="right" type="monotone" dataKey="NSLD_ChanDap" stroke="#9333EA" strokeWidth={3} dot={{ r: 4, fill: '#9333EA', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} label={(props: any) => {
+                 const { x, y, value } = props;
+                 if (!value) return null;
+                 const labelY = y < 25 ? y + 16 : y - 12;
+                 return (
+                   <g>
+                     <rect x={x - 20} y={labelY - 10} width={40} height={15} fill="rgba(255, 255, 255, 0.9)" rx={3} />
+                     <text x={x} y={labelY + 2} fill="#9333EA" fontSize={11} fontWeight="900" textAnchor="middle">{Math.round(value * 100)}%</text>
+                   </g>
+                 );
+              }} />
+              <Line yAxisId="right" type="monotone" dataKey="NSLD_Han" stroke="#10B981" strokeWidth={3} dot={{ r: 4, fill: '#10B981', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} label={(props: any) => {
+                 const { x, y, value } = props;
+                 if (!value) return null;
+                 const labelY = y < 25 ? y + 16 : y - 12;
+                 return (
+                   <g>
+                     <rect x={x - 20} y={labelY - 10} width={40} height={15} fill="rgba(255, 255, 255, 0.9)" rx={3} />
+                     <text x={x} y={labelY + 2} fill="#10B981" fontSize={11} fontWeight="900" textAnchor="middle">{Math.round(value * 100)}%</text>
+                   </g>
+                 );
+              }} />
+              <Line yAxisId="right" type="monotone" dataKey="NSLD_Son" stroke="#EAB308" strokeWidth={3} dot={{ r: 4, fill: '#EAB308', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} label={(props: any) => {
+                 const { x, y, value } = props;
+                 if (!value) return null;
+                 const labelY = y < 25 ? y + 16 : y - 12;
+                 return (
+                   <g>
+                     <rect x={x - 20} y={labelY - 10} width={40} height={15} fill="rgba(255, 255, 255, 0.9)" rx={3} />
+                     <text x={x} y={labelY + 2} fill="#CA8A04" fontSize={11} fontWeight="900" textAnchor="middle">{Math.round(value * 100)}%</text>
+                   </g>
+                 );
+              }} />
+              <Line yAxisId="right" type="monotone" dataKey="NSLD_DanKinh" stroke="#EF4444" strokeWidth={3} dot={{ r: 4, fill: '#EF4444', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} label={(props: any) => {
+                 const { x, y, value } = props;
+                 if (!value) return null;
+                 const labelY = y < 25 ? y + 16 : y - 12;
+                 return (
+                   <g>
+                     <rect x={x - 20} y={labelY - 10} width={40} height={15} fill="rgba(255, 255, 255, 0.9)" rx={3} />
+                     <text x={x} y={labelY + 2} fill="#EF4444" fontSize={11} fontWeight="900" textAnchor="middle">{Math.round(value * 100)}%</text>
+                   </g>
+                 );
+              }} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -4398,6 +4594,20 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
                 </div>
                 
                 <div>
+                  <label className="block text-sm font-bold uppercase text-gray-600 mb-2">Tuần <span className="text-[10px] text-gray-400 normal-case">(Hiển thị trên tiêu đề)</span></label>
+                  <input 
+                    type="text"
+                    placeholder="VD: 24,25"
+                    value={exportWeekName}
+                    onChange={(e) => {
+                      setExportWeekName(e.target.value);
+                      storageService.saveExportWeekName(e.target.value);
+                    }}
+                    className="w-full bg-gray-50 border border-gray-200 p-3.5 rounded-xl font-bold text-gray-800 outline-none focus:border-green-500 focus:bg-green-50 transition-all"
+                  />
+                </div>
+                
+                <div>
                   <label className="block text-sm font-bold uppercase text-gray-600 mb-2">Tổng số công đi làm <span className="text-[10px] text-gray-400 normal-case">(Tính % thực hiện tuần)</span></label>
                   <input 
                     type="number"
@@ -4409,25 +4619,51 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
                   />
                 </div>
 
-                <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 max-h-60 overflow-y-auto">
-                  <label className="block text-sm font-bold uppercase text-gray-600 mb-4 sticky top-0 bg-gray-50 pb-2 border-b border-gray-200">Số lượng người</label>
-                  <div className="grid grid-cols-3 gap-4">
+                <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 max-h-60 overflow-y-auto custom-scrollbar">
+                  <label className="block text-sm font-bold uppercase text-gray-600 mb-4 sticky top-0 bg-gray-50 pb-2 border-b border-gray-200 z-10">Dữ liệu mỗi ngày</label>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                     {exportDateRange.map(dateStr => {
                       const [y, m, d] = dateStr.split('-');
                       return (
-                      <div key={dateStr} className="flex flex-col gap-1 bg-white p-2 border border-gray-200 rounded-lg shadow-sm">
-                        <span className="text-[10px] font-bold text-gray-500 uppercase flex justify-between items-center">
+                      <div key={dateStr} className="flex flex-col gap-2 bg-white p-2 border border-gray-200 rounded-lg shadow-sm">
+                        <span className="text-[10px] font-bold text-gray-500 uppercase text-center border-b border-gray-100 pb-1">
                           {d}/{m}/{y}
                         </span>
-                        <input
-                          type="number"
-                          min="0"
-                          title={`Số người ngày ${dateStr}`}
-                          placeholder="12"
-                          value={peoplePerDay[dateStr] === undefined ? 12 : peoplePerDay[dateStr]}
-                          onChange={(e) => setPeoplePerDay({ ...peoplePerDay, [dateStr]: parseInt(e.target.value) || 0 })}
-                          className="w-full bg-gray-50 outline-none text-base font-bold p-2 rounded focus:border-blue-500 border border-transparent hover:border-gray-300 transition-colors text-blue-700 text-center"
-                        />
+                        
+                        <div className="flex gap-2">
+                           <div className="flex-1">
+                             <label className="block text-[9px] font-bold text-gray-400 mb-1 leading-none uppercase">Người</label>
+                             <input
+                               type="number"
+                               min="0"
+                               title={`Số người ngày ${dateStr}`}
+                               placeholder="12"
+                               value={peoplePerDay[dateStr] === undefined ? 12 : peoplePerDay[dateStr]}
+                               onChange={(e) => {
+                                 const updated = { ...peoplePerDay, [dateStr]: parseInt(e.target.value) || 0 };
+                                 setPeoplePerDay(updated);
+                                 storageService.savePeoplePerDay(updated);
+                               }}
+                               className="w-full bg-gray-50 outline-none text-sm font-bold p-1.5 rounded focus:border-blue-500 border border-transparent hover:border-gray-300 transition-colors text-blue-700 text-center"
+                             />
+                           </div>
+                           <div className="flex-1">
+                             <label className="block text-[9px] font-bold text-gray-400 mb-1 leading-none uppercase">Công</label>
+                             <input
+                               type="number"
+                               min="0"
+                               title={`Số công ngày ${dateStr}`}
+                               placeholder="12"
+                               value={mandaysPerDay[dateStr] === undefined ? 12 : mandaysPerDay[dateStr]}
+                               onChange={(e) => {
+                                 const updated = { ...mandaysPerDay, [dateStr]: parseInt(e.target.value) || 0 };
+                                 setMandaysPerDay(updated);
+                                 storageService.saveMandaysPerDay(updated);
+                               }}
+                               className="w-full bg-gray-50 outline-none text-sm font-bold p-1.5 rounded focus:border-orange-500 border border-transparent hover:border-gray-300 transition-colors text-orange-700 text-center"
+                             />
+                           </div>
+                        </div>
                       </div>
                     )})}
                   </div>
@@ -4436,10 +4672,147 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
                 <div className="pt-2">
                   <button 
                     onClick={() => {
-                      exportProductionReportRange(transactions, parts, exportStartDate, exportEndDate, peoplePerDay, parseInt(exportTotalMandays) || 0);
+                      exportProductionReportRange(transactions, parts, exportStartDate, exportEndDate, peoplePerDay, mandaysPerDay, parseInt(exportTotalMandays) || 0, exportWeekName);
                       setShowExportModal(false);
                     }}
                     className="w-full py-4 bg-green-600 text-white rounded-xl font-bold text-lg uppercase hover:bg-green-700 active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2"
+                  >
+                    <FileSpreadsheet size={24} />
+                    Xuất File Excel
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showExportPreparationModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl p-8 max-w-xl w-full shadow-2xl relative"
+            >
+              <button className="absolute top-4 right-4 text-gray-500 hover:text-gray-800 cursor-pointer p-2 hover:bg-gray-100 rounded-full transition-colors" onClick={() => setShowExportPreparationModal(false)}>
+                <X size={20} />
+              </button>
+              <h2 className="text-2xl font-bold uppercase text-gray-900 mb-6 flex items-center gap-3">
+                <FileSpreadsheet className="text-green-600" />
+                Chọn Thời Gian Báo Cáo
+              </h2>
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-bold uppercase text-gray-600 mb-2">Ngày dự kiến (Ngày cần)</label>
+                  <input 
+                    type="datetime-local"
+                    value={preparationExpectedDate}
+                    onChange={(e) => setPreparationExpectedDate(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 p-4 rounded-xl font-bold text-gray-800 outline-none focus:border-green-500 focus:bg-green-50 transition-all font-mono cursor-pointer"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-bold uppercase text-gray-600 mb-2">Tuần <span className="text-[10px] text-gray-400 normal-case">(Hiển thị trên tiêu đề)</span></label>
+                  <input 
+                    type="text"
+                    placeholder="VD: 24,25"
+                    value={exportWeekName}
+                    onChange={(e) => {
+                      setExportWeekName(e.target.value);
+                      storageService.saveExportWeekName(e.target.value);
+                    }}
+                    className="w-full bg-gray-50 border border-gray-200 p-3.5 rounded-xl font-bold text-gray-800 outline-none focus:border-green-500 focus:bg-green-50 transition-all"
+                  />
+                </div>
+
+                <div>
+                   <label className="block text-sm font-bold uppercase text-gray-600 mb-2">Chọn PO Tổng để báo cáo</label>
+                   <input
+                     type="text"
+                     placeholder="Tìm kiếm model hoặc mã PO..."
+                     value={exportModelSearchTerm}
+                     onChange={(e) => setExportModelSearchTerm(e.target.value)}
+                     className="w-full mb-2 bg-white border border-gray-200 p-2 rounded-lg font-mono text-sm outline-none focus:border-green-500"
+                   />
+                   <div className="max-h-[30vh] overflow-y-auto border border-gray-200 rounded-xl p-3 bg-gray-50 flex flex-col gap-1">
+                     {(() => {
+                       const thirtyFiveDaysAgo = Date.now() - 35 * 24 * 60 * 60 * 1000;
+                       const allMasterPOs = storageService.getProductionOrders().filter(o => !o.masterPoId && !o.id.startsWith('REPAIR') && o.createdAt >= thirtyFiveDaysAgo);
+                       const allGlazingPlans = storageService.getGlazingPlans().filter(o => o.createdAt >= thirtyFiveDaysAgo);
+                       
+                       const allPlans = [...allMasterPOs, ...allGlazingPlans];
+                       
+                       const grouped = allPlans.reduce((acc, po) => {
+                         const modelId = 'partId' in po ? po.partId : po.modelId;
+                         if (!acc[modelId]) acc[modelId] = [];
+                         acc[modelId].push(po);
+                         return acc;
+                       }, {} as Record<string, any[]>);
+                       
+                       const filteredModels = Object.keys(grouped).filter(modelId => {
+                         const modelName = parts.find(p => p.id === modelId)?.name || modelId;
+                         const searchLower = exportModelSearchTerm.toLowerCase();
+                         if (modelName.toLowerCase().includes(searchLower) || modelId.toLowerCase().includes(searchLower)) return true;
+                         return grouped[modelId].some(po => po.id.toLowerCase().includes(searchLower));
+                       });
+                       
+                       if (filteredModels.length === 0) {
+                         return <div className="text-gray-500 text-sm italic p-2">Không tìm thấy kết quả phù hợp.</div>;
+                       }
+                       
+                       return filteredModels.map(modelId => {
+                         const modelName = parts.find((p: any) => p.id === modelId)?.name || modelId;
+                         const pos = grouped[modelId];
+                         
+                         return (
+                           <div key={modelId} className="border border-gray-200 rounded-lg p-2 bg-white shadow-sm mb-2">
+                             <div className="font-bold text-gray-800 mb-2 border-b pb-1">
+                               {modelName} <span className="text-gray-500 font-mono text-xs ml-1">({modelId})</span>
+                             </div>
+                             {pos.sort((a, b) => b.createdAt - a.createdAt).map(po => {
+                                if (exportModelSearchTerm && !modelName.toLowerCase().includes(exportModelSearchTerm.toLowerCase()) && !modelId.toLowerCase().includes(exportModelSearchTerm.toLowerCase()) && !po.id.toLowerCase().includes(exportModelSearchTerm.toLowerCase())) return null;
+                                
+                                const isSelected = selectedMasterPoIdsForExport.includes(po.id);
+                                const isGlazing = !('partId' in po);
+                                const labelColor = isGlazing ? 'text-indigo-600' : 'text-blue-600';
+                                
+                                return (
+                                   <label key={po.id} className="flex items-center gap-3 p-1.5 hover:bg-gray-50 rounded cursor-pointer ml-2">
+                                      <input type="checkbox" checked={isSelected} onChange={(e) => {
+                                         if (e.target.checked) setSelectedMasterPoIdsForExport(prev => [...prev, po.id]);
+                                         else setSelectedMasterPoIdsForExport(prev => prev.filter(id => id !== po.id));
+                                      }} className="w-4 h-4 text-green-600 rounded focus:ring-green-500 cursor-pointer" />
+                                      <span className={`font-mono ${labelColor} font-bold text-sm`}>{po.id}</span>
+                                      <span className="text-xs text-gray-500">(Kế hoạch: {po.targetQuantity}, Tạo: {format(po.createdAt, 'dd/MM HH:mm')})</span>
+                                   </label>
+                                );
+                             })}
+                           </div>
+                         )
+                       });
+                     })()}
+                   </div>
+                </div>
+
+                <div className="pt-2">
+                  <button 
+                    onClick={() => {
+                      exportPreparationReport(
+                        storageService.getProductionOrders(),
+                        storageService.getGlazingPlans(),
+                        parts,
+                        storageService.getGlazingPlanNorms(),
+                        selectedMasterPoIdsForExport,
+                        preparationExpectedDate,
+                        exportWeekName
+                      );
+                      setShowExportPreparationModal(false);
+                    }}
+                    className="w-full py-4 bg-green-700 text-white rounded-xl font-bold text-lg uppercase hover:bg-green-800 active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={selectedMasterPoIdsForExport.length === 0}
                   >
                     <FileSpreadsheet size={24} />
                     Xuất File Excel
@@ -4458,7 +4831,7 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl relative"
+              className="bg-white rounded-3xl p-8 max-w-2xl w-full shadow-2xl relative"
             >
               <button className="absolute top-4 right-4 text-gray-500 hover:text-gray-800 cursor-pointer p-2 hover:bg-gray-100 rounded-full transition-colors" onClick={() => setShowExportHourlyModal(false)}>
                 <X size={20} />
@@ -4480,21 +4853,84 @@ function DashboardView({ inventory, parts, transactions, labels, refreshData, se
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-bold uppercase text-gray-600 mb-2">Nhân sự mỗi giờ <span className="text-[10px] text-gray-400 normal-case">(Tính năng suất)</span></label>
-                  <input 
-                    type="number"
-                    min="1"
-                    placeholder="VD: 8"
-                    value={hourlyExportPeople}
-                    onChange={(e) => setHourlyExportPeople(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-200 p-4 rounded-xl font-bold text-gray-800 outline-none focus:border-green-500 focus:bg-green-50 transition-all font-mono"
-                  />
+                  <label className="block text-sm font-bold uppercase text-gray-600 mb-2">Nhân sự mỗi giờ <span className="text-[10px] text-gray-400 normal-case">(CHẤN/DẬP / HÀN / SƠN / DÁN KÍNH)</span></label>
+                  <div className="max-h-[400px] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                    {['6h-8h', '8h-10h', '10h-12h', '13h-15h', '15h-17h', '17h-19h', '19h-20h'].map((slotLabel) => (
+                      <div key={slotLabel} className="flex gap-2 items-center bg-gray-50 border border-gray-200 p-2 rounded-lg">
+                        <span className="text-xs font-bold w-16 text-gray-600 shrink-0">{slotLabel}</span>
+                        <div className="flex-1">
+                          <label className="text-[10px] font-bold text-gray-400 uppercase leading-none block mb-1">Chấn/Dập</label>
+                          <input 
+                            type="number" 
+                            min="0"
+                            placeholder="8"
+                            value={hourlyPeopleBending[slotLabel] === undefined ? '' : hourlyPeopleBending[slotLabel]}
+                            onChange={(e) => {
+                               const val = e.target.value ? parseInt(e.target.value) : 0;
+                               const newConfig = { ...hourlyPeopleBending, [slotLabel]: val };
+                               setHourlyPeopleBending(newConfig);
+                               storageService.saveHourlyPeopleBending(newConfig);
+                            }}
+                            className="w-full border border-gray-200 rounded p-1.5 text-sm font-mono text-center outline-none focus:border-green-500"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <label className="text-[10px] font-bold text-gray-400 uppercase leading-none block mb-1">Hàn</label>
+                          <input 
+                            type="number" 
+                            min="0"
+                            placeholder="8"
+                            value={hourlyPeopleWelding[slotLabel] === undefined ? '' : hourlyPeopleWelding[slotLabel]}
+                            onChange={(e) => {
+                               const val = e.target.value ? parseInt(e.target.value) : 0;
+                               const newConfig = { ...hourlyPeopleWelding, [slotLabel]: val };
+                               setHourlyPeopleWelding(newConfig);
+                               storageService.saveHourlyPeopleWelding(newConfig);
+                            }}
+                            className="w-full border border-gray-200 rounded p-1.5 text-sm font-mono text-center outline-none focus:border-green-500"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <label className="text-[10px] font-bold text-gray-400 uppercase leading-none block mb-1">Sơn</label>
+                          <input 
+                            type="number" 
+                            min="0"
+                            placeholder="8"
+                            value={hourlyPeoplePainting[slotLabel] === undefined ? '' : hourlyPeoplePainting[slotLabel]}
+                            onChange={(e) => {
+                               const val = e.target.value ? parseInt(e.target.value) : 0;
+                               const newConfig = { ...hourlyPeoplePainting, [slotLabel]: val };
+                               setHourlyPeoplePainting(newConfig);
+                               storageService.saveHourlyPeoplePainting(newConfig);
+                            }}
+                            className="w-full border border-gray-200 rounded p-1.5 text-sm font-mono text-center outline-none focus:border-green-500"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <label className="text-[10px] font-bold text-gray-400 uppercase leading-none block mb-1">Dán Kính</label>
+                          <input 
+                            type="number" 
+                            min="0"
+                            placeholder="8"
+                            value={hourlyPeopleGlazing[slotLabel] === undefined ? '' : hourlyPeopleGlazing[slotLabel]}
+                            onChange={(e) => {
+                               const val = e.target.value ? parseInt(e.target.value) : 0;
+                               const newConfig = { ...hourlyPeopleGlazing, [slotLabel]: val };
+                               setHourlyPeopleGlazing(newConfig);
+                               storageService.saveHourlyPeopleGlazing(newConfig);
+                            }}
+                            className="w-full border border-gray-200 rounded p-1.5 text-sm font-mono text-center outline-none focus:border-green-500"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="pt-2">
                   <button 
                     onClick={() => {
-                      exportHourlyProductionReport(transactions, parts, chartDate, parseInt(hourlyExportPeople) || 8);
+                      exportHourlyProductionReport(transactions, parts, chartDate);
                       setShowExportHourlyModal(false);
                     }}
                     className="w-full py-4 bg-green-600 text-white rounded-xl font-bold text-lg uppercase hover:bg-green-700 active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2"
@@ -4907,139 +5343,7 @@ function ProduceView({
                 </button>
               </div>
               
-              <div id="qr-label-display" className="w-[420px] bg-white p-4 flex flex-col box-border">
-                <div className="w-full text-center pb-2">
-                  <h1 className="font-black uppercase tracking-tight text-sm text-black">PHIẾU ĐIỀU CHUYỂN</h1>
-                </div>
-                <div className="w-full flex-1 border-2 border-black flex flex-col items-center p-4">
-                {/* QR Section */}
-                <div className="mt-1 mb-4 border-[3px] border-black p-1">
-                  <QRCodeSVG value={lastTransaction.qrData || ''} size={240} level="H" />
-                </div>
-
-                {/* Part Info */}
-                <div className="w-full text-center mb-6 text-black">
-                  <h2 className="text-4xl font-black uppercase tracking-tight leading-none mb-2 text-black">
-                    {lastTransaction.partName || getProcessValue(parts.find(p => p.id === lastTransaction.partId)?.name, parts.find(p => p.id === lastTransaction.partId), lastTransaction.stageId, 'OUT')}
-                  </h2>
-                  <p className="font-mono font-black mt-1 text-black break-words" style={{ fontSize: `${labelSettings.fontSize + 4}px` }}>
-                    Mã LK: {lastTransaction.partId}
-                  </p>
-                </div>
-
-                {/* Main Stats */}
-                <div className="w-full grid grid-cols-2 border-t-[3px] border-black py-4 text-black">
-                  <div className="text-center border-r-[3px] border-black px-2 flex flex-col justify-center">
-                    <span className="text-[10px] font-black uppercase mb-1">Số lượng:</span>
-                    <span className="text-3xl font-black">{lastTransaction.quantity} {parts.find(p => p.id === lastTransaction.partId)?.unit}</span>
-                  </div>
-                  <div className="text-center px-2 flex flex-col justify-center">
-                    <span className="text-[10px] font-black uppercase mb-1 text-black">Từ công đoạn:</span>
-                    <span className="text-2xl font-black uppercase leading-tight text-black">
-                      {STAGES.find(s => s.id === lastTransaction.stageId)?.name}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Destination Box */}
-                <div className="w-full border-[3px] border-black rounded-lg p-4 my-4 text-center text-black">
-                  <span className="text-[10px] font-black uppercase block mb-2 text-black">Đích tiếp theo:</span>
-                  <div className="flex items-center justify-center gap-4 font-black text-xl italic group">
-                    <span>{STAGES.find(s => s.id === lastTransaction.stageId)?.name}</span>
-                    <ArrowRight size={24} strokeWidth={3} className="text-black" />
-                    <span>{STAGES.find(s => s.id === (lastTransaction.targetStageId || lastTransaction.qrData?.split('|')?.[5]))?.name || 
-                           ((lastTransaction.targetStageId || lastTransaction.qrData?.split('|')?.[5]) === 'DCLR' ? 'Lắp ráp (DCLR)' : 'HOÀN THÀNH')}</span>
-                  </div>
-                </div>
-
-                {/* Optional Glazing Times */}
-                {(lastTransaction as any).planId && (() => {
-                  const plan = storageService.getGlazingPlans().find(p => p.id === (lastTransaction as any).planId);
-                  if (plan) {
-                    return (
-                      <div className="w-full flex justify-between font-mono font-bold text-black border-t border-b border-black py-2 mb-2" style={{ fontSize: `${labelSettings.fontSize + 2}px` }}>
-                         <div className="flex flex-col text-left">
-                           <span className="text-[14px] uppercase font-black">HT Dự Kiến</span>
-                           <span>{plan.expectedCompletionTime ? format(plan.expectedCompletionTime, 'HH:mm dd/MM') : '--:--'}</span>
-                         </div>
-                         <div className="flex flex-col text-right">
-                           <span className="text-[14px] uppercase font-black">HT Thực Tế</span>
-                           <span>{format(lastTransaction.timestamp, 'HH:mm dd/MM')}</span>
-                         </div>
-                      </div>
-                    );
-                  }
-                  return null;
-                })()}
-
-                {/* PO Details Section */}
-                <div className="mb-1 w-full space-y-[2px] text-[10px] font-black bg-transparent p-1 border-2 border-black rounded text-black leading-none">
-                  <div className="flex justify-between items-center text-black">
-                    <span className="uppercase text-black">LOẠI PO:</span>
-                    {(() => {
-                      const po = storageService.getProductionOrders().find(p => p.id === lastTransaction.poId);
-                      return (
-                        <span className="px-1 py-0.5 rounded text-[9px] uppercase font-black text-black">
-                          {po?.masterPoId ? 'PO Con (Sub)' : 'PO Tổng (Master)'}
-                        </span>
-                      );
-                    })()}
-                  </div>
-                  <div className="flex justify-between items-center text-black">
-                    <span className="uppercase text-black">Mã PO:</span>
-                    <span className="font-mono text-[10px] font-black text-black">{lastTransaction.poId || 'N/A'}</span>
-                  </div>
-                  <div className="flex justify-between items-center text-[9px] italic font-black text-black">
-                    <span>Kế hoạch PO Con:</span>
-                    <span>{lastTransaction.qrData?.split('|')?.[8] || storageService.getProductionOrders().find(p => p.id === lastTransaction.poId)?.targetQuantity || 0} linh kiện</span>
-                  </div>
-                  {(() => {
-                    const po = storageService.getProductionOrders().find(p => p.id === lastTransaction.poId);
-                    const masterId = po?.masterPoId || lastTransaction.qrData?.split('|')?.[7];
-                    return (
-                      <>
-                        {po?.plannedStartTime && (
-                          <div className="flex justify-between items-center pt-[2px] border-t border-black text-black">
-                            <span className="uppercase text-black font-black">KH Bắt đầu PO:</span>
-                            <span className="font-mono font-black text-black">{format(po.plannedStartTime, 'dd/MM HH:mm')}</span>
-                          </div>
-                        )}
-                        {po?.expectedCompletionTime && (
-                          <div className="flex justify-between items-center text-black">
-                            <span className="uppercase text-black font-black">KH Kết thúc PO:</span>
-                            <span className="font-mono font-black text-black">{format(po.expectedCompletionTime, 'dd/MM HH:mm')}</span>
-                          </div>
-                        )}
-                        {masterId && (
-                          <>
-                            <div className="flex justify-between items-center pt-[2px] border-t border-black text-black">
-                              <span className="uppercase font-black text-black">PO TỔNG:</span>
-                              <span className="font-mono text-[10px] font-black text-black">{masterId}</span>
-                            </div>
-                            <div className="flex justify-between items-center text-[9px] italic text-black font-black">
-                              <span>Kế hoạch PO Tổng:</span>
-                              <span>{lastTransaction.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0} máy</span>
-                            </div>
-                          </>
-                        )}
-                      </>
-                    );
-                  })()}
-                  <div className="flex justify-between items-center pt-[2px] border-t border-black text-black">
-                    <span className="uppercase font-black text-black text-[9px]">Hoàn thành thực tế:</span>
-                    <span className="font-mono font-black text-black">{format(lastTransaction.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
-                  </div>
-                </div>
-
-                <div className="w-full border-t-[3px] border-black pt-4 justify-between items-end text-black hidden">
-                  <div className="flex flex-col text-[11px] font-mono leading-none text-black">
-                    <span className="font-black mb-1 text-black">ID: {lastTransaction.id}</span>
-                    <span className="font-black text-black">Thời gian: {format(lastTransaction.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
-                  </div>
-                  <span className="text-[11px] font-black tracking-tighter italic text-black">WIP TRACKING</span>
-                </div>
-                </div>
-              </div>
+              <A7QRLabelCard label={lastTransaction} parts={parts} labelSettings={labelSettings} isPrintArea={false} />
 
               <div className="w-full flex gap-4 no-print mt-auto">
                 <button 
@@ -8959,7 +9263,8 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
 }
 
 function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () => void }) {
-  const [activeTab, setActiveTab] = useState<StageId | 'NESTING'>('NESTING');
+  const [activeTab, setActiveTab] = useState<StageId | 'NESTING' | 'BW_HSQD'>('NESTING');
+  const [bendingWeldingHSQD, setBendingWeldingHSQD] = useState<{partId: string, hsqd: number}[]>(() => storageService.getBendingWeldingHSQD());
   const [isImporting, setIsImporting] = useState(false);
   const norms = storageService.getNorms();
   const nesting = storageService.getLaserNesting();
@@ -9026,6 +9331,33 @@ function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () 
             storageService.saveLaserNesting(imported);
             alert(`Đã nhập thành công ${imported.length} linh kiện vào ${nestingTotals.size} tổ hợp Laser! Hệ thống đã tự động cộng tổng thời gian mỗi tấm.`);
             onNormsChange();
+          }
+        } else if (activeTab === 'BW_HSQD') {
+          const imported = data.map(row => {
+            const lowerRow: any = {};
+            for (const key in row) {
+              if (Object.prototype.hasOwnProperty.call(row, key)) lowerRow[key.toLowerCase().trim()] = row[key];
+            }
+            const partIdRaw = String(lowerRow['partid'] || lowerRow['mã linh kiện'] || lowerRow['mã lk'] || lowerRow['mã thành phẩm'] || '').trim();
+            const partNameRaw = String(lowerRow['partname'] || lowerRow['tên linh kiện'] || lowerRow['tên lk'] || lowerRow['tên thành phẩm'] || '').trim();
+            let finalPartId = partIdRaw;
+            if (!finalPartId && partNameRaw) {
+              const found = parts.find(p => p.name.toLowerCase() === partNameRaw.toLowerCase());
+              if (found) finalPartId = found.id;
+            }
+            const hsqdVal = lowerRow['hsqd'] || lowerRow['hsqđ'] || lowerRow['hệ số quy đổi'];
+            return {
+              partId: finalPartId,
+              hsqd: parseFloat(String(hsqdVal || '0').replace(',', '.'))
+            };
+          }).filter(n => n.partId && !isNaN(n.hsqd) && n.hsqd > 0);
+
+          if (imported.length === 0) {
+            alert('Không tìm thấy dữ liệu hợp lệ. Cần các cột: Mã thành phẩm, Tên thành phẩm, HSQĐ');
+          } else {
+            storageService.saveBendingWeldingHSQD(imported);
+            setBendingWeldingHSQD(imported);
+            alert(`Đã nhập thành công ${imported.length} HSQĐ cho Chấn/Hàn!`);
           }
         } else {
           // Standard Stage Norm Import
@@ -9111,6 +9443,15 @@ function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () 
             {stage.name}
           </button>
         ))}
+        <button
+          onClick={() => setActiveTab('BW_HSQD')}
+          className={cn(
+            "flex-1 py-4 px-6 rounded-xl font-bold uppercase tracking-widest transition-all whitespace-nowrap",
+            activeTab === 'BW_HSQD' ? "bg-purple-600 text-white shadow-lg" : "text-gray-400 hover:bg-gray-50"
+          )}
+        >
+          HSQĐ Chấn/Hàn
+        </button>
       </div>
 
       <div className="bg-white rounded-3xl border border-gray-200 shadow-xl overflow-hidden">
@@ -9211,6 +9552,51 @@ function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () 
                         <p className="text-xl">Chưa có định mức tổ hợp linh kiện Laser.</p>
                         <p className="text-sm mt-2 font-mono uppercase">Vui lòng nhập file Excel đúng cấu trúc các cột: Mã bàn (Nesting ID), Linh kiện kết hợp, Số lượng / Tấm, Thời gian / LK (Giây).</p>
                       </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          ) : activeTab === 'BW_HSQD' ? (
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50/50 border-b border-gray-100">
+                  <th className="p-8 pl-12 text-sm font-mono uppercase opacity-75">Mã thành phẩm</th>
+                  <th className="p-8 text-sm font-mono uppercase opacity-75">Tên thành phẩm</th>
+                  <th className="p-8 text-sm font-mono uppercase opacity-75 text-center">HSQĐ</th>
+                  <th className="p-8 pr-12 text-sm font-mono uppercase opacity-75 text-right">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {bendingWeldingHSQD.map((item, idx) => {
+                  const part = parts.find(p => p.id === item.partId);
+                  return (
+                    <tr key={idx} className="hover:bg-gray-50/30 transition-colors">
+                      <td className="p-8 pl-12 font-mono text-lg font-bold">{item.partId}</td>
+                      <td className="p-8 text-lg font-medium text-gray-600">{part?.name || 'N/A'}</td>
+                      <td className="p-8 text-center">
+                        <span className="font-mono text-2xl font-black text-purple-600">{item.hsqd}</span>
+                      </td>
+                      <td className="p-8 pr-12 text-right">
+                        <button 
+                          onClick={() => {
+                            const updated = bendingWeldingHSQD.filter(n => n.partId !== item.partId);
+                            storageService.saveBendingWeldingHSQD(updated);
+                            setBendingWeldingHSQD(updated);
+                          }}
+                          className="p-3 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                        >
+                          <Trash2 size={24} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {bendingWeldingHSQD.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="p-24 text-center text-gray-400 italic">
+                      <p className="text-xl">Chưa có hệ số quy đổi cho Chấn/Hàn.</p>
+                      <p className="text-sm mt-2 font-mono uppercase">Vui lòng nhập file Excel chứa cột Mã thành phẩm, Tên thành phẩm, HSQĐ.</p>
                     </td>
                   </tr>
                 )}
