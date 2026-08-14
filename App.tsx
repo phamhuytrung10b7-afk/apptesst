@@ -480,7 +480,9 @@ function A7QRLabelCard({
   const po = storageService.getProductionOrders().find(p => p.id === label.poId);
   const masterId = po?.masterPoId || label.qrData?.split('|')?.[7];
 
-  const qrSize = isPrintArea ? (labelSettings?.qrSize || 160) : 160;
+  // Responsive font size and QR size scaling based on settings (or defaults for A7)
+  const baseFontSize = Math.min(Math.max(labelSettings?.fontSize || 10, 7), 14);
+  const qrSize = Math.min(Math.max(labelSettings?.qrSize || 110, 70), 135);
 
   return (
     <div 
@@ -488,52 +490,60 @@ function A7QRLabelCard({
       className={cn(
         isPrintArea 
           ? "w-full h-full bg-white text-black flex flex-col items-center justify-between box-border overflow-hidden"
-          : "w-[350px] min-h-[467px] bg-white border-2 border-black p-3 flex flex-col items-center justify-between relative overflow-hidden rounded-xl shadow-xl text-black"
+          : "w-[300px] h-[400px] bg-white border-2 border-black p-2.5 flex flex-col items-center justify-between relative overflow-hidden rounded-xl shadow-xl text-black shrink-0"
       )}
       style={isPrintArea ? {
         width: `${labelSettings?.width || 75}mm`,
         height: `${labelSettings?.height || 100}mm`,
-        padding: '2.5mm 3mm',
+        padding: '2mm 2.5mm',
         boxSizing: 'border-box'
       } : undefined}
     >
       {/* 1. HEADER / BANNER */}
       {isDisposal ? (
-        <div className="w-full bg-black text-white text-center py-1 font-black text-xs uppercase tracking-wider relative z-10">
+        <div className="w-full bg-black text-white text-center py-0.5 font-black text-[10px] uppercase tracking-wider relative z-10 rounded-sm">
           NHÃN XUẤT HỦY {label.type === 'DEFECT' ? '(DEFECT)' : '(DISPOSAL)'}
         </div>
       ) : (
-        <div className="w-full text-center border-b-2 border-black pb-1">
-          <h1 className="font-black uppercase tracking-widest text-xs text-black">PHIẾU ĐIỀU CHUYỂN</h1>
+        <div className="w-full text-center border-b border-black pb-0.5 mb-0.5">
+          <h1 className="font-black uppercase tracking-widest text-[11px] text-black leading-none">PHIẾU ĐIỀU CHUYỂN</h1>
         </div>
       )}
 
       {/* 2. QR CODE */}
-      <div className="my-0.5 border-2 border-black p-1 bg-white inline-block relative z-10">
-        <QRCodeSVG value={label.qrData || ''} size={qrSize} level="H" includeMargin={true} />
+      <div className="my-0.5 border border-black p-0.5 bg-white inline-block relative z-10 rounded-sm">
+        <QRCodeSVG value={label.qrData || ''} size={qrSize} level="H" includeMargin={false} />
       </div>
 
       {/* 3. PART NAME & PART CODE */}
-      <div className="w-full text-center my-0.5 relative z-10 text-black px-1">
-        <h2 className="text-base sm:text-lg font-black uppercase leading-tight tracking-tight break-words line-clamp-2 text-black">
+      <div className="w-full text-center my-0.5 relative z-10 text-black px-0.5">
+        <h2 
+          className="font-black uppercase leading-snug tracking-tight break-words line-clamp-2 text-black"
+          style={{ fontSize: `${baseFontSize + 3}px` }}
+        >
           {partNameDisplay}
         </h2>
-        <p className="font-mono font-bold text-xs text-black mt-0.5 break-words">
+        <p 
+          className="font-mono font-bold text-black mt-0.5 break-words"
+          style={{ fontSize: `${baseFontSize}px` }}
+        >
           Mã LK: {partIdDisplay}
         </p>
       </div>
 
       {/* 4. QUANTITY & SOURCE STAGE GRID */}
-      <div className="w-full grid grid-cols-2 border-t-2 border-b-2 border-black py-1 my-0.5 relative z-10 text-black items-center text-center">
-        <div className="border-r-2 border-black px-1 flex flex-col justify-center">
-          <span className="text-[9px] font-black uppercase text-black">Số lượng</span>
-          <span className="text-lg font-black leading-tight text-black">{label.quantity} {part?.unit || 'Cái'}</span>
+      <div className="w-full grid grid-cols-2 border-t border-b border-black py-0.5 my-0.5 relative z-10 text-black items-center text-center">
+        <div className="border-r border-black px-0.5 flex flex-col justify-center">
+          <span className="text-[8px] font-black uppercase text-black">Số lượng</span>
+          <span className="font-black leading-tight text-black" style={{ fontSize: `${baseFontSize + 4}px` }}>
+            {label.quantity} {part?.unit || 'Cái'}
+          </span>
         </div>
-        <div className="px-1 flex flex-col justify-center">
-          <span className="text-[9px] font-black uppercase text-black">
+        <div className="px-0.5 flex flex-col justify-center">
+          <span className="text-[8px] font-black uppercase text-black">
             {isDisposal ? 'Từ kho:' : 'Từ công đoạn:'}
           </span>
-          <span className="text-xs font-black uppercase leading-tight text-black">
+          <span className="font-black uppercase leading-tight text-black" style={{ fontSize: `${baseFontSize}px` }}>
             {sourceStageName} {isDisposal && '(NG)'}
           </span>
         </div>
@@ -541,18 +551,18 @@ function A7QRLabelCard({
 
       {/* 5. DESTINATION BOX OR DEFECT WARNING */}
       {isDisposal ? (
-        <div className="w-full border-2 border-black rounded p-1 my-0.5 text-center bg-transparent relative z-10 text-black">
-          <span className="text-xs font-black uppercase block tracking-tighter text-black">HÀNG LỖI - CẤM NHẬP KHO</span>
+        <div className="w-full border border-black rounded p-0.5 my-0.5 text-center bg-transparent relative z-10 text-black">
+          <span className="text-[10px] font-black uppercase block tracking-tighter text-black leading-none">HÀNG LỖI - CẤM NHẬP KHO</span>
           {label.defectReason && (
-            <span className="text-[10px] font-bold block text-black truncate">Lý do: {label.defectReason}</span>
+            <span className="text-[8.5px] font-bold block text-black truncate mt-0.5">Lý do: {label.defectReason}</span>
           )}
         </div>
       ) : (
-        <div className="w-full border-2 border-black rounded p-1 my-0.5 text-center text-black">
-          <span className="text-[9px] font-black uppercase block text-black leading-none mb-0.5">Đích tiếp theo:</span>
-          <div className="flex items-center justify-center gap-2 font-black text-xs italic text-black">
+        <div className="w-full border border-black rounded p-0.5 my-0.5 text-center text-black">
+          <span className="text-[8px] font-black uppercase block text-black leading-none mb-0.5">Đích tiếp theo:</span>
+          <div className="flex items-center justify-center gap-1.5 font-black text-[10px] italic text-black">
             <span>{sourceStageName}</span>
-            <ArrowRight size={14} strokeWidth={3} className="text-black inline" />
+            <ArrowRight size={12} strokeWidth={3} className="text-black inline shrink-0" />
             <span>{targetStageName}</span>
           </div>
         </div>
@@ -563,13 +573,13 @@ function A7QRLabelCard({
         const plan = storageService.getGlazingPlans().find(p => p.id === (label as any).planId);
         if (plan) {
           return (
-            <div className="w-full flex justify-between font-mono font-bold text-black border-t border-b border-black py-1 my-0.5 text-[9px]">
+            <div className="w-full flex justify-between font-mono font-bold text-black border-t border-b border-black py-0.5 my-0.5 text-[8px]">
                <div className="flex flex-col text-left">
-                 <span className="uppercase font-black text-[8px]">HT Dự Kiến</span>
+                 <span className="uppercase font-black text-[7.5px]">HT Dự Kiến</span>
                  <span>{plan.expectedCompletionTime ? format(plan.expectedCompletionTime, 'HH:mm dd/MM') : '--:--'}</span>
                </div>
                <div className="flex flex-col text-right">
-                 <span className="uppercase font-black text-[8px]">HT Thực Tế</span>
+                 <span className="uppercase font-black text-[7.5px]">HT Thực Tế</span>
                  <span>{format(label.timestamp, 'HH:mm dd/MM')}</span>
                </div>
             </div>
@@ -579,47 +589,50 @@ function A7QRLabelCard({
       })()}
 
       {/* 7. PO DETAILS SECTION */}
-      <div className="w-full space-y-[1px] text-[9.5px] font-mono font-bold border-2 border-black p-1 rounded text-black leading-tight my-0.5">
+      <div 
+        className="w-full space-y-[1px] font-mono font-bold border border-black p-1 rounded text-black leading-tight my-0.5"
+        style={{ fontSize: `${baseFontSize - 1.5}px` }}
+      >
         <div className="flex justify-between items-center">
-          <span className="uppercase text-[9px]">LOẠI PO:</span>
-          <span className="text-[9px] uppercase font-black">
+          <span className="uppercase opacity-80">LOẠI PO:</span>
+          <span className="uppercase font-black">
             {po?.masterPoId ? 'PO Con (Sub)' : 'PO Tổng (Master)'}
           </span>
         </div>
         <div className="flex justify-between items-center">
-          <span className="uppercase text-[9px]">MÃ PO:</span>
-          <span className="font-mono text-[9.5px] font-black">{label.poId || 'N/A'}</span>
+          <span className="uppercase opacity-80">MÃ PO:</span>
+          <span className="font-mono font-black truncate max-w-[170px]">{label.poId || 'N/A'}</span>
         </div>
-        <div className="flex justify-between items-center text-[8.5px] italic">
-          <span>KH PO Con:</span>
+        <div className="flex justify-between items-center italic">
+          <span className="opacity-80">KH PO Con:</span>
           <span>{label.qrData?.split('|')?.[8] || po?.targetQuantity || 0} linh kiện</span>
         </div>
         {po?.plannedStartTime && (
-          <div className="flex justify-between items-center pt-[1px] border-t border-black/50">
-            <span className="uppercase text-[8.5px]">KH Bắt đầu PO:</span>
+          <div className="flex justify-between items-center pt-[1px] border-t border-black/30">
+            <span className="uppercase opacity-80">KH Bắt đầu PO:</span>
             <span className="font-mono">{format(po.plannedStartTime, 'dd/MM HH:mm')}</span>
           </div>
         )}
         {po?.expectedCompletionTime && (
           <div className="flex justify-between items-center">
-            <span className="uppercase text-[8.5px]">KH Kết thúc PO:</span>
+            <span className="uppercase opacity-80">KH Kết thúc PO:</span>
             <span className="font-mono">{format(po.expectedCompletionTime, 'dd/MM HH:mm')}</span>
           </div>
         )}
         {masterId && (
           <>
-            <div className="flex justify-between items-center pt-[1px] border-t border-black/50">
-              <span className="uppercase text-[8.5px]">Thuộc PO Tổng:</span>
-              <span className="font-mono text-[9px] font-black">{masterId}</span>
+            <div className="flex justify-between items-center pt-[1px] border-t border-black/30">
+              <span className="uppercase opacity-80">Thuộc PO Tổng:</span>
+              <span className="font-mono font-black truncate max-w-[150px]">{masterId}</span>
             </div>
-            <div className="flex justify-between items-center text-[8.5px] italic">
-              <span>KH PO Tổng:</span>
+            <div className="flex justify-between items-center italic">
+              <span className="opacity-80">KH PO Tổng:</span>
               <span>{label.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0} máy</span>
             </div>
           </>
         )}
-        <div className="flex justify-between items-center pt-[1px] border-t border-black/50">
-          <span className="uppercase text-[8.5px]">Hoàn thành:</span>
+        <div className="flex justify-between items-center pt-[1px] border-t border-black/30">
+          <span className="uppercase opacity-80">Hoàn thành:</span>
           <span className="font-mono font-black">{format(label.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
         </div>
       </div>
@@ -8827,78 +8840,103 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
           </div>
         ) : activeSettingsTab === 'label' ? (
           <div className="p-10 space-y-8">
-            <div className="flex items-center gap-4 mb-6">
-              <div className="bg-blue-600 p-3 rounded-xl text-white">
-                <Printer size={24} />
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <div className="flex items-center gap-4">
+                <div className="bg-blue-600 p-3 rounded-xl text-white">
+                  <Printer size={24} />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold tracking-tight">Cấu hình in nhãn trực tiếp (Khổ A7 75x100mm)</h2>
+                  <p className="text-sm text-gray-500">Kích thước chuẩn cho máy in tem nhiệt (Chiều ngang 75mm x Chiều dọc 100mm)</p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-2xl font-bold tracking-tight">Cấu hình in nhãn trực tiếp</h2>
-                <p className="text-sm text-gray-500">Thiết lập khổ giấy và kích thước hiển thị trên PDF</p>
-              </div>
+              <button
+                type="button"
+                onClick={() => onLabelSettingsChange({ width: 75, height: 100, fontSize: 10, qrSize: 110 })}
+                className="px-4 py-2.5 bg-[#F27D26] hover:bg-[#d96a1a] text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-md active:scale-95 shrink-0"
+              >
+                <RotateCcw size={16} />
+                Khôi phục chuẩn A7 (75x100mm)
+              </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+              <div className="space-y-6 bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
+                <h3 className="text-sm font-bold uppercase text-gray-700 tracking-wider">Thông số cài đặt</h3>
                 <div className="grid grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase opacity-50">Chiều rộng (mm)</label>
+                    <label className="text-xs font-bold uppercase text-gray-600">Chiều rộng (mm)</label>
                     <input 
                       type="number"
                       value={labelSettings.width}
-                      onChange={e => onLabelSettingsChange({...labelSettings, width: parseInt(e.target.value) || 0})}
-                      className="w-full p-4 rounded-lg border border-gray-200 font-mono text-lg outline-none focus:border-blue-600"
+                      onChange={e => onLabelSettingsChange({...labelSettings, width: parseInt(e.target.value) || 75})}
+                      className="w-full p-3.5 rounded-xl border border-gray-200 font-mono text-base outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                      placeholder="75"
                     />
+                    <p className="text-[10px] text-gray-500">Chuẩn tem A7: 75mm</p>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase opacity-50">Chiều cao (mm)</label>
+                    <label className="text-xs font-bold uppercase text-gray-600">Chiều cao (mm)</label>
                     <input 
                       type="number"
                       value={labelSettings.height}
-                      onChange={e => onLabelSettingsChange({...labelSettings, height: parseInt(e.target.value) || 0})}
-                      className="w-full p-4 rounded-lg border border-gray-200 font-mono text-lg outline-none focus:border-blue-600"
+                      onChange={e => onLabelSettingsChange({...labelSettings, height: parseInt(e.target.value) || 100})}
+                      className="w-full p-3.5 rounded-xl border border-gray-200 font-mono text-base outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                      placeholder="100"
                     />
+                    <p className="text-[10px] text-gray-500">Chuẩn tem A7: 100mm</p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase opacity-50">Cỡ chữ (px)</label>
+                    <label className="text-xs font-bold uppercase text-gray-600">Cỡ chữ cơ sở (px)</label>
                     <input 
                       type="number"
                       value={labelSettings.fontSize}
-                      onChange={e => onLabelSettingsChange({...labelSettings, fontSize: parseInt(e.target.value) || 0})}
-                      className="w-full p-4 rounded-lg border border-gray-200 font-mono text-lg outline-none focus:border-blue-600"
+                      onChange={e => onLabelSettingsChange({...labelSettings, fontSize: parseInt(e.target.value) || 10})}
+                      className="w-full p-3.5 rounded-xl border border-gray-200 font-mono text-base outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                      placeholder="10"
                     />
+                    <p className="text-[10px] text-gray-500">Khuyên dùng: 8px - 12px</p>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase opacity-50">Kích thước QR (px)</label>
+                    <label className="text-xs font-bold uppercase text-gray-600">Kích thước QR (px)</label>
                     <input 
                       type="number"
                       value={labelSettings.qrSize}
-                      onChange={e => onLabelSettingsChange({...labelSettings, qrSize: parseInt(e.target.value) || 0})}
-                      className="w-full p-4 rounded-lg border border-gray-200 font-mono text-lg outline-none focus:border-blue-600"
+                      onChange={e => onLabelSettingsChange({...labelSettings, qrSize: parseInt(e.target.value) || 110})}
+                      className="w-full p-3.5 rounded-xl border border-gray-200 font-mono text-base outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                      placeholder="110"
                     />
+                    <p className="text-[10px] text-gray-500">Khuyên dùng: 90px - 120px</p>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-gray-50 rounded-2xl p-8 border-2 border-dashed border-gray-200 flex flex-col items-center justify-center">
-                <span className="text-xs font-bold uppercase opacity-40 mb-4">Xem trước khổ giấy</span>
-                <div 
-                  className="bg-white shadow-lg border border-gray-300 flex flex-col items-center justify-center overflow-hidden"
-                  style={{ 
-                    width: `${labelSettings.width * 2}px`, 
-                    height: `${labelSettings.height * 2}px`,
-                    padding: '10px'
-                  }}
-                >
-                  <div className="border border-black p-1 mb-1">
-                    <div className="w-8 h-8 bg-gray-200" />
-                  </div>
-                  <div className="w-full h-2 bg-gray-100 mb-1" />
-                  <div className="w-2/3 h-2 bg-gray-100" />
+              <div className="bg-gray-50 rounded-2xl p-6 border-2 border-dashed border-gray-200 flex flex-col items-center justify-center">
+                <span className="text-xs font-bold uppercase text-gray-500 mb-4 tracking-wider">Xem trước nhãn thực tế ({labelSettings.width} x {labelSettings.height} mm)</span>
+                
+                <div className="shadow-2xl rounded-xl overflow-hidden bg-white border border-gray-300 transform scale-95 origin-top">
+                  <A7QRLabelCard 
+                    label={{
+                      id: 'SAMPLE-A7',
+                      partId: '04-29-08-SHA76622KL-0008',
+                      partName: 'THANH GIẰNG TRÊN SHA76622KL',
+                      stageId: 'LASER',
+                      targetStageId: 'BENDING',
+                      quantity: 22,
+                      type: 'STAGE_OUT',
+                      poId: 'PO-SHA76623-0906-LASER-JI6R8',
+                      qrData: 'SAMPLE|04-29-08-SHA76622KL-0008|22|LASER|OUT|BENDING|PO-SHA76623-0906-LASER-JI6R8|PO-MASTER-001|400|100',
+                      timestamp: Date.now()
+                    }} 
+                    parts={parts} 
+                    labelSettings={labelSettings} 
+                    isPrintArea={false} 
+                  />
                 </div>
-                <p className="mt-4 text-xs text-gray-400 italic">Tỷ lệ xem trước 1:2</p>
+                <p className="mt-4 text-xs text-gray-400 italic text-center">Hình ảnh hiển thị thực tế theo các thông số cấu hình ở trên</p>
               </div>
             </div>
 

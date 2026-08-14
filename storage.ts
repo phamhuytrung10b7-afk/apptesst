@@ -63,17 +63,28 @@ export const storageService = {
   getLabelSettings() {
     return getCached(STORAGE_KEYS.LABEL_SETTINGS, () => {
       const data = localStorage.getItem(STORAGE_KEYS.LABEL_SETTINGS);
-      // Force migration to standard A7 (75x100mm) for existing users
+      // Ensure settings align with standard A7 (75x100mm portrait)
       if (data) {
-         let parsed = JSON.parse(data);
-         if (parsed.width === 100 || parsed.width === 74 || parsed.height === 50 || parsed.height === 105 || parsed.qrSize > 180) {
-            parsed = { width: 75, height: 100, fontSize: 12, qrSize: 160 };
+        try {
+          let parsed = JSON.parse(data);
+          if (
+            !parsed.width || !parsed.height ||
+            parsed.width > 150 || parsed.height > 180 ||
+            parsed.width < 50 || parsed.height < 50 ||
+            parsed.qrSize > 150 || parsed.qrSize < 50 ||
+            parsed.fontSize > 16 || parsed.fontSize < 6
+          ) {
+            parsed = { width: 75, height: 100, fontSize: 10, qrSize: 110 };
             localStorage.setItem(STORAGE_KEYS.LABEL_SETTINGS, JSON.stringify(parsed));
-            return parsed;
-         }
-         return parsed;
+          }
+          return parsed;
+        } catch {
+          // invalid json fallback
+        }
       }
-      return { width: 75, height: 100, fontSize: 12, qrSize: 160 };
+      const defaultSettings = { width: 75, height: 100, fontSize: 10, qrSize: 110 };
+      localStorage.setItem(STORAGE_KEYS.LABEL_SETTINGS, JSON.stringify(defaultSettings));
+      return defaultSettings;
     });
   },
 
