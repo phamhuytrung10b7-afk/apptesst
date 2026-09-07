@@ -417,7 +417,7 @@ export const storageService = {
     return isSupabaseConfigured;
   },
 
-  async init(): Promise<void> {
+  async fetchAllFromSupabase(): Promise<void> {
     if (!isSupabaseConfigured) return;
     try {
       const [
@@ -524,9 +524,13 @@ export const storageService = {
         });
       }
     } catch (err) {
-      console.error('Error in storageService.init() with Supabase:', err);
+      console.error('Error in storageService.fetchAllFromSupabase():', err);
       throw err;
     }
+  },
+
+  async init(): Promise<void> {
+    return storageService.fetchAllFromSupabase();
   },
 
   async syncTableFromSupabase(table: string): Promise<void> {
@@ -3827,11 +3831,25 @@ export const storageService = {
       };
     }
 
-    const partsCount = Array.isArray(storageData[STORAGE_KEYS.PARTS]) ? storageData[STORAGE_KEYS.PARTS].length : 0;
-    const posCount = Array.isArray(storageData[STORAGE_KEYS.PRODUCTION_ORDERS]) ? storageData[STORAGE_KEYS.PRODUCTION_ORDERS].length : 0;
-    const inventoryCount = Array.isArray(storageData[STORAGE_KEYS.INVENTORY]) ? storageData[STORAGE_KEYS.INVENTORY].length : 0;
-    const transactionsCount = Array.isArray(storageData[STORAGE_KEYS.TRANSACTIONS]) ? storageData[STORAGE_KEYS.TRANSACTIONS].length : 0;
-    const labelsCount = Array.isArray(storageData['wip_labels']) ? storageData['wip_labels'].length : 0;
+    const getCount = (kList: string[]): number => {
+      for (const k of kList) {
+        const val = storageData[k];
+        if (Array.isArray(val)) return val.length;
+        if (typeof val === 'string') {
+          try {
+            const parsedVal = JSON.parse(val);
+            if (Array.isArray(parsedVal)) return parsedVal.length;
+          } catch {}
+        }
+      }
+      return 0;
+    };
+
+    const partsCount = getCount([STORAGE_KEYS.PARTS, 'wip_parts', 'parts']);
+    const posCount = getCount([STORAGE_KEYS.PRODUCTION_ORDERS, 'wip_production_orders', 'production_orders']);
+    const inventoryCount = getCount([STORAGE_KEYS.INVENTORY, 'wip_inventory', 'inventory']);
+    const transactionsCount = getCount([STORAGE_KEYS.TRANSACTIONS, 'wip_transactions', 'transactions']);
+    const labelsCount = getCount(['wip_labels', 'labels']);
 
     return {
       valid: true,
@@ -3848,147 +3866,283 @@ export const storageService = {
     };
   },
 
-  importBackupData(storageData: Record<string, any>, mode: 'overwrite' | 'merge' = 'overwrite'): {
+  async importBackupDataToSupabase(
+    storageData: Record<string, any>,
+    mode: 'overwrite' | 'merge' = 'overwrite',
+    onProgress?: (progress: { message: string; percent?: number; stage?: string; currentCount?: number; totalCount?: number }) => void
+  ): Promise<{
     success: boolean;
     keysRestored: number;
     message: string;
-  } {
-    if (typeof window === 'undefined' || !window.localStorage) {
-      return { success: false, keysRestored: 0, message: 'Trình duyệt không hỗ trợ LocalStorage.' };
-    }
-
-    try {
-      if (mode === 'overwrite') {
-        const keysToRemove: string[] = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          if (k && (k.startsWith('wip_') || Object.values(STORAGE_KEYS).includes(k) || k === 'wip_labels')) {
-            keysToRemove.push(k);
-          }
-        }
-        keysToRemove.forEach(k => localStorage.removeItem(k));
-
-        let restoredCount = 0;
-        Object.entries(storageData).forEach(([key, value]) => {
-          if (key.startsWith('wip_') || Object.values(STORAGE_KEYS).includes(key) || key === 'wip_labels') {
-            const strVal = typeof value === 'string' ? value : JSON.stringify(value);
-            localStorage.setItem(key, strVal);
-            restoredCount++;
-          }
-        });
-
-        clearCache();
-        return {
-          success: true,
-          keysRestored: restoredCount,
-          message: `Đã khôi phục thành công ${restoredCount} danh mục dữ liệu (Ghi đè hoàn toàn).`
-        };
-      } else {
-        // Merge mode
-        let restoredCount = 0;
-        Object.entries(storageData).forEach(([key, incomingVal]) => {
-          if (!key.startsWith('wip_') && !Object.values(STORAGE_KEYS).includes(key) && key !== 'wip_labels') {
-            return;
-          }
-
-          const existingRaw = localStorage.getItem(key);
-          if (!existingRaw) {
-            const strVal = typeof incomingVal === 'string' ? incomingVal : JSON.stringify(incomingVal);
-            localStorage.setItem(key, strVal);
-            restoredCount++;
-            return;
-          }
-
-          try {
-            const existingVal = JSON.parse(existingRaw);
-            let incomingParsed = incomingVal;
-            if (typeof incomingVal === 'string') {
-              try { incomingParsed = JSON.parse(incomingVal); } catch {}
-            }
-
-            if (Array.isArray(existingVal) && Array.isArray(incomingParsed)) {
-              if (key === STORAGE_KEYS.PARTS) {
-                const map = new Map<string, any>();
-                existingVal.forEach(p => p && p.id && map.set(p.id, p));
-                incomingParsed.forEach(p => p && p.id && map.set(p.id, p));
-                localStorage.setItem(key, JSON.stringify(Array.from(map.values())));
-              } else if (key === STORAGE_KEYS.PRODUCTION_ORDERS) {
-                const map = new Map<string, any>();
-                existingVal.forEach(p => p && p.id && map.set(p.id, p));
-                incomingParsed.forEach(p => p && p.id && map.set(p.id, p));
-                localStorage.setItem(key, JSON.stringify(Array.from(map.values())));
-              } else if (key === STORAGE_KEYS.INVENTORY) {
-                const map = new Map<string, any>();
-                existingVal.forEach(item => {
-                  const k = `${item.partId}_${item.stageId}_${item.location || 'IN'}`;
-                  map.set(k, item);
-                });
-                incomingParsed.forEach(item => {
-                  const k = `${item.partId}_${item.stageId}_${item.location || 'IN'}`;
-                  map.set(k, item);
-                });
-                localStorage.setItem(key, JSON.stringify(Array.from(map.values())));
-              } else if (key === STORAGE_KEYS.TRANSACTIONS || key === 'wip_labels') {
-                const map = new Map<string, any>();
-                existingVal.forEach(item => item && item.id && map.set(item.id, item));
-                incomingParsed.forEach(item => item && item.id && map.set(item.id, item));
-                localStorage.setItem(key, JSON.stringify(Array.from(map.values())));
-              } else if (key === STORAGE_KEYS.BOM) {
-                const map = new Map<string, any>();
-                existingVal.forEach(item => item && item.childPartId && map.set(item.childPartId, item));
-                incomingParsed.forEach(item => item && item.childPartId && map.set(item.childPartId, item));
-                localStorage.setItem(key, JSON.stringify(Array.from(map.values())));
-              } else if (key === STORAGE_KEYS.BOM_V2) {
-                const map = new Map<string, any>();
-                existingVal.forEach(item => item && map.set(`${item.parentPartId}_${item.childPartId}`, item));
-                incomingParsed.forEach(item => item && map.set(`${item.parentPartId}_${item.childPartId}`, item));
-                localStorage.setItem(key, JSON.stringify(Array.from(map.values())));
-              } else if (key === STORAGE_KEYS.MODEL_BOM) {
-                const map = new Map<string, any>();
-                existingVal.forEach(item => item && map.set(`${item.modelId}_${item.childPartId}`, item));
-                incomingParsed.forEach(item => item && map.set(`${item.modelId}_${item.childPartId}`, item));
-                localStorage.setItem(key, JSON.stringify(Array.from(map.values())));
-              } else if (key === STORAGE_KEYS.NORMS) {
-                const map = new Map<string, any>();
-                existingVal.forEach(item => item && map.set(`${item.stageId}_${item.partId}`, item));
-                incomingParsed.forEach(item => item && map.set(`${item.stageId}_${item.partId}`, item));
-                localStorage.setItem(key, JSON.stringify(Array.from(map.values())));
-              } else {
-                const combined = [...existingVal, ...incomingParsed];
-                localStorage.setItem(key, JSON.stringify(combined));
-              }
-              restoredCount++;
-            } else if (typeof existingVal === 'object' && typeof incomingParsed === 'object' && existingVal && incomingParsed) {
-              const merged = { ...existingVal, ...incomingParsed };
-              localStorage.setItem(key, JSON.stringify(merged));
-              restoredCount++;
-            } else {
-              const strVal = typeof incomingVal === 'string' ? incomingVal : JSON.stringify(incomingVal);
-              localStorage.setItem(key, strVal);
-              restoredCount++;
-            }
-          } catch {
-            const strVal = typeof incomingVal === 'string' ? incomingVal : JSON.stringify(incomingVal);
-            localStorage.setItem(key, strVal);
-            restoredCount++;
-          }
-        });
-
-        clearCache();
-        return {
-          success: true,
-          keysRestored: restoredCount,
-          message: `Đã hợp nhất thành công ${restoredCount} danh mục dữ liệu.`
-        };
-      }
-    } catch (err: any) {
+    details?: Record<string, number>;
+  }> {
+    if (!isSupabaseConfigured) {
       return {
         success: false,
         keysRestored: 0,
-        message: 'Lỗi khi nạp dữ liệu vào LocalStorage: ' + (err?.message || '')
+        message: 'Chưa cấu hình Supabase URL hoặc Publishable Key trong hệ thống. Vui lòng kiểm tra file cấu hình supabaseClient.'
+      };
+    }
+
+    try {
+      const extractItems = <T = any>(possibleKeys: string[]): T[] => {
+        for (const k of possibleKeys) {
+          if (storageData[k] !== undefined && storageData[k] !== null) {
+            let val = storageData[k];
+            if (typeof val === 'string') {
+              try {
+                val = JSON.parse(val);
+              } catch {}
+            }
+            if (Array.isArray(val)) return val as T[];
+          }
+        }
+        return [];
+      };
+
+      const CHUNK_SIZE = 300;
+      const results: Record<string, number> = {};
+
+      // 1. Chế độ GHI ĐÈ HOÀN TOÀN: Xóa sạch dữ liệu cũ trên các bảng Supabase
+      if (mode === 'overwrite') {
+        onProgress?.({ message: 'Đang dọn dẹp dữ liệu cũ trên cơ sở dữ liệu Supabase Cloud...', percent: 5, stage: 'cleanup' });
+        
+        const clearTable = async (table: string, idCol: string = 'id') => {
+          try {
+            await supabase.from(table).delete().neq(idCol, '___DUMMY_NEVER_MATCH___');
+          } catch (err) {
+            console.warn(`Could not clear table ${table}:`, err);
+          }
+        };
+
+        // Xóa theo thứ tự đảo chiều quan hệ phụ thuộc (child trước, parent sau)
+        await clearTable('labels', 'id');
+        await clearTable('transactions', 'id');
+        await clearTable('inventory', 'id');
+        await clearTable('glazing_plans', 'id');
+        await clearTable('production_orders', 'id');
+        await clearTable('bom_definitions', 'id');
+        await clearTable('bom_v2_definitions', 'id');
+        await clearTable('model_bom_definitions', 'id');
+        await clearTable('productivity_norms', 'id');
+        await clearTable('laser_nesting', 'id');
+        await clearTable('part_transformations', 'id');
+        await clearTable('parts', 'id');
+        await clearTable('shift_configs', 'stage_id');
+        await clearTable('system_settings', 'key');
+      }
+
+      // 2. Cơ chế chia nhỏ theo từng gói (Chunking 300 bản ghi) với bước LỌC TRÙNG LẶP (Deduplication) để upsert an toàn lên Supabase
+      const uploadCategory = async <T extends Record<string, any>>(
+        tableName: string,
+        rows: T[],
+        displayName: string,
+        basePercent: number,
+        weightPercent: number,
+        primaryKeyField: string = 'id'
+      ): Promise<number> => {
+        if (!rows || rows.length === 0) return 0;
+
+        // BƯỚC LỌC BỎ DỮ LIỆU TRÙNG LẶP (Deduplication theo Khóa chính)
+        // Tránh lỗi PostgreSQL: "ON CONFLICT DO UPDATE command cannot affect row a second time"
+        const uniqueKeyMap = new Map<string, T>();
+        for (const r of rows) {
+          if (!r) continue;
+          const pkVal = r[primaryKeyField] ?? r.id ?? r.stage_id ?? r.key;
+          if (pkVal !== undefined && pkVal !== null) {
+            uniqueKeyMap.set(String(pkVal), r);
+          }
+        }
+
+        const deduplicatedRows = Array.from(uniqueKeyMap.values());
+        const total = deduplicatedRows.length;
+        if (total === 0) return 0;
+
+        for (let i = 0; i < total; i += CHUNK_SIZE) {
+          const chunk = deduplicatedRows.slice(i, i + CHUNK_SIZE);
+          const fromIdx = i + 1;
+          const toIdx = Math.min(i + CHUNK_SIZE, total);
+          const currentPercent = Math.min(96, Math.round(basePercent + (toIdx / total) * weightPercent));
+
+          onProgress?.({
+            message: `Đang nạp ${total} bản ghi vào bảng ${tableName} (gói ${fromIdx} - ${toIdx}/${total})...`,
+            percent: currentPercent,
+            stage: tableName,
+            currentCount: toIdx,
+            totalCount: total
+          });
+
+          // Đảm bảo không có ID trùng lặp trong cùng một câu lệnh upsert
+          const { error } = await supabase.from(tableName).upsert(chunk as any);
+          if (error) {
+            console.error(`Error upserting ${tableName}:`, error);
+            throw new Error(`Lỗi khi nạp dữ liệu vào bảng ${displayName} (${tableName}): ${error.message || JSON.stringify(error)}`);
+          }
+        }
+        results[tableName] = total;
+        return total;
+      };
+
+      // 3. Tiến hành nạp dữ liệu từng danh mục
+      // 3.1 Danh mục linh kiện (parts)
+      const rawParts = extractItems<Part>([STORAGE_KEYS.PARTS, 'wip_parts', 'parts']);
+      const validParts = rawParts.filter(p => p && p.id);
+      if (validParts.length > 0) {
+        await uploadCategory('parts', validParts.map(partToRow), 'Linh kiện (parts)', 10, 10);
+      }
+
+      // 3.2 Lệnh sản xuất (production_orders)
+      const rawPos = extractItems<ProductionOrder>([STORAGE_KEYS.PRODUCTION_ORDERS, 'wip_production_orders', 'production_orders']);
+      const validPos = rawPos.filter(p => p && p.id);
+      if (validPos.length > 0) {
+        await uploadCategory('production_orders', validPos.map(poToRow), 'Lệnh sản xuất (production_orders)', 20, 10);
+      }
+
+      // 3.3 Tồn kho WIP (inventory)
+      const rawInv = extractItems<InventoryItem>([STORAGE_KEYS.INVENTORY, 'wip_inventory', 'inventory']);
+      const validInv = rawInv.filter(i => i && i.partId && i.stageId);
+      if (validInv.length > 0) {
+        await uploadCategory('inventory', validInv.map(invToRow), 'Tồn kho WIP (inventory)', 30, 10);
+      }
+
+      // 3.4 Định mức BOM v1 (bom_definitions)
+      const rawBOM = extractItems<BOMDefinition>([STORAGE_KEYS.BOM, 'wip_bom', 'bom', 'bom_definitions']);
+      const validBOM = rawBOM.filter(b => b && b.parentPartId && b.childPartId);
+      if (validBOM.length > 0) {
+        await uploadCategory('bom_definitions', validBOM.map(bomToRow), 'Định mức BOM v1', 40, 5);
+      }
+
+      // 3.5 Định mức Hàn BOM v2 (bom_v2_definitions)
+      const rawBOMV2 = extractItems<BOMDefinitionV2>([STORAGE_KEYS.BOM_V2, 'wip_bom_v2', 'bom_v2', 'bom_v2_definitions']);
+      const validBOMV2 = rawBOMV2.filter(b => b && b.resultPartId && b.ingredientPartId);
+      if (validBOMV2.length > 0) {
+        await uploadCategory('bom_v2_definitions', validBOMV2.map(bomV2ToRow), 'Định mức Hàn BOM v2', 45, 5);
+      }
+
+      // 3.6 BOM theo Model (model_bom_definitions)
+      const rawModelBOM = extractItems<ModelBOMDefinition>([STORAGE_KEYS.MODEL_BOM, 'wip_model_bom', 'model_bom', 'model_bom_definitions']);
+      const validModelBOM = rawModelBOM.filter(m => m && m.modelId && m.partId);
+      if (validModelBOM.length > 0) {
+        await uploadCategory('model_bom_definitions', validModelBOM.map(modelBomToRow), 'BOM theo Model', 50, 5);
+      }
+
+      // 3.7 Định mức năng suất (productivity_norms)
+      const rawNorms = extractItems<ProductivityNorm>([STORAGE_KEYS.NORMS, 'wip_productivity_norms', 'norms', 'productivity_norms']);
+      const validNorms = rawNorms.filter(n => n && n.partId && n.stageId);
+      if (validNorms.length > 0) {
+        await uploadCategory('productivity_norms', validNorms.map(normToRow), 'Định mức năng suất', 55, 5);
+      }
+
+      // 3.8 Định mức tổ hợp Laser (laser_nesting)
+      const rawNesting = extractItems<LaserNesting>([STORAGE_KEYS.LASER_NESTING, 'wip_laser_nesting', 'laser_nesting']);
+      const validNesting = rawNesting.filter(n => n && n.nestingId && n.partId);
+      if (validNesting.length > 0) {
+        await uploadCategory('laser_nesting', validNesting.map(nestingToRow), 'Định mức tổ hợp Laser', 60, 5);
+      }
+
+      // 3.9 Cấu hình ca làm việc & nhân sự (shift_configs)
+      const rawShifts = extractItems<ShiftConfig>([STORAGE_KEYS.SHIFT_CONFIGS, 'wip_shift_configs', 'shift_configs']);
+      const validShifts = rawShifts.filter(s => s && s.stageId);
+      if (validShifts.length > 0) {
+        await uploadCategory('shift_configs', validShifts.map(shiftToRow), 'Cấu hình ca làm việc', 65, 3);
+      }
+
+      // 3.10 Quy tắc chuyển đổi mã (part_transformations)
+      const rawTransf = extractItems<PartTransformation>([STORAGE_KEYS.TRANSFORMATIONS, 'wip_transformations', 'transformations', 'part_transformations']);
+      const validTransf = rawTransf.filter(t => t && t.sourcePartId && t.targetPartId);
+      if (validTransf.length > 0) {
+        await uploadCategory('part_transformations', validTransf.map(transfToRow), 'Quy tắc chuyển đổi mã', 68, 3);
+      }
+
+      // 3.11 Kế hoạch dán kính (glazing_plans)
+      const rawGlazing = extractItems<import('./types').GlazingPlan>([STORAGE_KEYS.GLAZING_PLANS, 'wip_glazing_plans', 'glazing_plans']);
+      const validGlazing = rawGlazing.filter(p => p && p.id && p.modelId);
+      if (validGlazing.length > 0) {
+        await uploadCategory('glazing_plans', validGlazing.map(glazingPlanToRow), 'Kế hoạch dán kính', 71, 4);
+      }
+
+      // 3.12 Nhãn QR (labels) - Danh mục lớn chia gói 300
+      const rawLabels = extractItems<Transaction>(['wip_labels', 'labels']);
+      const validLabels = rawLabels.filter(l => l && l.id);
+      if (validLabels.length > 0) {
+        await uploadCategory('labels', validLabels.map(txToRow), 'Nhãn QR (labels)', 75, 10);
+      }
+
+      // 3.13 Nhật ký quét kho (transactions) - Danh mục lớn chia gói 300
+      const rawTxs = extractItems<Transaction>([STORAGE_KEYS.TRANSACTIONS, 'wip_transactions', 'transactions']);
+      const validTxs = rawTxs.filter(t => t && t.id);
+      if (validTxs.length > 0) {
+        await uploadCategory('transactions', validTxs.map(txToRow), 'Nhật ký quét kho (transactions)', 85, 10);
+      }
+
+      // 3.14 Cài đặt hệ thống (system_settings)
+      const settingsRows: { key: string; value: any; updated_at: string }[] = [];
+      const handledTableKeys = new Set([
+        STORAGE_KEYS.PARTS, 'wip_parts', 'parts',
+        STORAGE_KEYS.PRODUCTION_ORDERS, 'wip_production_orders', 'production_orders',
+        STORAGE_KEYS.INVENTORY, 'wip_inventory', 'inventory',
+        STORAGE_KEYS.BOM, 'wip_bom', 'bom', 'bom_definitions',
+        STORAGE_KEYS.BOM_V2, 'wip_bom_v2', 'bom_v2', 'bom_v2_definitions',
+        STORAGE_KEYS.MODEL_BOM, 'wip_model_bom', 'model_bom', 'model_bom_definitions',
+        STORAGE_KEYS.NORMS, 'wip_productivity_norms', 'norms', 'productivity_norms',
+        STORAGE_KEYS.LASER_NESTING, 'wip_laser_nesting', 'laser_nesting',
+        STORAGE_KEYS.SHIFT_CONFIGS, 'wip_shift_configs', 'shift_configs',
+        STORAGE_KEYS.TRANSFORMATIONS, 'wip_transformations', 'transformations', 'part_transformations',
+        STORAGE_KEYS.GLAZING_PLANS, 'wip_glazing_plans', 'glazing_plans',
+        'wip_labels', 'labels',
+        STORAGE_KEYS.TRANSACTIONS, 'wip_transactions', 'transactions'
+      ]);
+
+      for (const [key, val] of Object.entries(storageData)) {
+        if (!handledTableKeys.has(key)) {
+          let parsedVal = val;
+          if (typeof val === 'string') {
+            try { parsedVal = JSON.parse(val); } catch {}
+          }
+          settingsRows.push({
+            key,
+            value: parsedVal,
+            updated_at: new Date().toISOString()
+          });
+        }
+      }
+
+      if (settingsRows.length > 0) {
+        await uploadCategory('system_settings', settingsRows, 'Cài đặt hệ thống (system_settings)', 95, 3);
+      }
+
+      // 4. Đồng bộ lại dữ liệu từ Supabase về hệ thống hiển thị (không lưu chuỗi JSON khổng lồ vào LocalStorage)
+      onProgress?.({ message: 'Đang đồng bộ và cập nhật dữ liệu hiển thị từ Supabase Cloud...', percent: 98, stage: 'sync' });
+      await storageService.fetchAllFromSupabase();
+
+      onProgress?.({ message: 'Hoàn tất quá trình nạp dữ liệu!', percent: 100, stage: 'done' });
+
+      const totalRows = Object.values(results).reduce((a, b) => a + b, 0);
+
+      return {
+        success: true,
+        keysRestored: Object.keys(results).length,
+        message: `Đã nạp thành công ${totalRows.toLocaleString()} bản ghi vào ${Object.keys(results).length} bảng dữ liệu Supabase Cloud (${mode === 'overwrite' ? 'Ghi đè hoàn toàn' : 'Hợp nhất'}).`,
+        details: results
+      };
+    } catch (err: any) {
+      console.error('Import to Supabase error:', err);
+      return {
+        success: false,
+        keysRestored: 0,
+        message: 'Lỗi khi nạp dữ liệu lên Supabase Cloud: ' + (err?.message || '')
       };
     }
   },
+
+  async importBackupData(
+    storageData: Record<string, any>, 
+    mode: 'overwrite' | 'merge' = 'overwrite',
+    onProgress?: (progress: { message: string; percent?: number; stage?: string; currentCount?: number; totalCount?: number }) => void
+  ) {
+    return storageService.importBackupDataToSupabase(storageData, mode, onProgress);
+  },
+
 
   async migrateLocalStorageToSupabase(): Promise<{ success: boolean; message: string; details?: any }> {
     if (!isSupabaseConfigured) {
@@ -4001,88 +4155,99 @@ export const storageService = {
     try {
       const results: Record<string, number> = {};
 
+      const dedupe = <T extends Record<string, any>>(items: T[], keyField: string = 'id'): T[] => {
+        const m = new Map<string, T>();
+        items.forEach(it => {
+          if (!it) return;
+          const k = it[keyField] ?? it.id ?? it.stage_id ?? it.key;
+          if (k !== undefined && k !== null) m.set(String(k), it);
+        });
+        return Array.from(m.values());
+      };
+
       const parts = this.getPartsSync();
       if (parts.length > 0) {
-        const { error } = await supabase.from('parts').upsert(parts.map(partToRow));
+        const { error } = await supabase.from('parts').upsert(dedupe(parts.map(partToRow)));
         if (!error) results.parts = parts.length;
       }
 
       const inv = this.getInventorySync();
       if (inv.length > 0) {
-        const { error } = await supabase.from('inventory').upsert(inv.map(invToRow));
+        const { error } = await supabase.from('inventory').upsert(dedupe(inv.map(invToRow)));
         if (!error) results.inventory = inv.length;
       }
 
       const txs = this.getTransactionsSync();
       if (txs.length > 0) {
-        // Upsert in batches of 100
-        for (let i = 0; i < txs.length; i += 100) {
-          const batch = txs.slice(i, i + 100);
-          await supabase.from('transactions').upsert(batch.map(txToRow));
+        const uniqueTxs = dedupe(txs.map(txToRow));
+        for (let i = 0; i < uniqueTxs.length; i += 100) {
+          const batch = uniqueTxs.slice(i, i + 100);
+          await supabase.from('transactions').upsert(batch);
         }
-        results.transactions = txs.length;
+        results.transactions = uniqueTxs.length;
       }
 
       const labels = this.getLabelsSync();
       if (labels.length > 0) {
-        for (let i = 0; i < labels.length; i += 100) {
-          const batch = labels.slice(i, i + 100);
-          await supabase.from('labels').upsert(batch.map(txToRow));
+        const uniqueLabels = dedupe(labels.map(txToRow));
+        for (let i = 0; i < uniqueLabels.length; i += 100) {
+          const batch = uniqueLabels.slice(i, i + 100);
+          await supabase.from('labels').upsert(batch);
         }
-        results.labels = labels.length;
+        results.labels = uniqueLabels.length;
       }
 
       const pos = this.getProductionOrdersSync();
       if (pos.length > 0) {
-        const { error } = await supabase.from('production_orders').upsert(pos.map(poToRow));
+        const { error } = await supabase.from('production_orders').upsert(dedupe(pos.map(poToRow)));
         if (!error) results.production_orders = pos.length;
       }
 
       const boms = this.getBOMSync();
       if (boms.length > 0) {
-        const { error } = await supabase.from('bom_definitions').upsert(boms.map(bomToRow));
+        const { error } = await supabase.from('bom_definitions').upsert(dedupe(boms.map(bomToRow)));
         if (!error) results.boms = boms.length;
       }
 
       const bomsV2 = this.getBOMV2Sync();
       if (bomsV2.length > 0) {
-        const { error } = await supabase.from('bom_v2_definitions').upsert(bomsV2.map(bomV2ToRow));
+        const { error } = await supabase.from('bom_v2_definitions').upsert(dedupe(bomsV2.map(bomV2ToRow)));
         if (!error) results.bomsV2 = bomsV2.length;
       }
 
       const mboms = this.getModelBOMSync();
       if (mboms.length > 0) {
-        const { error } = await supabase.from('model_bom_definitions').upsert(mboms.map(modelBomToRow));
+        const { error } = await supabase.from('model_bom_definitions').upsert(dedupe(mboms.map(modelBomToRow)));
         if (!error) results.modelBOM = mboms.length;
       }
 
       const norms = this.getNormsSync();
       if (norms.length > 0) {
-        const { error } = await supabase.from('productivity_norms').upsert(norms.map(normToRow));
+        const { error } = await supabase.from('productivity_norms').upsert(dedupe(norms.map(normToRow)));
         if (!error) results.productivity_norms = norms.length;
       }
 
       const nesting = this.getLaserNestingSync();
       if (nesting.length > 0) {
-        const { error } = await supabase.from('laser_nesting').upsert(nesting.map(nestingToRow));
+        const { error } = await supabase.from('laser_nesting').upsert(dedupe(nesting.map(nestingToRow)));
         if (!error) results.laser_nesting = nesting.length;
       }
 
       const shifts = this.getShiftConfigsSync();
       if (shifts.length > 0) {
-        const { error } = await supabase.from('shift_configs').upsert(shifts.map(shiftToRow));
+        const { error } = await supabase.from('shift_configs').upsert(dedupe(shifts.map(shiftToRow), 'stage_id'));
         if (!error) results.shift_configs = shifts.length;
       }
 
       const transformations = this.getTransformationsSync();
       if (transformations.length > 0) {
-        const { error } = await supabase.from('part_transformations').upsert(transformations.map(transfToRow));
+        const { error } = await supabase.from('part_transformations').upsert(dedupe(transformations.map(transfToRow)));
         if (!error) results.transformations = transformations.length;
       }
 
       const gPlans = this.getGlazingPlansSync();
       if (gPlans.length > 0) {
-        const { error } = await supabase.from('glazing_plans').upsert(gPlans.map(glazingPlanToRow));
+        const { error } = await supabase.from('glazing_plans').upsert(dedupe(gPlans.map(glazingPlanToRow)));
         if (!error) results.glazing_plans = gPlans.length;
       }
 

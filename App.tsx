@@ -76,6 +76,7 @@ import { twMerge } from 'tailwind-merge';
 import { STAGES, INITIAL_PARTS, StageId, Part, InventoryItem, Transaction, BOMDefinition, BOMDefinitionV2, ProductionOrder, ModelBOMDefinition, ProductivityNorm, LaserNesting, ShiftConfig, PartTransformation, DEFECT_REASONS } from './types';
 import { storageService } from './storage';
 import { exportPreparationReport } from './exportPreparationReport';
+import { useConfirm } from './ConfirmModal';
 
 // Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -370,49 +371,78 @@ export function GlobalDialogs() {
   };
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 overflow-y-auto bg-slate-900/60 backdrop-blur-md">
       <motion.div 
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.95, opacity: 0 }}
-        className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4 border border-gray-100"
+        initial={{ scale: 0.95, opacity: 0, y: 15 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ scale: 0.95, opacity: 0, y: 15 }}
+        className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-lg w-full overflow-hidden"
       >
-        <h3 className="text-xl font-bold text-gray-900 mb-2">{activeDialog.title}</h3>
-        {activeDialog.message && <p className="text-gray-600 mb-6">{activeDialog.message}</p>}
-        
-        {activeDialog.type === 'prompt' && (
-          <div className="mb-6">
-            <input 
-              autoFocus
-              type={activeDialog.passwordMode || activeDialog.title.toLowerCase().includes('mật khẩu') ? 'password' : 'text'}
-              value={inputValue}
-              onChange={e => setInputValue(e.target.value)}
-              className="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all font-medium text-lg"
-              placeholder="Nhập giá trị..."
-              onKeyDown={e => {
-                if (e.key === 'Enter') close(inputValue);
-                if (e.key === 'Escape') close(null);
-              }}
-            />
+        <div className="p-6 sm:p-7">
+          <div className="flex items-start gap-4">
+            {activeDialog.type === 'confirm' ? (
+              <div className="w-12 h-12 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center shrink-0 border border-red-500/20">
+                <AlertCircle className="w-6 h-6 stroke-[2.2]" />
+              </div>
+            ) : activeDialog.type === 'alert' ? (
+              <div className="w-12 h-12 rounded-2xl bg-blue-500/10 text-blue-500 flex items-center justify-center shrink-0 border border-blue-500/20">
+                <AlertCircle className="w-6 h-6 stroke-[2.2]" />
+              </div>
+            ) : (
+              <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center shrink-0 border border-indigo-500/20">
+                <Edit2 className="w-6 h-6 stroke-[2.2]" />
+              </div>
+            )}
+            <div className="space-y-1 pt-1 flex-1">
+              <h3 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight leading-snug">{activeDialog.title}</h3>
+            </div>
           </div>
-        )}
 
-        <div className="flex justify-end gap-3 rounded-b-xl border-gray-100">
+          {activeDialog.message && (
+            <div className="mt-4 text-sm sm:text-base text-slate-600 leading-relaxed whitespace-pre-line pl-0 sm:pl-16">
+              {activeDialog.message}
+            </div>
+          )}
+          
+          {activeDialog.type === 'prompt' && (
+            <div className="mt-4 pl-0 sm:pl-16">
+              <input 
+                autoFocus
+                type={activeDialog.passwordMode || activeDialog.title.toLowerCase().includes('mật khẩu') ? 'password' : 'text'}
+                value={inputValue}
+                onChange={e => setInputValue(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all font-medium text-base text-slate-900"
+                placeholder="Nhập giá trị..."
+                onKeyDown={e => {
+                  if (e.key === 'Enter') close(inputValue);
+                  if (e.key === 'Escape') close(null);
+                }}
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="bg-slate-50/80 px-6 sm:px-7 py-4 sm:py-5 border-t border-slate-100 flex flex-col-reverse sm:flex-row items-center justify-end gap-3">
           {activeDialog.type !== 'alert' && (
             <button 
               autoFocus={activeDialog.type === 'confirm'}
               onClick={() => close(activeDialog.type === 'prompt' ? null : false)}
-              className="px-5 py-2.5 rounded-lg text-gray-600 font-bold hover:bg-gray-100 transition-colors"
+              className="w-full sm:w-auto px-5 py-2.5 rounded-xl text-sm font-bold text-slate-700 bg-slate-200/70 hover:bg-slate-200 active:scale-[0.98] transition-all cursor-pointer"
             >
-              Hủy
+              Hủy bỏ
             </button>
           )}
           <button 
             onClick={() => close(activeDialog.type === 'prompt' ? inputValue : true)}
             autoFocus={activeDialog.type === 'alert'}
-            className="px-5 py-2.5 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 active:scale-95 transition-all shadow-md shadow-blue-600/20"
+            className={cn(
+              "w-full sm:w-auto px-6 py-2.5 rounded-xl text-sm font-bold active:scale-[0.98] transition-all cursor-pointer",
+              activeDialog.type === 'confirm' 
+                ? "bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/20" 
+                : "bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20"
+            )}
           >
-            {activeDialog.type === 'alert' ? 'Đóng' : 'Xác nhận'}
+            {activeDialog.type === 'alert' ? 'Đóng' : 'Đồng ý'}
           </button>
         </div>
       </motion.div>
@@ -653,6 +683,7 @@ function A7QRLabelCard({
 }
 
 export default function App() {
+  const { confirm } = useConfirm();
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -813,7 +844,7 @@ export default function App() {
     }
   };
 
-  const handleProduce = (e: React.FormEvent, sourceLocation: 'IN' | 'OUT' = 'IN', targetStageId?: StageId, poId?: string) => {
+  const handleProduce = async (e: React.FormEvent, sourceLocation: 'IN' | 'OUT' = 'IN', targetStageId?: StageId, poId?: string) => {
     e.preventDefault();
     if (quantity <= 0) {
       setError('Vui lòng nhập số lượng hợp lệ');
@@ -840,7 +871,15 @@ export default function App() {
     } catch (err: any) {
       const errMsg = err instanceof Error ? err.message : (err.message || 'Đã xảy ra lỗi');
       if (errMsg.startsWith('OVER_PO:')) {
-        if (confirm(errMsg.replace('OVER_PO:', ''))) {
+        const ok = await confirm({
+          title: 'Cảnh báo: Vượt kế hoạch PO',
+          message: errMsg.replace('OVER_PO:', ''),
+          confirmText: 'Vẫn xuất kho',
+          cancelText: 'Hủy bỏ',
+          confirmVariant: 'danger',
+          iconType: 'warning'
+        });
+        if (ok) {
           try {
             const tx = storageService.recordStageOut(selectedPart, selectedStage, quantity, sourceLocation, targetStageId, poId, true);
             const updatedInventory = storageService.getInventory();
@@ -6636,6 +6675,7 @@ function GlazingComponentPrintCard({ norm, plan, idx, onPrint, onRecordProductio
 }
 
 function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDefectModal, refreshData, labels, onPrint, aggregatedGlazingOut }: any) {
+  const { confirm } = useConfirm();
   const inventory = globalInventory || [];
   const [activeTab, setActiveTab] = useState<'INVENTORY' | 'INBOUND' | 'OUTBOUND' | 'QUICK_PRINT' | 'PLANNING' | 'CONFIG'>('INVENTORY');
   const [showEditInventoryModal, setShowEditInventoryModal] = useState<{ partId: string, quantity: number, stageId: any, location: any } | null>(null);
@@ -7347,8 +7387,16 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                                 </div>
                                 <div className="flex items-center gap-1">
                                   <button 
-                                    onClick={() => {
-                                      if (confirm('Đánh dấu kế hoạch này đã hoàn thành? Kế hoạch sẽ được chuyển sang mục Đã hoàn thành.')) {
+                                    onClick={async () => {
+                                      const ok = await confirm({
+                                        title: 'Xác nhận hoàn thành',
+                                        message: 'Đánh dấu kế hoạch này đã hoàn thành? Kế hoạch sẽ được chuyển sang mục Đã hoàn thành.',
+                                        confirmText: 'Đồng ý',
+                                        cancelText: 'Hủy bỏ',
+                                        confirmVariant: 'primary',
+                                        iconType: 'info'
+                                      });
+                                      if (ok) {
                                         storageService.completeGlazingPlan(plan.id);
                                         setGlazingPlans(storageService.getGlazingPlans());
                                         refreshData();
@@ -7360,8 +7408,16 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                                     Xong
                                   </button>
                                   <button 
-                                    onClick={() => {
-                                      if (confirm('Xóa kế hoạch dán kính này?')) {
+                                    onClick={async () => {
+                                      const ok = await confirm({
+                                        title: 'Xóa kế hoạch dán kính',
+                                        message: 'Bạn có chắc chắn muốn xóa kế hoạch dán kính này?',
+                                        confirmText: 'Đồng ý xóa',
+                                        cancelText: 'Hủy bỏ',
+                                        confirmVariant: 'danger',
+                                        iconType: 'danger'
+                                      });
+                                      if (ok) {
                                         storageService.deleteGlazingPlan(plan.id);
                                         setGlazingPlans(storageService.getGlazingPlans());
                                         refreshData();
@@ -7432,8 +7488,16 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                                 <RotateCcw size={16} />
                               </button>
                                <button 
-                                 onClick={() => {
-                                   if (confirm('Xóa vĩnh viễn kế hoạch này?')) {
+                                 onClick={async () => {
+                                   const ok = await confirm({
+                                     title: 'Xóa vĩnh viễn kế hoạch',
+                                     message: 'Bạn có chắc chắn muốn xóa vĩnh viễn kế hoạch này khỏi danh sách đã hoàn thành?',
+                                     confirmText: 'Đồng ý xóa',
+                                     cancelText: 'Hủy bỏ',
+                                     confirmVariant: 'danger',
+                                     iconType: 'danger'
+                                   });
+                                   if (ok) {
                                      storageService.deleteGlazingPlan(plan.id);
                                      setGlazingPlans(storageService.getGlazingPlans());
                                      refreshData();
@@ -7648,8 +7712,22 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                     <span className="text-[10px] font-black uppercase text-blue-600 tracking-widest">Định mức đã tải ({glazingPlanNorms.length})</span>
                     {glazingPlanNorms.length > 0 && (
                       <button 
-                        onClick={() => { if(confirm('Xóa sạch định mức?')) { storageService.saveGlazingPlanNorms([]); setGlazingPlanNorms([]); } }}
-                        className="text-red-400 hover:text-red-600 transition-colors"
+                        onClick={async () => {
+                          const ok = await confirm({
+                            title: 'Xóa sạch định mức',
+                            message: 'Bạn có chắc chắn muốn xóa toàn bộ danh sách định mức kế hoạch dán kính không?',
+                            confirmText: 'Đồng ý xóa',
+                            cancelText: 'Hủy bỏ',
+                            confirmVariant: 'danger',
+                            iconType: 'danger'
+                          });
+                          if (ok) {
+                            storageService.saveGlazingPlanNorms([]);
+                            setGlazingPlanNorms([]);
+                          }
+                        }}
+                        className="text-red-400 hover:text-red-600 transition-colors cursor-pointer"
+                        title="Xóa tất cả định mức"
                       >
                         <Trash2 size={16} />
                       </button>
@@ -8264,6 +8342,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
   defaultTab?: 'parts' | 'bom' | 'label' | 'bom_v2' | 'model_bom' | 'transformations' | 'backup' | 'cloud',
   key?: string 
 }) {
+  const { confirm } = useConfirm();
   const [newPart, setNewPart] = useState<Part>({ id: '', name: '', unit: 'Cái', level: 1, skipLaser: false, skipBending: false, skipWelding: false, skipPainting: false, hasPaintingPO: false });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
@@ -8292,11 +8371,14 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
       alert('Chưa cấu hình Supabase! Vui lòng điền VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY vào file .env.');
       return;
     }
-    const confirmed = confirm(
-      'XÁC NHẬN ĐẨY DỮ LIỆU LÊN CLOUD SUPABASE:\n\n' +
-      'Toàn bộ danh mục linh kiện, tồn kho WIP, nhật ký quét mã, lệnh sản xuất PO, định mức BOM trên máy tính này sẽ được đẩy lên cơ sở dữ liệu Supabase online.\n\n' +
-      'Bạn có muốn tiến hành không?'
-    );
+    const confirmed = await confirm({
+      title: 'Đẩy dữ liệu lên Cloud Supabase',
+      message: 'Toàn bộ danh mục linh kiện, tồn kho WIP, nhật ký quét mã, lệnh sản xuất PO, định mức BOM trên máy tính này sẽ được đẩy lên cơ sở dữ liệu Supabase online.\n\nBạn có muốn tiến hành không?',
+      confirmText: 'Đồng ý đẩy lên',
+      cancelText: 'Hủy bỏ',
+      confirmVariant: 'danger',
+      iconType: 'warning'
+    });
     if (!confirmed) return;
 
     setIsMigratingCloud(true);
@@ -8355,10 +8437,13 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
   } | null>(null);
   const [importMode, setImportMode] = useState<'overwrite' | 'merge'>('overwrite');
   const [isProcessingImport, setIsProcessingImport] = useState(false);
+  const [importProgressMessage, setImportProgressMessage] = useState<string>('');
+  const [importProgressPercent, setImportProgressPercent] = useState<number>(0);
   const [importResult, setImportResult] = useState<{
     success: boolean;
     message: string;
     keysRestored: number;
+    details?: Record<string, number>;
   } | null>(null);
 
   const refreshBackupStats = () => {
@@ -8382,6 +8467,8 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
   const handleBackupFileSelect = (file: File) => {
     setSelectedBackupFile(file);
     setImportResult(null);
+    setImportProgressMessage('');
+    setImportProgressPercent(0);
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
@@ -8404,22 +8491,41 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
     reader.readAsText(file);
   };
 
-  const handleExecuteImport = () => {
+  const handleExecuteImport = async () => {
     if (!importValidation || !importValidation.valid || !importValidation.storageData) {
       alert('Vui lòng chọn tệp tin JSON hợp lệ trước.');
       return;
     }
 
-    const confirmMsg = importMode === 'overwrite'
-      ? 'CẢNH BÁO XÁC NHẬN:\n\nChế độ "Ghi đè hoàn toàn" sẽ xóa toàn bộ dữ liệu hiện có trên máy này và thay bằng dữ liệu trong tệp JSON.\n\nBạn có chắc chắn muốn nạp dữ liệu này không?'
-      : 'XÁC NHẬN:\n\nHệ thống sẽ hợp nhất dữ liệu từ tệp JSON vào dữ liệu hiện có trên máy tính này.\n\nBạn có muốn tiếp tục?';
+    const isOverwrite = importMode === 'overwrite';
+    const confirmed = await confirm({
+      title: isOverwrite ? 'Cảnh báo ghi đè toàn bộ dữ liệu Supabase Cloud' : 'Xác nhận nạp dữ liệu lên Supabase Cloud',
+      message: isOverwrite
+        ? 'Chế độ "Ghi đè hoàn toàn" sẽ DỌN DẸP DỮ LIỆU CŨ trên Supabase Cloud và nạp mới 100% dữ liệu từ tệp JSON theo từng gói 300 bản ghi (Khắc phục triệt để lỗi tràn bộ nhớ LocalStorage).\n\nBạn có chắc chắn muốn tiếp tục không?'
+        : 'Hệ thống sẽ nạp dữ liệu từ tệp JSON thẳng lên cơ sở dữ liệu Supabase Cloud qua các gói 300 bản ghi.\n\nBạn có muốn tiếp tục?',
+      confirmText: isOverwrite ? 'Đồng ý ghi đè' : 'Đồng ý nạp lên Cloud',
+      cancelText: 'Hủy bỏ',
+      confirmVariant: isOverwrite ? 'danger' : 'primary',
+      iconType: isOverwrite ? 'danger' : 'warning'
+    });
 
-    if (!confirm(confirmMsg)) return;
+    if (!confirmed) return;
 
     setIsProcessingImport(true);
-    setTimeout(() => {
-      const res = storageService.importBackupData(importValidation.storageData!, importMode);
-      setIsProcessingImport(false);
+    setImportProgressPercent(5);
+    setImportProgressMessage('Đang chuẩn bị gói dữ liệu nạp lên Supabase Cloud...');
+    setImportResult(null);
+
+    try {
+      const res = await storageService.importBackupDataToSupabase(
+        importValidation.storageData,
+        importMode,
+        (progress) => {
+          if (progress.message) setImportProgressMessage(progress.message);
+          if (progress.percent !== undefined) setImportProgressPercent(progress.percent);
+        }
+      );
+
       setImportResult(res);
 
       if (res.success) {
@@ -8430,7 +8536,15 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
         }
         refreshBackupStats();
       }
-    }, 250);
+    } catch (err: any) {
+      setImportResult({
+        success: false,
+        keysRestored: 0,
+        message: 'Lỗi không mong muốn trong quá trình nạp: ' + (err?.message || '')
+      });
+    } finally {
+      setIsProcessingImport(false);
+    }
   };
 
   const [showResetModal, setShowResetModal] = useState(false);
@@ -8666,8 +8780,16 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
     setEditingId(part.id);
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('Bạn có chắc chắn muốn xóa linh kiện này? Dữ liệu tồn kho liên quan sẽ không bị xóa nhưng có thể hiển thị không chính xác.')) {
+  const handleDelete = async (id: string) => {
+    const ok = await confirm({
+      title: 'Xác nhận xóa linh kiện',
+      message: 'Bạn có chắc chắn muốn xóa linh kiện này? Dữ liệu tồn kho liên quan sẽ không bị xóa nhưng có thể hiển thị không chính xác.',
+      confirmText: 'Đồng ý xóa',
+      cancelText: 'Hủy bỏ',
+      confirmVariant: 'danger',
+      iconType: 'danger'
+    });
+    if (ok) {
       const updatedParts = parts.filter(p => p.id !== id);
       storageService.saveParts(updatedParts);
       onPartsChange();
@@ -9343,8 +9465,16 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
               </div>
               <div className="flex gap-4">
                 <button 
-                  onClick={() => {
-                    if (!confirm('Bạn có chắc chắn muốn đảo ngược tất cả dữ liệu Nguồn và Đích trong bảng này không?')) return;
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: 'Đảo ngược Nguồn / Đích',
+                      message: 'Bạn có chắc chắn muốn đảo ngược tất cả dữ liệu Nguồn và Đích trong bảng này không?',
+                      confirmText: 'Đồng ý đảo ngược',
+                      cancelText: 'Hủy bỏ',
+                      confirmVariant: 'warning',
+                      iconType: 'warning'
+                    });
+                    if (!ok) return;
                     const current = storageService.getTransformations();
                     const swapped = current.map(t => ({
                       ...t,
@@ -9355,7 +9485,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                     onPartsChange();
                     alert('Đã đảo ngược dữ liệu thành công!');
                   }}
-                  className="bg-white border-2 border-orange-500 text-orange-500 px-6 py-3 rounded-xl font-bold uppercase hover:bg-orange-50 transition-all flex items-center gap-2"
+                  className="bg-white border-2 border-orange-500 text-orange-500 px-6 py-3 rounded-xl font-bold uppercase hover:bg-orange-50 transition-all flex items-center gap-2 cursor-pointer"
                 >
                   <RotateCcw size={20} />
                   Đảo ngược Nguồn/Đích
@@ -9672,17 +9802,17 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                 <div>
                   <div className="flex items-center justify-between mb-4">
                     <span className="px-3 py-1 bg-blue-100 text-blue-800 text-xs font-bold uppercase tracking-wider rounded-full flex items-center gap-1.5">
-                      <FileUp size={13} />
-                      Nạp dữ liệu vào máy này
+                      <CloudUpload size={13} />
+                      Nạp trực tiếp lên Supabase Cloud
                     </span>
-                    <span className="text-xs font-mono text-blue-600 font-semibold">Khôi phục / Chuyển máy</span>
+                    <span className="text-xs font-mono text-blue-600 font-semibold">Gói 300 bản ghi • Không lo tràn bộ nhớ</span>
                   </div>
 
                   <h3 className="text-xl font-bold text-gray-900 mb-2 flex items-center gap-2">
-                    2. Nạp dữ liệu từ tệp JSON
+                    2. Nạp dữ liệu từ tệp JSON lên Cloud
                   </h3>
                   <p className="text-sm text-gray-600 leading-relaxed mb-5">
-                    Chọn tệp tin sao lưu <strong className="text-blue-700">.json</strong> đã xuất từ máy tính khác để tải toàn bộ dữ liệu vào trình duyệt của máy này.
+                    Chọn tệp sao lưu <strong className="text-blue-700">.json</strong> để đẩy trực tiếp dữ liệu lên cơ sở dữ liệu Supabase Cloud qua các gói 300 bản ghi, khắc phục triệt để lỗi giới hạn LocalStorage.
                   </p>
 
                   {/* Dropzone & File Selector */}
@@ -9732,7 +9862,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                           Nhấp để chọn tệp tin JSON hoặc kéo thả vào đây
                         </p>
                         <p className="text-xs text-gray-400">
-                          Chấp nhận các tệp sao lưu .json của hệ thống
+                          Chấp nhận các tệp sao lưu .json dung lượng lớn của hệ thống
                         </p>
                       </div>
                     )}
@@ -9763,31 +9893,35 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                         )}
                       </div>
 
-                      <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
                         <div className="bg-blue-50/60 p-2 rounded-lg">
                           <span className="text-gray-500 block text-[11px]">Linh kiện</span>
-                          <span className="font-bold text-sm text-blue-700 font-mono">{importValidation.stats?.partsCount || 0}</span>
+                          <span className="font-bold text-sm text-blue-700 font-mono">{(importValidation.stats?.partsCount || 0).toLocaleString()}</span>
                         </div>
                         <div className="bg-blue-50/60 p-2 rounded-lg">
                           <span className="text-gray-500 block text-[11px]">Lệnh SX (PO)</span>
-                          <span className="font-bold text-sm text-blue-700 font-mono">{importValidation.stats?.posCount || 0}</span>
+                          <span className="font-bold text-sm text-blue-700 font-mono">{(importValidation.stats?.posCount || 0).toLocaleString()}</span>
                         </div>
                         <div className="bg-blue-50/60 p-2 rounded-lg">
                           <span className="text-gray-500 block text-[11px]">Tồn kho WIP</span>
-                          <span className="font-bold text-sm text-blue-700 font-mono">{importValidation.stats?.inventoryCount || 0}</span>
+                          <span className="font-bold text-sm text-blue-700 font-mono">{(importValidation.stats?.inventoryCount || 0).toLocaleString()}</span>
+                        </div>
+                        <div className="bg-blue-50/60 p-2 rounded-lg">
+                          <span className="text-gray-500 block text-[11px]">Nhật ký / QR</span>
+                          <span className="font-bold text-sm text-blue-700 font-mono">{((importValidation.stats?.transactionsCount || 0) + (importValidation.stats?.labelsCount || 0)).toLocaleString()}</span>
                         </div>
                       </div>
 
                       {/* Mode selection */}
                       <div className="pt-2 border-t border-gray-100 space-y-2">
                         <label className="text-[11px] font-bold uppercase tracking-wider text-gray-600 block">
-                          Chế độ nạp dữ liệu:
+                          Chế độ nạp lên Supabase Cloud:
                         </label>
                         <div className="grid grid-cols-1 gap-2">
                           <label className={cn(
                             "flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-all",
                             importMode === 'overwrite' 
-                              ? "border-blue-600 bg-blue-50/50" 
+                              ? "border-blue-600 bg-blue-50/50 shadow-sm" 
                               : "border-gray-200 hover:bg-gray-50"
                           )}>
                             <input 
@@ -9800,10 +9934,10 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                             />
                             <div className="text-xs">
                               <span className="font-bold text-gray-900 block">
-                                Ghi đè toàn bộ (Khuyên dùng khi chuyển máy mới)
+                                Ghi đè hoàn toàn (Dọn dẹp bảng cũ trên Cloud rồi nạp mới)
                               </span>
                               <span className="text-gray-500 text-[11px]">
-                                Xóa dữ liệu cũ trên máy này và thay thế 100% bằng dữ liệu từ tệp JSON.
+                                Xóa sạch các bảng Supabase hiện tại và nạp mới 100% từ file JSON (Khuyên dùng khi chuyển dữ liệu từ máy khác).
                               </span>
                             </div>
                           </label>
@@ -9811,7 +9945,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                           <label className={cn(
                             "flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-all",
                             importMode === 'merge' 
-                              ? "border-blue-600 bg-blue-50/50" 
+                              ? "border-blue-600 bg-blue-50/50 shadow-sm" 
                               : "border-gray-200 hover:bg-gray-50"
                           )}>
                             <input 
@@ -9824,10 +9958,10 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                             />
                             <div className="text-xs">
                               <span className="font-bold text-gray-900 block">
-                                Hợp nhất dữ liệu (Merge)
+                                Hợp nhất dữ liệu (Upsert)
                               </span>
                               <span className="text-gray-500 text-[11px]">
-                                Giữ lại các bản ghi hiện tại và bổ sung thêm các bản ghi mới từ tệp JSON.
+                                Giữ nguyên các bản ghi không trùng và cập nhật/bổ sung các bản ghi mới từ tệp JSON vào Supabase Cloud.
                               </span>
                             </div>
                           </label>
@@ -9836,32 +9970,71 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                     </div>
                   )}
 
+                  {/* Real-time Progress Bar Box */}
+                  {isProcessingImport && (
+                    <div className="mt-4 p-4 rounded-xl border border-blue-300 bg-blue-50/90 space-y-2.5 animate-fadeIn shadow-sm">
+                      <div className="flex items-center justify-between text-xs font-bold text-blue-900">
+                        <span className="flex items-center gap-2">
+                          <RefreshCw size={15} className="animate-spin text-blue-600" />
+                          Đang nạp dữ liệu lên Supabase Cloud...
+                        </span>
+                        <span className="font-mono text-sm px-2 py-0.5 bg-blue-200/80 rounded-md text-blue-950 font-bold">
+                          {importProgressPercent}%
+                        </span>
+                      </div>
+                      
+                      {/* Animated Progress bar */}
+                      <div className="w-full bg-blue-200/80 rounded-full h-3 overflow-hidden p-0.5">
+                        <div 
+                          className="bg-blue-600 h-full rounded-full transition-all duration-300 ease-out shadow-sm"
+                          style={{ width: `${Math.max(4, importProgressPercent)}%` }}
+                        />
+                      </div>
+
+                      <p className="text-xs text-blue-800 font-mono flex items-center gap-1.5 pt-0.5">
+                        <span className="inline-block w-2 h-2 rounded-full bg-blue-600 animate-ping shrink-0" />
+                        {importProgressMessage || 'Đang thực thi các gói upsert 300 bản ghi...'}
+                      </p>
+                    </div>
+                  )}
+
                   {importResult && (
                     <div className={cn(
-                      "mt-4 p-4 rounded-xl border text-xs flex flex-col gap-2 animate-fadeIn",
+                      "mt-4 p-4 rounded-xl border text-xs flex flex-col gap-2.5 animate-fadeIn shadow-sm",
                       importResult.success 
                         ? "bg-emerald-50 border-emerald-300 text-emerald-900" 
                         : "bg-red-50 border-red-300 text-red-900"
                     )}>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-start gap-2.5">
                         {importResult.success ? (
-                          <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
+                          <CheckCircle2 size={20} className="text-emerald-600 shrink-0 mt-0.5" />
                         ) : (
-                          <AlertCircle size={18} className="text-red-600 shrink-0" />
+                          <AlertCircle size={20} className="text-red-600 shrink-0 mt-0.5" />
                         )}
-                        <span className="font-bold text-sm">{importResult.message}</span>
+                        <div className="space-y-1">
+                          <span className="font-bold text-sm block">{importResult.message}</span>
+                          {importResult.details && (
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              {Object.entries(importResult.details).map(([tbl, count]) => (
+                                <span key={tbl} className="px-2 py-0.5 bg-emerald-100/90 text-emerald-800 font-mono text-[11px] rounded-md font-semibold">
+                                  {tbl}: {count}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                       {importResult.success && (
-                        <div className="flex items-center gap-2 pt-1">
+                        <div className="flex items-center gap-2 pt-1 border-t border-emerald-200">
                           <button
                             type="button"
                             onClick={() => window.location.reload()}
                             className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm"
                           >
                             <RefreshCw size={12} />
-                            Tải lại trang (F5) để áp dụng toàn diện
+                            Tải lại trang (F5) để đồng bộ hoàn toàn
                           </button>
-                          <span className="text-[11px] text-emerald-700">Dữ liệu đã được áp dụng vào giao diện ngay lập tức.</span>
+                          <span className="text-[11px] text-emerald-700">Dữ liệu đã được nạp thành công lên Cloud.</span>
                         </div>
                       )}
                     </div>
@@ -9880,8 +10053,17 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                         : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"
                     )}
                   >
-                    <HardDrive size={18} />
-                    {isProcessingImport ? 'ĐANG NẠP DỮ LIỆU...' : 'XÁC NHẬN NẠP DỮ LIỆU VÀO MÁY NÀY'}
+                    {isProcessingImport ? (
+                      <>
+                        <RefreshCw size={18} className="animate-spin" />
+                        <span>ĐANG NẠP DỮ LIỆU LÊN CLOUD ({importProgressPercent}%)...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CloudUpload size={18} />
+                        <span>NẠP THẲNG LÊN SUPABASE CLOUD (GÓI 300)</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
@@ -10394,6 +10576,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
 }
 
 function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () => void }) {
+  const { confirm } = useConfirm();
   const [activeTab, setActiveTab] = useState<StageId | 'NESTING' | 'BW_HSQD'>('NESTING');
   const [bendingWeldingHSQD, setBendingWeldingHSQD] = useState<{partId: string, hsqd: number}[]>(() => storageService.getBendingWeldingHSQD());
   const [isImporting, setIsImporting] = useState(false);
@@ -10600,13 +10783,21 @@ function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () 
           <div className="flex gap-4">
             {activeTab === 'NESTING' && nesting.length > 0 && (
               <button 
-                onClick={() => {
-                  if (confirm('Xóa toàn bộ định mức tổ hợp Laser?')) {
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: 'Xóa toàn bộ định mức tổ hợp Laser',
+                    message: 'Bạn có chắc chắn muốn xóa toàn bộ dữ liệu định mức tổ hợp (Nesting) Laser không?',
+                    confirmText: 'Đồng ý xóa',
+                    cancelText: 'Hủy bỏ',
+                    confirmVariant: 'danger',
+                    iconType: 'danger'
+                  });
+                  if (ok) {
                     storageService.saveLaserNesting([]);
                     onNormsChange();
                   }
                 }}
-                className="px-6 py-4 border border-red-200 text-red-600 rounded-xl text-sm font-bold uppercase hover:bg-red-50 transition-all font-mono"
+                className="px-6 py-4 border border-red-200 text-red-600 rounded-xl text-sm font-bold uppercase hover:bg-red-50 transition-all font-mono cursor-pointer"
               >
                 Xóa tất cả
               </button>
@@ -10880,6 +11071,7 @@ function HistoryView({ transactions, parts }: HistoryProps) {
 }
 
 function WorkingHoursView() {
+  const { confirm } = useConfirm();
   const [configs, setConfigs] = useState<ShiftConfig[]>([]);
   
   useEffect(() => {
@@ -10891,8 +11083,16 @@ function WorkingHoursView() {
     alert('Đã lưu cài đặt ca làm việc & nghỉ ngơi! \nHệ thống sẽ tự động áp dụng nguồn lực ngoại lệ khi tính toán kế hoạch sản xuất cho PO mới.');
   };
 
-  const handleReset = () => {
-    if (confirm('Bạn có chắc muốn khôi phục về cài đặt mặc định từ hệ thống?')) {
+  const handleReset = async () => {
+    const ok = await confirm({
+      title: 'Khôi phục cài đặt mặc định',
+      message: 'Bạn có chắc muốn khôi phục về cài đặt ca làm việc và nghỉ ngơi mặc định từ hệ thống?',
+      confirmText: 'Đồng ý khôi phục',
+      cancelText: 'Hủy bỏ',
+      confirmVariant: 'warning',
+      iconType: 'warning'
+    });
+    if (ok) {
       storageService.resetShiftConfigs();
       setConfigs(storageService.getShiftConfigs());
     }

@@ -6,8 +6,11 @@
 import { createClient } from '@supabase/supabase-js';
 
 const env = (import.meta as any).env || {};
-const supabaseUrl = String(env.VITE_SUPABASE_URL || '').trim();
-const supabaseAnonKey = String(env.VITE_SUPABASE_ANON_KEY || '').trim();
+const DEFAULT_SUPABASE_URL = 'https://hgaqtcjhejqnhvsdiose.supabase.co';
+const DEFAULT_SUPABASE_KEY = 'sb_publishable_-YU6_8jz8ffxganjKvxZGA_FPVqtzFd';
+
+const supabaseUrl = String(env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL).trim();
+const supabaseAnonKey = String(env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_KEY).trim();
 
 // Validates whether the user has provided actual Supabase credentials
 export const isSupabaseConfigured = Boolean(
@@ -17,11 +20,7 @@ export const isSupabaseConfigured = Boolean(
   supabaseAnonKey !== 'your-anon-key'
 );
 
-// Fallback dummy URL to prevent createClient from crashing if env vars are missing during setup
-const effectiveUrl = isSupabaseConfigured ? supabaseUrl : 'https://placeholder-project.supabase.co';
-const effectiveKey = isSupabaseConfigured ? supabaseAnonKey : 'placeholder-anon-key';
-
-export const supabase = createClient(effectiveUrl, effectiveKey, {
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
