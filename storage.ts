@@ -5,6 +5,7 @@
 
 import { InventoryItem, Transaction, StageId, STAGES, INITIAL_PARTS, Part, BOMDefinition, BOMDefinitionV2, ProductionOrder, ModelBOMDefinition, ProductivityNorm, LaserNesting, ShiftConfig, PartTransformation } from './types';
 import { format, addMilliseconds, setHours, setMinutes, setSeconds, getHours, getMinutes, isBefore, isAfter, startOfDay, addDays } from 'date-fns';
+import { supabase, isSupabaseConfigured } from './supabaseClient';
 
 const STORAGE_KEYS = {
   INVENTORY: 'wip_inventory',
@@ -49,6 +50,357 @@ function clearCache(key?: string) {
   else Object.keys(cache).forEach(k => delete cache[k]);
 }
 
+// Dual-access wrapper: enables async/await with Supabase while preserving synchronous access for UI rendering
+function makeAsyncArray<T>(items: T[], asyncFetchPromise?: Promise<T[]>): T[] & Promise<T[]> {
+  const arr = [...items] as any;
+  arr.then = (onFulfilled?: any, onRejected?: any) => {
+    if (asyncFetchPromise) {
+      return asyncFetchPromise.then(onFulfilled, onRejected);
+    }
+    return Promise.resolve(items).then(onFulfilled, onRejected);
+  };
+  arr.catch = (onRejected?: any) => {
+    if (asyncFetchPromise) {
+      return asyncFetchPromise.catch(onRejected);
+    }
+    return Promise.resolve(items).catch(onRejected);
+  };
+  return arr;
+}
+
+// Optimized column lists to minimize egress bandwidth and network transfer
+export const DB_COLUMNS = {
+  PARTS: 'id, name, unit, level, skip_laser, skip_bending, skip_welding, skip_painting, has_painting_po',
+  INVENTORY: 'id, part_id, original_part_id, stage_id, location, quantity',
+  TRANSACTIONS: 'id, type, part_id, part_name, original_part_id, quantity, stage_id, location, timestamp, qr_data, source_stage_id, target_stage_id, po_id, plan_id, printed, defect_reason, defect_category, kpi_recorded',
+  LABELS: 'id, type, part_id, part_name, original_part_id, quantity, stage_id, location, timestamp, qr_data, source_stage_id, target_stage_id, po_id, plan_id, printed, defect_reason, defect_category, kpi_recorded',
+  PRODUCTION_ORDERS: 'id, master_po_id, part_id, stage_id, target_quantity, produced_quantity, exported_quantity, status, created_at, completed_at, planned_start_time, lead_time, expected_completion_time',
+  BOM: 'parent_part_id, child_part_id, component_weight, scrap_weight',
+  BOM_V2: 'result_part_id, ingredient_part_id, quantity, applicable_model',
+  MODEL_BOM: 'model_id, part_id, quantity',
+  NORMS: 'part_id, stage_id, seconds_per_unit',
+  LASER_NESTING: 'nesting_id, part_id, qty_per_sheet, seconds_per_unit, seconds_per_sheet, applicable_model',
+  SHIFT_CONFIGS: 'stage_id, worker_count, work_on_sunday, shifts, breaks, worker_overrides',
+  TRANSFORMATIONS: 'source_part_id, target_part_id, target_stage_id, applicable_model',
+  GLAZING_PLANS: 'id, model_id, target_quantity, target_completion_time, planned_start_time, expected_completion_time, created_at, status, produced_quantities, printed_quantities',
+  SYSTEM_SETTINGS: 'key, value',
+};
+
+// Data Mappers between TypeScript interfaces and Supabase PostgreSQL tables
+function partToRow(p: Part) {
+  return {
+    id: p.id,
+    name: p.name,
+    unit: p.unit || 'Cái',
+    level: p.level || 1,
+    skip_laser: !!p.skipLaser,
+    skip_bending: !!p.skipBending,
+    skip_welding: !!p.skipWelding,
+    skip_painting: !!p.skipPainting,
+    has_painting_po: !!p.hasPaintingPO,
+  };
+}
+
+function rowToPart(r: any): Part {
+  return {
+    id: r.id,
+    name: r.name,
+    unit: r.unit || 'Cái',
+    level: r.level || 1,
+    skipLaser: !!r.skip_laser,
+    skipBending: !!r.skip_bending,
+    skipWelding: !!r.skip_welding,
+    skipPainting: !!r.skip_painting,
+    hasPaintingPO: !!r.has_painting_po,
+  };
+}
+
+function invToRow(i: InventoryItem) {
+  const orig = i.originalPartId || 'NONE';
+  const id = `${i.partId}_${i.stageId}_${i.location}_${orig}`;
+  return {
+    id,
+    part_id: i.partId,
+    original_part_id: i.originalPartId || null,
+    stage_id: i.stageId,
+    location: i.location,
+    quantity: Number(i.quantity) || 0,
+  };
+}
+
+function rowToInv(r: any): InventoryItem {
+  return {
+    partId: r.part_id,
+    originalPartId: r.original_part_id || undefined,
+    stageId: r.stage_id,
+    location: r.location,
+    quantity: Number(r.quantity) || 0,
+  };
+}
+
+function txToRow(t: Transaction) {
+  return {
+    id: t.id,
+    type: t.type,
+    part_id: t.partId,
+    part_name: t.partName || null,
+    original_part_id: t.originalPartId || null,
+    quantity: Number(t.quantity),
+    stage_id: t.stageId,
+    location: t.location || null,
+    timestamp: Number(t.timestamp),
+    qr_data: t.qrData || null,
+    source_stage_id: t.sourceStageId || null,
+    target_stage_id: t.targetStageId || null,
+    po_id: t.poId || null,
+    plan_id: t.planId || null,
+    printed: !!t.printed,
+    defect_reason: t.defectReason || null,
+    defect_category: t.defectCategory || null,
+    kpi_recorded: !!t.kpiRecorded,
+  };
+}
+
+function rowToTx(r: any): Transaction {
+  return {
+    id: r.id,
+    type: r.type,
+    partId: r.part_id,
+    partName: r.part_name || undefined,
+    originalPartId: r.original_part_id || undefined,
+    quantity: Number(r.quantity),
+    stageId: r.stage_id,
+    location: r.location || undefined,
+    timestamp: Number(r.timestamp),
+    qrData: r.qr_data || undefined,
+    sourceStageId: r.source_stage_id || undefined,
+    targetStageId: r.target_stage_id || undefined,
+    poId: r.po_id || undefined,
+    planId: r.plan_id || undefined,
+    printed: r.printed || undefined,
+    defectReason: r.defect_reason || undefined,
+    defectCategory: r.defect_category || undefined,
+    kpiRecorded: r.kpi_recorded || undefined,
+  };
+}
+
+function poToRow(p: ProductionOrder) {
+  return {
+    id: p.id,
+    master_po_id: p.masterPoId || null,
+    part_id: p.partId,
+    stage_id: p.stageId || null,
+    target_quantity: Number(p.targetQuantity),
+    produced_quantity: Number(p.producedQuantity || 0),
+    exported_quantity: Number(p.exportedQuantity || 0),
+    status: p.status,
+    created_at: Number(p.createdAt),
+    completed_at: p.completedAt ? Number(p.completedAt) : null,
+    planned_start_time: p.plannedStartTime ? Number(p.plannedStartTime) : null,
+    lead_time: p.leadTime ? Number(p.leadTime) : null,
+    expected_completion_time: p.expectedCompletionTime ? Number(p.expectedCompletionTime) : null,
+  };
+}
+
+function rowToPo(r: any): ProductionOrder {
+  return {
+    id: r.id,
+    masterPoId: r.master_po_id || undefined,
+    partId: r.part_id,
+    stageId: r.stage_id || undefined,
+    targetQuantity: Number(r.target_quantity),
+    producedQuantity: Number(r.produced_quantity || 0),
+    exportedQuantity: Number(r.exported_quantity || 0),
+    status: r.status,
+    createdAt: Number(r.created_at),
+    completedAt: r.completed_at ? Number(r.completed_at) : undefined,
+    plannedStartTime: r.planned_start_time ? Number(r.planned_start_time) : undefined,
+    leadTime: r.lead_time ? Number(r.lead_time) : undefined,
+    expectedCompletionTime: r.expected_completion_time ? Number(r.expected_completion_time) : undefined,
+  };
+}
+
+function bomToRow(b: BOMDefinition) {
+  return {
+    id: `${b.parentPartId}_${b.childPartId}`,
+    parent_part_id: b.parentPartId,
+    child_part_id: b.childPartId,
+    component_weight: Number(b.componentWeight || 0),
+    scrap_weight: Number(b.scrapWeight || 0),
+  };
+}
+
+function rowToBom(r: any): BOMDefinition {
+  return {
+    parentPartId: r.parent_part_id,
+    childPartId: r.child_part_id,
+    componentWeight: Number(r.component_weight || 0),
+    scrapWeight: Number(r.scrap_weight || 0),
+  };
+}
+
+function bomV2ToRow(b: BOMDefinitionV2) {
+  return {
+    id: `${b.resultPartId}_${b.ingredientPartId}_${b.applicableModel || 'ALL'}`,
+    result_part_id: b.resultPartId,
+    ingredient_part_id: b.ingredientPartId,
+    quantity: Number(b.quantity || 0),
+    applicable_model: b.applicableModel || null,
+  };
+}
+
+function rowToBomV2(r: any): BOMDefinitionV2 {
+  return {
+    resultPartId: r.result_part_id,
+    ingredientPartId: r.ingredient_part_id,
+    quantity: Number(r.quantity || 0),
+    applicableModel: r.applicable_model || undefined,
+  };
+}
+
+function modelBomToRow(m: ModelBOMDefinition) {
+  return {
+    id: `${m.modelId}_${m.partId}`,
+    model_id: m.modelId,
+    part_id: m.partId,
+    quantity: Number(m.quantity || 0),
+  };
+}
+
+function rowToModelBom(r: any): ModelBOMDefinition {
+  return {
+    modelId: r.model_id,
+    partId: r.part_id,
+    quantity: Number(r.quantity || 0),
+  };
+}
+
+function normToRow(n: ProductivityNorm) {
+  return {
+    id: `${n.partId}_${n.stageId}`,
+    part_id: n.partId,
+    stage_id: n.stageId,
+    seconds_per_unit: Number(n.secondsPerUnit || 0),
+  };
+}
+
+function rowToNorm(r: any): ProductivityNorm {
+  return {
+    partId: r.part_id,
+    stageId: r.stage_id,
+    secondsPerUnit: Number(r.seconds_per_unit || 0),
+  };
+}
+
+function nestingToRow(n: LaserNesting) {
+  return {
+    id: `${n.nestingId}_${n.partId}`,
+    nesting_id: n.nestingId,
+    part_id: n.partId,
+    qty_per_sheet: Number(n.qtyPerSheet || 1),
+    seconds_per_unit: Number(n.secondsPerUnit || 0),
+    seconds_per_sheet: Number(n.secondsPerSheet || 0),
+    applicable_model: n.applicableModel || null,
+  };
+}
+
+function rowToNesting(r: any): LaserNesting {
+  return {
+    nestingId: r.nesting_id,
+    partId: r.part_id,
+    qtyPerSheet: Number(r.qty_per_sheet || 1),
+    secondsPerUnit: Number(r.seconds_per_unit || 0),
+    secondsPerSheet: Number(r.seconds_per_sheet || 0),
+    applicableModel: r.applicable_model || undefined,
+  };
+}
+
+function shiftToRow(s: ShiftConfig) {
+  return {
+    stage_id: s.stageId,
+    worker_count: s.workerCount || 1,
+    work_on_sunday: !!s.workOnSunday,
+    shifts: s.shifts || [],
+    breaks: s.breaks || [],
+    worker_overrides: s.workerOverrides || [],
+  };
+}
+
+function rowToShift(r: any): ShiftConfig {
+  return {
+    stageId: r.stage_id,
+    workerCount: Number(r.worker_count || 1),
+    workOnSunday: !!r.work_on_sunday,
+    shifts: r.shifts || [],
+    breaks: r.breaks || [],
+    workerOverrides: r.worker_overrides || [],
+  };
+}
+
+function transfToRow(t: PartTransformation) {
+  return {
+    id: `${t.sourcePartId}_${t.targetPartId}_${t.targetStageId}_${t.applicableModel || 'ALL'}`,
+    source_part_id: t.sourcePartId,
+    target_part_id: t.targetPartId,
+    target_stage_id: t.targetStageId,
+    applicable_model: t.applicableModel || null,
+  };
+}
+
+function rowToTransf(r: any): PartTransformation {
+  return {
+    sourcePartId: r.source_part_id,
+    targetPartId: r.target_part_id,
+    targetStageId: r.target_stage_id,
+    applicableModel: r.applicable_model || undefined,
+  };
+}
+
+function glazingPlanToRow(p: import('./types').GlazingPlan) {
+  return {
+    id: p.id,
+    model_id: p.modelId,
+    target_quantity: Number(p.targetQuantity),
+    target_completion_time: Number(p.targetCompletionTime),
+    planned_start_time: p.plannedStartTime ? Number(p.plannedStartTime) : null,
+    expected_completion_time: p.expectedCompletionTime ? Number(p.expectedCompletionTime) : null,
+    created_at: Number(p.createdAt),
+    status: p.status,
+    produced_quantities: p.producedQuantities || {},
+    printed_quantities: (p as any).printedQuantities || {},
+  };
+}
+
+function rowToGlazingPlan(r: any): import('./types').GlazingPlan {
+  return {
+    id: r.id,
+    modelId: r.model_id,
+    targetQuantity: Number(r.target_quantity),
+    targetCompletionTime: Number(r.target_completion_time),
+    plannedStartTime: r.planned_start_time ? Number(r.planned_start_time) : undefined,
+    expectedCompletionTime: r.expected_completion_time ? Number(r.expected_completion_time) : undefined,
+    createdAt: Number(r.created_at),
+    status: r.status,
+    producedQuantities: r.produced_quantities || {},
+    ...(r.printed_quantities ? { printedQuantities: r.printed_quantities } : {}),
+  } as any;
+}
+
+// Singleton state for Supabase Realtime subscription
+let activeRealtimeChannel: any = null;
+const realtimeCallbacks = new Set<(payload: any) => void>();
+
+function safeRun(promiseLike: PromiseLike<any>, errorContext: string) {
+  promiseLike.then(
+    ({ error }: any) => {
+      if (error) console.error(`[Supabase ${errorContext}]`, error);
+    },
+    (err: any) => {
+      console.error(`[Supabase ${errorContext}]`, err);
+    }
+  );
+}
+
 export const storageService = {
   normalize(s: string): string {
     if (!s) return '';
@@ -58,6 +410,398 @@ export const storageService = {
     // Strip common suffixes
     res = res.replace(/\s*-\s*(CD|H|C|P|G|W|B|L|CT|BD)$/g, ''); 
     return res.split('(')[0].trim();
+  },
+
+  // --- Supabase Online Cloud Operations & State Synchronization ---
+  isConfigured(): boolean {
+    return isSupabaseConfigured;
+  },
+
+  async init(): Promise<void> {
+    if (!isSupabaseConfigured) return;
+    try {
+      const [
+        partsRes,
+        invRes,
+        txRes,
+        lblRes,
+        poRes,
+        bomRes,
+        bomV2Res,
+        modelBomRes,
+        normRes,
+        nestRes,
+        shiftRes,
+        transfRes,
+        glazingPlanRes,
+        settingsRes
+      ] = await Promise.all([
+        supabase.from('parts').select(DB_COLUMNS.PARTS),
+        supabase.from('inventory').select(DB_COLUMNS.INVENTORY),
+        supabase.from('transactions').select(DB_COLUMNS.TRANSACTIONS).order('timestamp', { ascending: false }).limit(100),
+        supabase.from('labels').select(DB_COLUMNS.LABELS).order('timestamp', { ascending: false }).limit(100),
+        supabase.from('production_orders').select(DB_COLUMNS.PRODUCTION_ORDERS),
+        supabase.from('bom_definitions').select(DB_COLUMNS.BOM),
+        supabase.from('bom_v2_definitions').select(DB_COLUMNS.BOM_V2),
+        supabase.from('model_bom_definitions').select(DB_COLUMNS.MODEL_BOM),
+        supabase.from('productivity_norms').select(DB_COLUMNS.NORMS),
+        supabase.from('laser_nesting').select(DB_COLUMNS.LASER_NESTING),
+        supabase.from('shift_configs').select(DB_COLUMNS.SHIFT_CONFIGS),
+        supabase.from('part_transformations').select(DB_COLUMNS.TRANSFORMATIONS),
+        supabase.from('glazing_plans').select(DB_COLUMNS.GLAZING_PLANS),
+        supabase.from('system_settings').select(DB_COLUMNS.SYSTEM_SETTINGS)
+      ]);
+
+      if (!partsRes.error && partsRes.data && partsRes.data.length > 0) {
+        const parts = partsRes.data.map(rowToPart);
+        cache[STORAGE_KEYS.PARTS] = parts;
+        localStorage.setItem(STORAGE_KEYS.PARTS, JSON.stringify(parts));
+      }
+      if (!invRes.error && invRes.data) {
+        const inv = invRes.data.map(rowToInv);
+        cache[STORAGE_KEYS.INVENTORY] = inv;
+        localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(inv));
+      }
+      if (!txRes.error && txRes.data) {
+        const txs = txRes.data.map(rowToTx);
+        cache[STORAGE_KEYS.TRANSACTIONS] = txs;
+        localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(txs));
+      }
+      if (!lblRes.error && lblRes.data) {
+        const lbls = lblRes.data.map(rowToTx);
+        cache['wip_labels'] = lbls;
+        localStorage.setItem('wip_labels', JSON.stringify(lbls));
+      }
+      if (!poRes.error && poRes.data) {
+        const pos = poRes.data.map(rowToPo);
+        cache[STORAGE_KEYS.PRODUCTION_ORDERS] = pos;
+        localStorage.setItem(STORAGE_KEYS.PRODUCTION_ORDERS, JSON.stringify(pos));
+      }
+      if (!bomRes.error && bomRes.data) {
+        const bom = bomRes.data.map(rowToBom);
+        cache[STORAGE_KEYS.BOM] = bom;
+        localStorage.setItem(STORAGE_KEYS.BOM, JSON.stringify(bom));
+      }
+      if (!bomV2Res.error && bomV2Res.data) {
+        const bomV2 = bomV2Res.data.map(rowToBomV2);
+        cache[STORAGE_KEYS.BOM_V2] = bomV2;
+        localStorage.setItem(STORAGE_KEYS.BOM_V2, JSON.stringify(bomV2));
+      }
+      if (!modelBomRes.error && modelBomRes.data) {
+        const modelBom = modelBomRes.data.map(rowToModelBom);
+        cache[STORAGE_KEYS.MODEL_BOM] = modelBom;
+        localStorage.setItem(STORAGE_KEYS.MODEL_BOM, JSON.stringify(modelBom));
+      }
+      if (!normRes.error && normRes.data) {
+        const norms = normRes.data.map(rowToNorm);
+        cache[STORAGE_KEYS.NORMS] = norms;
+        localStorage.setItem(STORAGE_KEYS.NORMS, JSON.stringify(norms));
+      }
+      if (!nestRes.error && nestRes.data) {
+        const nests = nestRes.data.map(rowToNesting);
+        cache[STORAGE_KEYS.LASER_NESTING] = nests;
+        localStorage.setItem(STORAGE_KEYS.LASER_NESTING, JSON.stringify(nests));
+      }
+      if (!shiftRes.error && shiftRes.data && shiftRes.data.length > 0) {
+        const shifts = shiftRes.data.map(rowToShift);
+        cache[STORAGE_KEYS.SHIFT_CONFIGS] = shifts;
+        localStorage.setItem(STORAGE_KEYS.SHIFT_CONFIGS, JSON.stringify(shifts));
+      }
+      if (!transfRes.error && transfRes.data) {
+        const transfs = transfRes.data.map(rowToTransf);
+        cache[STORAGE_KEYS.TRANSFORMATIONS] = transfs;
+        localStorage.setItem(STORAGE_KEYS.TRANSFORMATIONS, JSON.stringify(transfs));
+      }
+      if (!glazingPlanRes.error && glazingPlanRes.data) {
+        const gPlans = glazingPlanRes.data.map(rowToGlazingPlan);
+        cache[STORAGE_KEYS.GLAZING_PLANS] = gPlans;
+        localStorage.setItem(STORAGE_KEYS.GLAZING_PLANS, JSON.stringify(gPlans));
+      }
+      if (!settingsRes.error && settingsRes.data) {
+        settingsRes.data.forEach((s: any) => {
+          cache[s.key] = s.value;
+          localStorage.setItem(s.key, typeof s.value === 'string' ? s.value : JSON.stringify(s.value));
+        });
+      }
+    } catch (err) {
+      console.error('Error in storageService.init() with Supabase:', err);
+      throw err;
+    }
+  },
+
+  async syncTableFromSupabase(table: string): Promise<void> {
+    if (!isSupabaseConfigured) return;
+    try {
+      if (table === 'parts') {
+        const { data } = await supabase.from('parts').select(DB_COLUMNS.PARTS);
+        if (data) {
+          const parts = data.map(rowToPart);
+          cache[STORAGE_KEYS.PARTS] = parts;
+          localStorage.setItem(STORAGE_KEYS.PARTS, JSON.stringify(parts));
+        }
+      } else if (table === 'inventory') {
+        const { data } = await supabase.from('inventory').select(DB_COLUMNS.INVENTORY);
+        if (data) {
+          const inv = data.map(rowToInv);
+          cache[STORAGE_KEYS.INVENTORY] = inv;
+          localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(inv));
+        }
+      } else if (table === 'transactions') {
+        const { data } = await supabase.from('transactions').select(DB_COLUMNS.TRANSACTIONS).order('timestamp', { ascending: false }).limit(100);
+        if (data) {
+          const txs = data.map(rowToTx);
+          cache[STORAGE_KEYS.TRANSACTIONS] = txs;
+          localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(txs));
+        }
+      } else if (table === 'labels') {
+        const { data } = await supabase.from('labels').select(DB_COLUMNS.LABELS).order('timestamp', { ascending: false }).limit(100);
+        if (data) {
+          const lbls = data.map(rowToTx);
+          cache['wip_labels'] = lbls;
+          localStorage.setItem('wip_labels', JSON.stringify(lbls));
+        }
+      } else if (table === 'production_orders') {
+        const { data } = await supabase.from('production_orders').select(DB_COLUMNS.PRODUCTION_ORDERS);
+        if (data) {
+          const pos = data.map(rowToPo);
+          cache[STORAGE_KEYS.PRODUCTION_ORDERS] = pos;
+          localStorage.setItem(STORAGE_KEYS.PRODUCTION_ORDERS, JSON.stringify(pos));
+        }
+      } else if (table === 'bom_definitions') {
+        const { data } = await supabase.from('bom_definitions').select(DB_COLUMNS.BOM);
+        if (data) {
+          const bom = data.map(rowToBom);
+          cache[STORAGE_KEYS.BOM] = bom;
+          localStorage.setItem(STORAGE_KEYS.BOM, JSON.stringify(bom));
+        }
+      } else if (table === 'bom_v2_definitions') {
+        const { data } = await supabase.from('bom_v2_definitions').select(DB_COLUMNS.BOM_V2);
+        if (data) {
+          const bomV2 = data.map(rowToBomV2);
+          cache[STORAGE_KEYS.BOM_V2] = bomV2;
+          localStorage.setItem(STORAGE_KEYS.BOM_V2, JSON.stringify(bomV2));
+        }
+      } else if (table === 'model_bom_definitions') {
+        const { data } = await supabase.from('model_bom_definitions').select(DB_COLUMNS.MODEL_BOM);
+        if (data) {
+          const mb = data.map(rowToModelBom);
+          cache[STORAGE_KEYS.MODEL_BOM] = mb;
+          localStorage.setItem(STORAGE_KEYS.MODEL_BOM, JSON.stringify(mb));
+        }
+      } else if (table === 'productivity_norms') {
+        const { data } = await supabase.from('productivity_norms').select(DB_COLUMNS.NORMS);
+        if (data) {
+          const norms = data.map(rowToNorm);
+          cache[STORAGE_KEYS.NORMS] = norms;
+          localStorage.setItem(STORAGE_KEYS.NORMS, JSON.stringify(norms));
+        }
+      } else if (table === 'laser_nesting') {
+        const { data } = await supabase.from('laser_nesting').select(DB_COLUMNS.LASER_NESTING);
+        if (data) {
+          const nests = data.map(rowToNesting);
+          cache[STORAGE_KEYS.LASER_NESTING] = nests;
+          localStorage.setItem(STORAGE_KEYS.LASER_NESTING, JSON.stringify(nests));
+        }
+      } else if (table === 'shift_configs') {
+        const { data } = await supabase.from('shift_configs').select(DB_COLUMNS.SHIFT_CONFIGS);
+        if (data) {
+          const shifts = data.map(rowToShift);
+          cache[STORAGE_KEYS.SHIFT_CONFIGS] = shifts;
+          localStorage.setItem(STORAGE_KEYS.SHIFT_CONFIGS, JSON.stringify(shifts));
+        }
+      } else if (table === 'part_transformations') {
+        const { data } = await supabase.from('part_transformations').select(DB_COLUMNS.TRANSFORMATIONS);
+        if (data) {
+          const transfs = data.map(rowToTransf);
+          cache[STORAGE_KEYS.TRANSFORMATIONS] = transfs;
+          localStorage.setItem(STORAGE_KEYS.TRANSFORMATIONS, JSON.stringify(transfs));
+        }
+      } else if (table === 'glazing_plans') {
+        const { data } = await supabase.from('glazing_plans').select(DB_COLUMNS.GLAZING_PLANS);
+        if (data) {
+          const gPlans = data.map(rowToGlazingPlan);
+          cache[STORAGE_KEYS.GLAZING_PLANS] = gPlans;
+          localStorage.setItem(STORAGE_KEYS.GLAZING_PLANS, JSON.stringify(gPlans));
+        }
+      } else if (table === 'system_settings') {
+        const { data } = await supabase.from('system_settings').select(DB_COLUMNS.SYSTEM_SETTINGS);
+        if (data) {
+          data.forEach((s: any) => {
+            cache[s.key] = s.value;
+            localStorage.setItem(s.key, typeof s.value === 'string' ? s.value : JSON.stringify(s.value));
+          });
+        }
+      }
+    } catch (err) {
+      console.error(`Error syncing table ${table} from Supabase:`, err);
+    }
+  },
+
+  subscribeToRealtime(callback: (payload: any) => void): () => void {
+    if (!isSupabaseConfigured) {
+      return () => {};
+    }
+    try {
+      realtimeCallbacks.add(callback);
+
+      if (!activeRealtimeChannel) {
+        // Clean up any stale or existing channels with matching names to avoid duplicate subscriptions
+        try {
+          const channels = supabase.getChannels();
+          channels.forEach((ch: any) => {
+            if (ch.topic && ch.topic.includes('wip-realtime')) {
+              supabase.removeChannel(ch);
+            }
+          });
+        } catch (cleanupErr) {
+          // Ignore cleanup error
+        }
+
+        const channelName = `wip-realtime-${Date.now()}`;
+        const channel = supabase.channel(channelName);
+
+        // Only maintain Realtime listeners for frequently fluctuating data tables:
+        // inventory, transactions, production_orders, and labels to minimize Egress on Supabase Free
+        const realtimeTables = ['inventory', 'transactions', 'production_orders', 'labels'];
+        realtimeTables.forEach((table) => {
+          channel.on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table },
+            async (payload: any) => {
+              console.log(`[Supabase Realtime] Table change detected on ${table}:`, payload.eventType);
+
+              let appliedFromPayload = false;
+              try {
+                if (table === 'inventory' && payload.new) {
+                  const inv = storageService.getInventory();
+                  if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+                    const item = rowToInv(payload.new);
+                    const idx = inv.findIndex(i => {
+                      const orig = i.originalPartId || 'NONE';
+                      const itemOrig = item.originalPartId || 'NONE';
+                      return i.partId === item.partId && i.stageId === item.stageId && i.location === item.location && orig === itemOrig;
+                    });
+                    if (idx >= 0) {
+                      inv[idx] = item;
+                    } else {
+                      inv.push(item);
+                    }
+                    cache[STORAGE_KEYS.INVENTORY] = inv;
+                    localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(inv));
+                    appliedFromPayload = true;
+                  }
+                } else if (table === 'inventory' && payload.eventType === 'DELETE' && payload.old) {
+                  const inv = storageService.getInventory();
+                  const targetId = payload.old.id;
+                  const filtered = inv.filter(i => {
+                    const orig = i.originalPartId || 'NONE';
+                    return `${i.partId}_${i.stageId}_${i.location}_${orig}` !== targetId;
+                  });
+                  cache[STORAGE_KEYS.INVENTORY] = filtered;
+                  localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(filtered));
+                  appliedFromPayload = true;
+                } else if (table === 'transactions') {
+                  const txs = storageService.getTransactions();
+                  if (payload.eventType === 'INSERT' && payload.new) {
+                    const tx = rowToTx(payload.new);
+                    if (!txs.some(t => t.id === tx.id)) {
+                      txs.unshift(tx);
+                      if (txs.length > 100) txs.length = 100;
+                      cache[STORAGE_KEYS.TRANSACTIONS] = txs;
+                      localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(txs));
+                    }
+                    appliedFromPayload = true;
+                  } else if (payload.eventType === 'DELETE' && payload.old) {
+                    const filtered = txs.filter(t => t.id !== payload.old.id);
+                    cache[STORAGE_KEYS.TRANSACTIONS] = filtered;
+                    localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(filtered));
+                    appliedFromPayload = true;
+                  }
+                } else if (table === 'labels') {
+                  const lbls = storageService.getLabels();
+                  if ((payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') && payload.new) {
+                    const lbl = rowToTx(payload.new);
+                    const idx = lbls.findIndex(l => l.id === lbl.id);
+                    if (idx >= 0) {
+                      lbls[idx] = lbl;
+                    } else {
+                      lbls.unshift(lbl);
+                      if (lbls.length > 100) lbls.length = 100;
+                    }
+                    cache['wip_labels'] = lbls;
+                    localStorage.setItem('wip_labels', JSON.stringify(lbls));
+                    appliedFromPayload = true;
+                  } else if (payload.eventType === 'DELETE' && payload.old) {
+                    const filtered = lbls.filter(l => l.id !== payload.old.id);
+                    cache['wip_labels'] = filtered;
+                    localStorage.setItem('wip_labels', JSON.stringify(filtered));
+                    appliedFromPayload = true;
+                  }
+                } else if (table === 'production_orders') {
+                  const pos = storageService.getProductionOrdersSync();
+                  if ((payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') && payload.new) {
+                    const po = rowToPo(payload.new);
+                    const idx = pos.findIndex(p => p.id === po.id);
+                    if (idx >= 0) {
+                      pos[idx] = po;
+                    } else {
+                      pos.unshift(po);
+                    }
+                    cache[STORAGE_KEYS.PRODUCTION_ORDERS] = pos;
+                    localStorage.setItem(STORAGE_KEYS.PRODUCTION_ORDERS, JSON.stringify(pos));
+                    appliedFromPayload = true;
+                  } else if (payload.eventType === 'DELETE' && payload.old) {
+                    const filtered = pos.filter(p => p.id !== payload.old.id);
+                    cache[STORAGE_KEYS.PRODUCTION_ORDERS] = filtered;
+                    localStorage.setItem(STORAGE_KEYS.PRODUCTION_ORDERS, JSON.stringify(filtered));
+                    appliedFromPayload = true;
+                  }
+                }
+              } catch (applyErr) {
+                console.warn('[Supabase Realtime] Payload fast-apply error, falling back to fetch:', applyErr);
+                appliedFromPayload = false;
+              }
+
+              if (!appliedFromPayload) {
+                await storageService.syncTableFromSupabase(payload.table || table);
+              }
+
+              realtimeCallbacks.forEach((cb) => {
+                try {
+                  cb(payload);
+                } catch (cbErr) {
+                  console.error('[Supabase Realtime] Callback error:', cbErr);
+                }
+              });
+            }
+          );
+        });
+
+        channel.subscribe((status: string) => {
+          if (status === 'SUBSCRIBED') {
+            console.log('[Supabase Realtime] Subscribed successfully on channel:', channelName);
+          }
+        });
+
+        activeRealtimeChannel = channel;
+      }
+
+      // Cleanup function to avoid duplicate connections upon component re-render
+      return () => {
+        realtimeCallbacks.delete(callback);
+        if (realtimeCallbacks.size === 0 && activeRealtimeChannel) {
+          try {
+            supabase.removeChannel(activeRealtimeChannel);
+          } catch (removeErr) {
+            // Ignore remove error
+          }
+          activeRealtimeChannel = null;
+        }
+      };
+    } catch (err) {
+      console.error('Failed to initialize Realtime subscription:', err);
+      return () => {};
+    }
   },
 
   getLabelSettings() {
@@ -88,12 +832,23 @@ export const storageService = {
     });
   },
 
-  saveLabelSettings(settings: any) {
+  async saveLabelSettings(settings: any): Promise<void> {
     localStorage.setItem(STORAGE_KEYS.LABEL_SETTINGS, JSON.stringify(settings));
     cache[STORAGE_KEYS.LABEL_SETTINGS] = settings;
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('system_settings').upsert({
+          key: STORAGE_KEYS.LABEL_SETTINGS,
+          value: settings,
+          updated_at: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error('Supabase saveLabelSettings error:', err);
+      }
+    }
   },
 
-  getParts(): Part[] {
+  getPartsSync(): Part[] {
     const data = getCached(STORAGE_KEYS.PARTS, () => {
       const data = localStorage.getItem(STORAGE_KEYS.PARTS);
       return data ? JSON.parse(data) : INITIAL_PARTS;
@@ -101,72 +856,284 @@ export const storageService = {
     return [...data];
   },
 
-  saveParts(parts: Part[]) {
-    localStorage.setItem(STORAGE_KEYS.PARTS, JSON.stringify(parts));
-    cache[STORAGE_KEYS.PARTS] = parts;
+  async fetchParts(): Promise<Part[]> {
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.from('parts').select(DB_COLUMNS.PARTS);
+        if (!error && data) {
+          const parts = data.map(rowToPart);
+          cache[STORAGE_KEYS.PARTS] = parts;
+          localStorage.setItem(STORAGE_KEYS.PARTS, JSON.stringify(parts));
+          return [...parts];
+        }
+      } catch (err) {
+        console.error('Supabase fetchParts error:', err);
+      }
+    }
+    return this.getPartsSync();
   },
 
-  getBOM(): BOMDefinition[] {
+  getParts(): Part[] & Promise<Part[]> {
+    const syncData = this.getPartsSync();
+    return makeAsyncArray(syncData, isSupabaseConfigured ? this.fetchParts() : undefined);
+  },
+
+  async saveParts(parts: Part[]): Promise<void> {
+    localStorage.setItem(STORAGE_KEYS.PARTS, JSON.stringify(parts));
+    cache[STORAGE_KEYS.PARTS] = parts;
+    if (isSupabaseConfigured) {
+      try {
+        if (parts.length > 0) {
+          await supabase.from('parts').upsert(parts.map(partToRow));
+        }
+      } catch (err) {
+        console.error('Supabase saveParts error:', err);
+      }
+    }
+  },
+
+  async addPart(part: Part): Promise<void> {
+    const current = this.getPartsSync();
+    const updated = [...current, part];
+    await this.saveParts(updated);
+  },
+
+  async updatePart(part: Part): Promise<void> {
+    const current = this.getPartsSync();
+    const updated = current.map(p => p.id === part.id ? part : p);
+    await this.saveParts(updated);
+  },
+
+  async deletePart(id: string): Promise<void> {
+    const current = this.getPartsSync();
+    const updated = current.filter(p => p.id !== id);
+    localStorage.setItem(STORAGE_KEYS.PARTS, JSON.stringify(updated));
+    cache[STORAGE_KEYS.PARTS] = updated;
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('parts').delete().eq('id', id);
+      } catch (err) {
+        console.error('Supabase deletePart error:', err);
+      }
+    }
+  },
+
+  getBOMSync(): BOMDefinition[] {
     return getCached(STORAGE_KEYS.BOM, () => {
       const data = localStorage.getItem(STORAGE_KEYS.BOM);
       return data ? JSON.parse(data) : [];
     });
   },
 
-  saveBOM(bom: BOMDefinition[]) {
-    localStorage.setItem(STORAGE_KEYS.BOM, JSON.stringify(bom));
-    cache[STORAGE_KEYS.BOM] = bom;
+  async fetchBOM(): Promise<BOMDefinition[]> {
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.from('bom_definitions').select(DB_COLUMNS.BOM);
+        if (!error && data) {
+          const bom = data.map(rowToBom);
+          cache[STORAGE_KEYS.BOM] = bom;
+          localStorage.setItem(STORAGE_KEYS.BOM, JSON.stringify(bom));
+          return [...bom];
+        }
+      } catch (err) {
+        console.error('Supabase fetchBOM error:', err);
+      }
+    }
+    return this.getBOMSync();
   },
 
-  getBOMV2(): BOMDefinitionV2[] {
+  getBOM(): BOMDefinition[] & Promise<BOMDefinition[]> {
+    const syncData = this.getBOMSync();
+    return makeAsyncArray(syncData, isSupabaseConfigured ? this.fetchBOM() : undefined);
+  },
+
+  async saveBOM(bom: BOMDefinition[]): Promise<void> {
+    localStorage.setItem(STORAGE_KEYS.BOM, JSON.stringify(bom));
+    cache[STORAGE_KEYS.BOM] = bom;
+    if (isSupabaseConfigured) {
+      try {
+        if (bom.length > 0) {
+          await supabase.from('bom_definitions').upsert(bom.map(bomToRow));
+        }
+      } catch (err) {
+        console.error('Supabase saveBOM error:', err);
+      }
+    }
+  },
+
+  getBOMV2Sync(): BOMDefinitionV2[] {
     return getCached(STORAGE_KEYS.BOM_V2, () => {
       const data = localStorage.getItem(STORAGE_KEYS.BOM_V2);
       return data ? JSON.parse(data) : [];
     });
   },
 
-  saveBOMV2(bom: BOMDefinitionV2[]) {
-    localStorage.setItem(STORAGE_KEYS.BOM_V2, JSON.stringify(bom));
-    cache[STORAGE_KEYS.BOM_V2] = bom;
+  async fetchBOMV2(): Promise<BOMDefinitionV2[]> {
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.from('bom_v2_definitions').select(DB_COLUMNS.BOM_V2);
+        if (!error && data) {
+          const bomV2 = data.map(rowToBomV2);
+          cache[STORAGE_KEYS.BOM_V2] = bomV2;
+          localStorage.setItem(STORAGE_KEYS.BOM_V2, JSON.stringify(bomV2));
+          return [...bomV2];
+        }
+      } catch (err) {
+        console.error('Supabase fetchBOMV2 error:', err);
+      }
+    }
+    return this.getBOMV2Sync();
   },
 
-  getModelBOM(): ModelBOMDefinition[] {
+  getBOMV2(): BOMDefinitionV2[] & Promise<BOMDefinitionV2[]> {
+    const syncData = this.getBOMV2Sync();
+    return makeAsyncArray(syncData, isSupabaseConfigured ? this.fetchBOMV2() : undefined);
+  },
+
+  async saveBOMV2(bom: BOMDefinitionV2[]): Promise<void> {
+    localStorage.setItem(STORAGE_KEYS.BOM_V2, JSON.stringify(bom));
+    cache[STORAGE_KEYS.BOM_V2] = bom;
+    if (isSupabaseConfigured) {
+      try {
+        if (bom.length > 0) {
+          await supabase.from('bom_v2_definitions').upsert(bom.map(bomV2ToRow));
+        }
+      } catch (err) {
+        console.error('Supabase saveBOMV2 error:', err);
+      }
+    }
+  },
+
+  getModelBOMSync(): ModelBOMDefinition[] {
     return getCached(STORAGE_KEYS.MODEL_BOM, () => {
       const data = localStorage.getItem(STORAGE_KEYS.MODEL_BOM);
       return data ? JSON.parse(data) : [];
     });
   },
 
-  saveModelBOM(bom: ModelBOMDefinition[]) {
+  async fetchModelBOM(): Promise<ModelBOMDefinition[]> {
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.from('model_bom_definitions').select(DB_COLUMNS.MODEL_BOM);
+        if (!error && data) {
+          const modelBom = data.map(rowToModelBom);
+          cache[STORAGE_KEYS.MODEL_BOM] = modelBom;
+          localStorage.setItem(STORAGE_KEYS.MODEL_BOM, JSON.stringify(modelBom));
+          return [...modelBom];
+        }
+      } catch (err) {
+        console.error('Supabase fetchModelBOM error:', err);
+      }
+    }
+    return this.getModelBOMSync();
+  },
+
+  getModelBOM(): ModelBOMDefinition[] & Promise<ModelBOMDefinition[]> {
+    const syncData = this.getModelBOMSync();
+    return makeAsyncArray(syncData, isSupabaseConfigured ? this.fetchModelBOM() : undefined);
+  },
+
+  async saveModelBOM(bom: ModelBOMDefinition[]): Promise<void> {
     localStorage.setItem(STORAGE_KEYS.MODEL_BOM, JSON.stringify(bom));
     cache[STORAGE_KEYS.MODEL_BOM] = bom;
+    if (isSupabaseConfigured) {
+      try {
+        if (bom.length > 0) {
+          await supabase.from('model_bom_definitions').upsert(bom.map(modelBomToRow));
+        }
+      } catch (err) {
+        console.error('Supabase saveModelBOM error:', err);
+      }
+    }
   },
   
-  getNorms(): ProductivityNorm[] {
+  getNormsSync(): ProductivityNorm[] {
     return getCached(STORAGE_KEYS.NORMS, () => {
       const data = localStorage.getItem(STORAGE_KEYS.NORMS);
       return data ? JSON.parse(data) : [];
     });
   },
 
-  saveNorms(norms: ProductivityNorm[]) {
-    localStorage.setItem(STORAGE_KEYS.NORMS, JSON.stringify(norms));
-    cache[STORAGE_KEYS.NORMS] = norms;
+  async fetchNorms(): Promise<ProductivityNorm[]> {
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.from('productivity_norms').select(DB_COLUMNS.NORMS);
+        if (!error && data) {
+          const norms = data.map(rowToNorm);
+          cache[STORAGE_KEYS.NORMS] = norms;
+          localStorage.setItem(STORAGE_KEYS.NORMS, JSON.stringify(norms));
+          return [...norms];
+        }
+      } catch (err) {
+        console.error('Supabase fetchNorms error:', err);
+      }
+    }
+    return this.getNormsSync();
   },
 
-  getLaserNesting(): LaserNesting[] {
+  getNorms(): ProductivityNorm[] & Promise<ProductivityNorm[]> {
+    const syncData = this.getNormsSync();
+    return makeAsyncArray(syncData, isSupabaseConfigured ? this.fetchNorms() : undefined);
+  },
+
+  async saveNorms(norms: ProductivityNorm[]): Promise<void> {
+    localStorage.setItem(STORAGE_KEYS.NORMS, JSON.stringify(norms));
+    cache[STORAGE_KEYS.NORMS] = norms;
+    if (isSupabaseConfigured) {
+      try {
+        if (norms.length > 0) {
+          await supabase.from('productivity_norms').upsert(norms.map(normToRow));
+        }
+      } catch (err) {
+        console.error('Supabase saveNorms error:', err);
+      }
+    }
+  },
+
+  getLaserNestingSync(): LaserNesting[] {
     return getCached(STORAGE_KEYS.LASER_NESTING, () => {
       const data = localStorage.getItem(STORAGE_KEYS.LASER_NESTING);
       return data ? JSON.parse(data) : [];
     });
   },
 
-  saveLaserNesting(nesting: LaserNesting[]) {
+  async fetchLaserNesting(): Promise<LaserNesting[]> {
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.from('laser_nesting').select(DB_COLUMNS.LASER_NESTING);
+        if (!error && data) {
+          const nesting = data.map(rowToNesting);
+          cache[STORAGE_KEYS.LASER_NESTING] = nesting;
+          localStorage.setItem(STORAGE_KEYS.LASER_NESTING, JSON.stringify(nesting));
+          return [...nesting];
+        }
+      } catch (err) {
+        console.error('Supabase fetchLaserNesting error:', err);
+      }
+    }
+    return this.getLaserNestingSync();
+  },
+
+  getLaserNesting(): LaserNesting[] & Promise<LaserNesting[]> {
+    const syncData = this.getLaserNestingSync();
+    return makeAsyncArray(syncData, isSupabaseConfigured ? this.fetchLaserNesting() : undefined);
+  },
+
+  async saveLaserNesting(nesting: LaserNesting[]): Promise<void> {
     localStorage.setItem(STORAGE_KEYS.LASER_NESTING, JSON.stringify(nesting));
     cache[STORAGE_KEYS.LASER_NESTING] = nesting;
+    if (isSupabaseConfigured) {
+      try {
+        if (nesting.length > 0) {
+          await supabase.from('laser_nesting').upsert(nesting.map(nestingToRow));
+        }
+      } catch (err) {
+        console.error('Supabase saveLaserNesting error:', err);
+      }
+    }
   },
   
-  getShiftConfigs(): ShiftConfig[] {
+  getShiftConfigsSync(): ShiftConfig[] {
     return getCached(STORAGE_KEYS.SHIFT_CONFIGS, () => {
       const data = localStorage.getItem(STORAGE_KEYS.SHIFT_CONFIGS);
       let configs: ShiftConfig[] = data ? JSON.parse(data) : [];
@@ -204,7 +1171,6 @@ export const storageService = {
         }
       ];
 
-      // Add missing defaults to existing configs
       defaults.forEach(def => {
         if (!configs.find(c => c.stageId === def.stageId)) {
           configs.push(def);
@@ -215,81 +1181,306 @@ export const storageService = {
     });
   },
 
-  saveShiftConfigs(configs: ShiftConfig[]) {
-    localStorage.setItem(STORAGE_KEYS.SHIFT_CONFIGS, JSON.stringify(configs));
-    cache[STORAGE_KEYS.SHIFT_CONFIGS] = configs;
+  async fetchShiftConfigs(): Promise<ShiftConfig[]> {
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.from('shift_configs').select(DB_COLUMNS.SHIFT_CONFIGS);
+        if (!error && data && data.length > 0) {
+          const shifts = data.map(rowToShift);
+          cache[STORAGE_KEYS.SHIFT_CONFIGS] = shifts;
+          localStorage.setItem(STORAGE_KEYS.SHIFT_CONFIGS, JSON.stringify(shifts));
+          return [...shifts];
+        }
+      } catch (err) {
+        console.error('Supabase fetchShiftConfigs error:', err);
+      }
+    }
+    return this.getShiftConfigsSync();
   },
 
-  getTransformations(): PartTransformation[] {
+  getShiftConfigs(): ShiftConfig[] & Promise<ShiftConfig[]> {
+    const syncData = this.getShiftConfigsSync();
+    return makeAsyncArray(syncData, isSupabaseConfigured ? this.fetchShiftConfigs() : undefined);
+  },
+
+  async saveShiftConfigs(configs: ShiftConfig[]): Promise<void> {
+    localStorage.setItem(STORAGE_KEYS.SHIFT_CONFIGS, JSON.stringify(configs));
+    cache[STORAGE_KEYS.SHIFT_CONFIGS] = configs;
+    if (isSupabaseConfigured) {
+      try {
+        if (configs.length > 0) {
+          await supabase.from('shift_configs').upsert(configs.map(shiftToRow));
+        }
+      } catch (err) {
+        console.error('Supabase saveShiftConfigs error:', err);
+      }
+    }
+  },
+
+  getTransformationsSync(): PartTransformation[] {
     return getCached(STORAGE_KEYS.TRANSFORMATIONS, () => {
       const data = localStorage.getItem(STORAGE_KEYS.TRANSFORMATIONS);
       return data ? JSON.parse(data) : [];
     });
   },
 
-  saveTransformations(transformations: PartTransformation[]) {
-    localStorage.setItem(STORAGE_KEYS.TRANSFORMATIONS, JSON.stringify(transformations));
-    cache[STORAGE_KEYS.TRANSFORMATIONS] = transformations;
+  async fetchTransformations(): Promise<PartTransformation[]> {
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.from('part_transformations').select(DB_COLUMNS.TRANSFORMATIONS);
+        if (!error && data) {
+          const transfs = data.map(rowToTransf);
+          cache[STORAGE_KEYS.TRANSFORMATIONS] = transfs;
+          localStorage.setItem(STORAGE_KEYS.TRANSFORMATIONS, JSON.stringify(transfs));
+          return [...transfs];
+        }
+      } catch (err) {
+        console.error('Supabase fetchTransformations error:', err);
+      }
+    }
+    return this.getTransformationsSync();
   },
 
-  getGlazingConfigs(): import('./types').GlazingConfig[] {
+  getTransformations(): PartTransformation[] & Promise<PartTransformation[]> {
+    const syncData = this.getTransformationsSync();
+    return makeAsyncArray(syncData, isSupabaseConfigured ? this.fetchTransformations() : undefined);
+  },
+
+  async saveTransformations(transformations: PartTransformation[]): Promise<void> {
+    localStorage.setItem(STORAGE_KEYS.TRANSFORMATIONS, JSON.stringify(transformations));
+    cache[STORAGE_KEYS.TRANSFORMATIONS] = transformations;
+    if (isSupabaseConfigured) {
+      try {
+        if (transformations.length > 0) {
+          await supabase.from('part_transformations').upsert(transformations.map(transfToRow));
+        }
+      } catch (err) {
+        console.error('Supabase saveTransformations error:', err);
+      }
+    }
+  },
+
+  getGlazingConfigsSync(): import('./types').GlazingConfig[] {
     return getCached(STORAGE_KEYS.GLAZING_CONFIGS, () => {
       const data = localStorage.getItem(STORAGE_KEYS.GLAZING_CONFIGS);
       return data ? JSON.parse(data) : [];
     });
   },
 
-  saveGlazingConfigs(configs: import('./types').GlazingConfig[]) {
-    localStorage.setItem(STORAGE_KEYS.GLAZING_CONFIGS, JSON.stringify(configs));
-    cache[STORAGE_KEYS.GLAZING_CONFIGS] = configs;
+  async fetchGlazingConfigs(): Promise<import('./types').GlazingConfig[]> {
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error }: any = await (supabase.from('system_settings').select(DB_COLUMNS.SYSTEM_SETTINGS) as any).eq('key', STORAGE_KEYS.GLAZING_CONFIGS).single();
+        if (!error && data && data.value) {
+          const val = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+          cache[STORAGE_KEYS.GLAZING_CONFIGS] = val;
+          localStorage.setItem(STORAGE_KEYS.GLAZING_CONFIGS, JSON.stringify(val));
+          return [...val];
+        }
+      } catch (err) {
+        console.error('Supabase fetchGlazingConfigs error:', err);
+      }
+    }
+    return this.getGlazingConfigsSync();
   },
 
-  getGlazingOutConfigs(): import('./types').GlazingOutConfig[] {
+  getGlazingConfigs(): import('./types').GlazingConfig[] & Promise<import('./types').GlazingConfig[]> {
+    const syncData = this.getGlazingConfigsSync();
+    return makeAsyncArray(syncData, isSupabaseConfigured ? this.fetchGlazingConfigs() : undefined);
+  },
+
+  async saveGlazingConfigs(configs: import('./types').GlazingConfig[]): Promise<void> {
+    localStorage.setItem(STORAGE_KEYS.GLAZING_CONFIGS, JSON.stringify(configs));
+    cache[STORAGE_KEYS.GLAZING_CONFIGS] = configs;
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('system_settings').upsert({
+          key: STORAGE_KEYS.GLAZING_CONFIGS,
+          value: configs,
+          updated_at: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error('Supabase saveGlazingConfigs error:', err);
+      }
+    }
+  },
+
+  getGlazingOutConfigsSync(): import('./types').GlazingOutConfig[] {
     return getCached(STORAGE_KEYS.GLAZING_OUT_CONFIGS, () => {
       const data = localStorage.getItem(STORAGE_KEYS.GLAZING_OUT_CONFIGS);
       return data ? JSON.parse(data) : [];
     });
   },
 
-  saveGlazingOutConfigs(configs: import('./types').GlazingOutConfig[]) {
-    localStorage.setItem(STORAGE_KEYS.GLAZING_OUT_CONFIGS, JSON.stringify(configs));
-    cache[STORAGE_KEYS.GLAZING_OUT_CONFIGS] = configs;
+  async fetchGlazingOutConfigs(): Promise<import('./types').GlazingOutConfig[]> {
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error }: any = await (supabase.from('system_settings').select(DB_COLUMNS.SYSTEM_SETTINGS) as any).eq('key', STORAGE_KEYS.GLAZING_OUT_CONFIGS).single();
+        if (!error && data && data.value) {
+          const val = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+          cache[STORAGE_KEYS.GLAZING_OUT_CONFIGS] = val;
+          localStorage.setItem(STORAGE_KEYS.GLAZING_OUT_CONFIGS, JSON.stringify(val));
+          return [...val];
+        }
+      } catch (err) {
+        console.error('Supabase fetchGlazingOutConfigs error:', err);
+      }
+    }
+    return this.getGlazingOutConfigsSync();
   },
 
-  getQuickPrintParts(): {id: string, name: string, quantity: number}[] {
+  getGlazingOutConfigs(): import('./types').GlazingOutConfig[] & Promise<import('./types').GlazingOutConfig[]> {
+    const syncData = this.getGlazingOutConfigsSync();
+    return makeAsyncArray(syncData, isSupabaseConfigured ? this.fetchGlazingOutConfigs() : undefined);
+  },
+
+  async saveGlazingOutConfigs(configs: import('./types').GlazingOutConfig[]): Promise<void> {
+    localStorage.setItem(STORAGE_KEYS.GLAZING_OUT_CONFIGS, JSON.stringify(configs));
+    cache[STORAGE_KEYS.GLAZING_OUT_CONFIGS] = configs;
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('system_settings').upsert({
+          key: STORAGE_KEYS.GLAZING_OUT_CONFIGS,
+          value: configs,
+          updated_at: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error('Supabase saveGlazingOutConfigs error:', err);
+      }
+    }
+  },
+
+  getQuickPrintPartsSync(): {id: string, name: string, quantity: number}[] {
     return getCached(STORAGE_KEYS.QUICK_PRINT_PARTS, () => {
       const data = localStorage.getItem(STORAGE_KEYS.QUICK_PRINT_PARTS);
       return data ? JSON.parse(data) : [];
     });
   },
 
-  saveQuickPrintParts(parts: {id: string, name: string, quantity: number}[]) {
-    localStorage.setItem(STORAGE_KEYS.QUICK_PRINT_PARTS, JSON.stringify(parts));
-    cache[STORAGE_KEYS.QUICK_PRINT_PARTS] = parts;
+  async fetchQuickPrintParts(): Promise<{id: string, name: string, quantity: number}[]> {
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error }: any = await (supabase.from('system_settings').select(DB_COLUMNS.SYSTEM_SETTINGS) as any).eq('key', STORAGE_KEYS.QUICK_PRINT_PARTS).single();
+        if (!error && data && data.value) {
+          const val = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+          cache[STORAGE_KEYS.QUICK_PRINT_PARTS] = val;
+          localStorage.setItem(STORAGE_KEYS.QUICK_PRINT_PARTS, JSON.stringify(val));
+          return [...val];
+        }
+      } catch (err) {
+        console.error('Supabase fetchQuickPrintParts error:', err);
+      }
+    }
+    return this.getQuickPrintPartsSync();
   },
 
-  getGlazingPlanNorms(): import('./types').GlazingPlanNorm[] {
+  getQuickPrintParts(): {id: string, name: string, quantity: number}[] & Promise<{id: string, name: string, quantity: number}[]> {
+    const syncData = this.getQuickPrintPartsSync();
+    return makeAsyncArray(syncData, isSupabaseConfigured ? this.fetchQuickPrintParts() : undefined);
+  },
+
+  async saveQuickPrintParts(parts: {id: string, name: string, quantity: number}[]): Promise<void> {
+    localStorage.setItem(STORAGE_KEYS.QUICK_PRINT_PARTS, JSON.stringify(parts));
+    cache[STORAGE_KEYS.QUICK_PRINT_PARTS] = parts;
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('system_settings').upsert({
+          key: STORAGE_KEYS.QUICK_PRINT_PARTS,
+          value: parts,
+          updated_at: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error('Supabase saveQuickPrintParts error:', err);
+      }
+    }
+  },
+
+  getGlazingPlanNormsSync(): import('./types').GlazingPlanNorm[] {
     return getCached(STORAGE_KEYS.GLAZING_PLAN_NORMS, () => {
       const data = localStorage.getItem(STORAGE_KEYS.GLAZING_PLAN_NORMS);
       return data ? JSON.parse(data) : [];
     });
   },
 
-  saveGlazingPlanNorms(norms: import('./types').GlazingPlanNorm[]) {
-    localStorage.setItem(STORAGE_KEYS.GLAZING_PLAN_NORMS, JSON.stringify(norms));
-    cache[STORAGE_KEYS.GLAZING_PLAN_NORMS] = norms;
+  async fetchGlazingPlanNorms(): Promise<import('./types').GlazingPlanNorm[]> {
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error }: any = await (supabase.from('system_settings').select(DB_COLUMNS.SYSTEM_SETTINGS) as any).eq('key', STORAGE_KEYS.GLAZING_PLAN_NORMS).single();
+        if (!error && data && data.value) {
+          const val = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+          cache[STORAGE_KEYS.GLAZING_PLAN_NORMS] = val;
+          localStorage.setItem(STORAGE_KEYS.GLAZING_PLAN_NORMS, JSON.stringify(val));
+          return [...val];
+        }
+      } catch (err) {
+        console.error('Supabase fetchGlazingPlanNorms error:', err);
+      }
+    }
+    return this.getGlazingPlanNormsSync();
   },
 
-  getGlazingPlans(): import('./types').GlazingPlan[] {
+  getGlazingPlanNorms(): import('./types').GlazingPlanNorm[] & Promise<import('./types').GlazingPlanNorm[]> {
+    const syncData = this.getGlazingPlanNormsSync();
+    return makeAsyncArray(syncData, isSupabaseConfigured ? this.fetchGlazingPlanNorms() : undefined);
+  },
+
+  async saveGlazingPlanNorms(norms: import('./types').GlazingPlanNorm[]): Promise<void> {
+    localStorage.setItem(STORAGE_KEYS.GLAZING_PLAN_NORMS, JSON.stringify(norms));
+    cache[STORAGE_KEYS.GLAZING_PLAN_NORMS] = norms;
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('system_settings').upsert({
+          key: STORAGE_KEYS.GLAZING_PLAN_NORMS,
+          value: norms,
+          updated_at: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error('Supabase saveGlazingPlanNorms error:', err);
+      }
+    }
+  },
+
+  getGlazingPlansSync(): import('./types').GlazingPlan[] {
     return getCached(STORAGE_KEYS.GLAZING_PLANS, () => {
       const data = localStorage.getItem(STORAGE_KEYS.GLAZING_PLANS);
       return data ? JSON.parse(data) : [];
     });
   },
 
-  saveGlazingPlans(plans: import('./types').GlazingPlan[]) {
+  async fetchGlazingPlans(): Promise<import('./types').GlazingPlan[]> {
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.from('glazing_plans').select(DB_COLUMNS.GLAZING_PLANS);
+        if (!error && data) {
+          const plans = data.map(rowToGlazingPlan);
+          cache[STORAGE_KEYS.GLAZING_PLANS] = plans;
+          localStorage.setItem(STORAGE_KEYS.GLAZING_PLANS, JSON.stringify(plans));
+          return [...plans];
+        }
+      } catch (err) {
+        console.error('Supabase fetchGlazingPlans error:', err);
+      }
+    }
+    return this.getGlazingPlansSync();
+  },
+
+  getGlazingPlans(): import('./types').GlazingPlan[] & Promise<import('./types').GlazingPlan[]> {
+    const syncData = this.getGlazingPlansSync();
+    return makeAsyncArray(syncData, isSupabaseConfigured ? this.fetchGlazingPlans() : undefined);
+  },
+
+  async saveGlazingPlans(plans: import('./types').GlazingPlan[]): Promise<void> {
     localStorage.setItem(STORAGE_KEYS.GLAZING_PLANS, JSON.stringify(plans));
     cache[STORAGE_KEYS.GLAZING_PLANS] = plans;
+    if (isSupabaseConfigured) {
+      try {
+        if (plans.length > 0) {
+          await supabase.from('glazing_plans').upsert(plans.map(glazingPlanToRow));
+        }
+      } catch (err) {
+        console.error('Supabase saveGlazingPlans error:', err);
+      }
+    }
   },
 
   getPeoplePerDay(): Record<string, number> {
@@ -299,9 +1490,20 @@ export const storageService = {
     });
   },
 
-  savePeoplePerDay(record: Record<string, number>) {
+  async savePeoplePerDay(record: Record<string, number>): Promise<void> {
     localStorage.setItem(STORAGE_KEYS.PEOPLE_PER_DAY, JSON.stringify(record));
     cache[STORAGE_KEYS.PEOPLE_PER_DAY] = record;
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('system_settings').upsert({
+          key: STORAGE_KEYS.PEOPLE_PER_DAY,
+          value: record,
+          updated_at: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error('Supabase savePeoplePerDay error:', err);
+      }
+    }
   },
 
   getMandaysPerDay(): Record<string, number> {
@@ -311,9 +1513,20 @@ export const storageService = {
     });
   },
 
-  saveMandaysPerDay(record: Record<string, number>) {
+  async saveMandaysPerDay(record: Record<string, number>): Promise<void> {
     localStorage.setItem(STORAGE_KEYS.MANDAYS_PER_DAY, JSON.stringify(record));
     cache[STORAGE_KEYS.MANDAYS_PER_DAY] = record;
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('system_settings').upsert({
+          key: STORAGE_KEYS.MANDAYS_PER_DAY,
+          value: record,
+          updated_at: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error('Supabase saveMandaysPerDay error:', err);
+      }
+    }
   },
 
   getExportWeekName(): string {
@@ -322,9 +1535,20 @@ export const storageService = {
     });
   },
 
-  saveExportWeekName(weekName: string) {
+  async saveExportWeekName(weekName: string): Promise<void> {
     localStorage.setItem(STORAGE_KEYS.EXPORT_WEEK_NAME, weekName);
     cache[STORAGE_KEYS.EXPORT_WEEK_NAME] = weekName;
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('system_settings').upsert({
+          key: STORAGE_KEYS.EXPORT_WEEK_NAME,
+          value: weekName,
+          updated_at: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error('Supabase saveExportWeekName error:', err);
+      }
+    }
   },
 
   getHourlyPeoplePainting(): Record<string, number> {
@@ -334,9 +1558,20 @@ export const storageService = {
     });
   },
 
-  saveHourlyPeoplePainting(record: Record<string, number>) {
+  async saveHourlyPeoplePainting(record: Record<string, number>): Promise<void> {
     localStorage.setItem(STORAGE_KEYS.HOURLY_PEOPLE_PAINTING, JSON.stringify(record));
     cache[STORAGE_KEYS.HOURLY_PEOPLE_PAINTING] = record;
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('system_settings').upsert({
+          key: STORAGE_KEYS.HOURLY_PEOPLE_PAINTING,
+          value: record,
+          updated_at: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error('Supabase saveHourlyPeoplePainting error:', err);
+      }
+    }
   },
 
   getHourlyPeopleGlazing(): Record<string, number> {
@@ -346,9 +1581,20 @@ export const storageService = {
     });
   },
 
-  saveHourlyPeopleGlazing(record: Record<string, number>) {
+  async saveHourlyPeopleGlazing(record: Record<string, number>): Promise<void> {
     localStorage.setItem(STORAGE_KEYS.HOURLY_PEOPLE_GLAZING, JSON.stringify(record));
     cache[STORAGE_KEYS.HOURLY_PEOPLE_GLAZING] = record;
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('system_settings').upsert({
+          key: STORAGE_KEYS.HOURLY_PEOPLE_GLAZING,
+          value: record,
+          updated_at: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error('Supabase saveHourlyPeopleGlazing error:', err);
+      }
+    }
   },
 
   getHourlyPeopleBending(): Record<string, number> {
@@ -358,9 +1604,20 @@ export const storageService = {
     });
   },
 
-  saveHourlyPeopleBending(record: Record<string, number>) {
+  async saveHourlyPeopleBending(record: Record<string, number>): Promise<void> {
     localStorage.setItem(STORAGE_KEYS.HOURLY_PEOPLE_BENDING, JSON.stringify(record));
     cache[STORAGE_KEYS.HOURLY_PEOPLE_BENDING] = record;
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('system_settings').upsert({
+          key: STORAGE_KEYS.HOURLY_PEOPLE_BENDING,
+          value: record,
+          updated_at: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error('Supabase saveHourlyPeopleBending error:', err);
+      }
+    }
   },
 
   getHourlyPeopleWelding(): Record<string, number> {
@@ -370,9 +1627,20 @@ export const storageService = {
     });
   },
 
-  saveHourlyPeopleWelding(record: Record<string, number>) {
+  async saveHourlyPeopleWelding(record: Record<string, number>): Promise<void> {
     localStorage.setItem(STORAGE_KEYS.HOURLY_PEOPLE_WELDING, JSON.stringify(record));
     cache[STORAGE_KEYS.HOURLY_PEOPLE_WELDING] = record;
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('system_settings').upsert({
+          key: STORAGE_KEYS.HOURLY_PEOPLE_WELDING,
+          value: record,
+          updated_at: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error('Supabase saveHourlyPeopleWelding error:', err);
+      }
+    }
   },
 
   getBendingWeldingHSQD(): { partId: string; hsqd: number }[] {
@@ -382,9 +1650,20 @@ export const storageService = {
     });
   },
 
-  saveBendingWeldingHSQD(data: { partId: string; hsqd: number }[]) {
+  async saveBendingWeldingHSQD(data: { partId: string; hsqd: number }[]): Promise<void> {
     localStorage.setItem(STORAGE_KEYS.BENDING_WELDING_HSQD, JSON.stringify(data));
     cache[STORAGE_KEYS.BENDING_WELDING_HSQD] = data;
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('system_settings').upsert({
+          key: STORAGE_KEYS.BENDING_WELDING_HSQD,
+          value: data,
+          updated_at: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error('Supabase saveBendingWeldingHSQD error:', err);
+      }
+    }
   },
 
   createGlazingPlan(modelId: string, quantity: number, targetCompletion: number) {
@@ -510,6 +1789,70 @@ export const storageService = {
   saveInventory(inventory: InventoryItem[]) {
     localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(inventory));
     cache[STORAGE_KEYS.INVENTORY] = inventory;
+    if (isSupabaseConfigured && inventory.length > 0) {
+      safeRun(supabase.from('inventory').upsert(inventory.map(invToRow)), 'saveInventory');
+    }
+  },
+
+  async fetchInventory(): Promise<InventoryItem[]> {
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.from('inventory').select(DB_COLUMNS.INVENTORY);
+        if (!error && data) {
+          const inv = data.map(rowToInv);
+          cache[STORAGE_KEYS.INVENTORY] = inv;
+          localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(inv));
+          return [...inv];
+        }
+      } catch (err) {
+        console.error('Supabase fetchInventory error:', err);
+      }
+    }
+    return this.getInventory();
+  },
+
+  async fetchTransactions(): Promise<Transaction[]> {
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.from('transactions').select(DB_COLUMNS.TRANSACTIONS).order('timestamp', { ascending: false }).limit(100);
+        if (!error && data) {
+          const txs = data.map(rowToTx);
+          cache[STORAGE_KEYS.TRANSACTIONS] = txs;
+          localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(txs));
+          return [...txs];
+        }
+      } catch (err) {
+        console.error('Supabase fetchTransactions error:', err);
+      }
+    }
+    return this.getTransactions();
+  },
+
+  async fetchLabels(): Promise<Transaction[]> {
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.from('labels').select(DB_COLUMNS.LABELS).order('timestamp', { ascending: false }).limit(100);
+        if (!error && data) {
+          const lbls = data.map(rowToTx);
+          cache['wip_labels'] = lbls;
+          localStorage.setItem('wip_labels', JSON.stringify(lbls));
+          return [...lbls];
+        }
+      } catch (err) {
+        console.error('Supabase fetchLabels error:', err);
+      }
+    }
+    return this.getLabels();
+  },
+
+  async persistTransaction(tx: Transaction): Promise<void> {
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('transactions').insert(txToRow(tx));
+      } catch (err) {
+        console.error('Supabase persistTransaction error:', err);
+      }
+    }
   },
 
   saveTransactions(transactions: Transaction[]) {
@@ -542,18 +1885,27 @@ export const storageService = {
     const labels = [label, ...this.getLabels()];
     localStorage.setItem('wip_labels', JSON.stringify(labels));
     cache['wip_labels'] = labels;
+    if (isSupabaseConfigured) {
+      safeRun(supabase.from('labels').upsert(txToRow(label)), 'saveLabel');
+    }
   },
 
   deleteLabel(id: string) {
     const labels = this.getLabels().filter(l => l.id !== id);
     localStorage.setItem('wip_labels', JSON.stringify(labels));
     cache['wip_labels'] = labels;
+    if (isSupabaseConfigured) {
+      safeRun(supabase.from('labels').delete().eq('id', id), 'deleteLabel');
+    }
   },
 
   markLabelAsPrinted(id: string) {
     const labels = this.getLabels().map(l => l.id === id ? { ...l, printed: true } : l);
     localStorage.setItem('wip_labels', JSON.stringify(labels));
     cache['wip_labels'] = labels;
+    if (isSupabaseConfigured) {
+      safeRun(supabase.from('labels').update({ printed: true }).eq('id', id), 'markLabelAsPrinted');
+    }
   },
 
   rollbackTransaction(txId: string) {
@@ -688,6 +2040,9 @@ export const storageService = {
     
     // Also remove any related labels if exist
     this.deleteLabel(txId);
+    if (isSupabaseConfigured) {
+      safeRun(supabase.from('transactions').delete().eq('id', txId), 'rollbackTransaction delete tx');
+    }
   },
 
   getEffectivePartId(partId: string, stageId: StageId, poId?: string): string {
@@ -789,10 +2144,12 @@ export const storageService = {
       return !(matchesPart && item.stageId === stageId && item.location === location);
     });
 
+    const targetPartId = partInCatalog ? partInCatalog.id : cleanIdUpper;
+
     // Add back the new quantity if > 0
     if (newQuantity > 0) {
       newInventory.push({
-        partId: partInCatalog ? partInCatalog.id : cleanIdUpper,
+        partId: targetPartId,
         stageId,
         location,
         quantity: newQuantity
@@ -800,6 +2157,20 @@ export const storageService = {
     }
 
     this.saveInventory(newInventory);
+
+    if (isSupabaseConfigured) {
+      const id = `${targetPartId}_${stageId}_${location}_NONE`;
+      if (newQuantity <= 0) {
+        safeRun(supabase.from('inventory').delete().eq('id', id), 'setAbsoluteInventory delete');
+      } else {
+        safeRun(supabase.from('inventory').upsert(invToRow({
+          partId: targetPartId,
+          stageId,
+          location,
+          quantity: newQuantity
+        })), 'setAbsoluteInventory upsert');
+      }
+    }
   },
 
   updateInventory(partId: string, stageId: StageId, location: 'IN' | 'OUT' | 'DEFECT', delta: number, originalPartId?: string) {
@@ -846,6 +2217,19 @@ export const storageService = {
     }
 
     this.saveInventory(inventory);
+
+    if (isSupabaseConfigured) {
+      const orig = targetOrigId || 'NONE';
+      const id = `${targetId}_${stageId}_${location}_${orig}`;
+      const item = index >= 0 ? inventory[index] : inventory[inventory.length - 1];
+      if (item) {
+        if (item.quantity <= 0) {
+          safeRun(supabase.from('inventory').delete().eq('id', id), 'updateInventory delete');
+        } else {
+          safeRun(supabase.from('inventory').upsert(invToRow(item)), 'updateInventory upsert');
+        }
+      }
+    }
   },
 
   setInventoryQuantity(partId: string, stageId: StageId, location: 'IN' | 'OUT' | 'DEFECT', quantity: number, originalPartId?: string) {
@@ -887,6 +2271,22 @@ export const storageService = {
     }
 
     this.saveInventory(inventory);
+
+    if (isSupabaseConfigured) {
+      const orig = targetOrigId || 'NONE';
+      const id = `${targetId}_${stageId}_${location}_${orig}`;
+      if (quantity <= 0) {
+        safeRun(supabase.from('inventory').delete().eq('id', id), 'setInventoryQuantity delete');
+      } else {
+        safeRun(supabase.from('inventory').upsert(invToRow({
+          partId: targetId,
+          originalPartId: targetOrigId || undefined,
+          stageId,
+          location,
+          quantity: Math.max(0, quantity)
+        })), 'setInventoryQuantity upsert');
+      }
+    }
   },
 
   deleteInventoryItem(partId: string, stageId: StageId, location: 'IN' | 'OUT' | 'DEFECT', originalPartId?: string) {
@@ -897,6 +2297,9 @@ export const storageService = {
 
     const partInCatalog = parts.find(p => p.id.toUpperCase() === cleanIdUpper || p.name.toUpperCase().trim() === cleanIdUpper);
     const targetNameUpper = partInCatalog ? partInCatalog.name.toUpperCase().trim() : '';
+    const targetId = partInCatalog ? partInCatalog.id : cleanIdUpper;
+    const origPartInCatalog = originalPartId ? parts.find(p => p.id.toUpperCase() === cleanOrigIdUpper || p.name.toUpperCase().trim() === cleanOrigIdUpper) : undefined;
+    const targetOrigId = origPartInCatalog ? origPartInCatalog.id : (originalPartId?.trim() || '');
 
     const filtered = inventory.filter(
       (item) => {
@@ -907,6 +2310,12 @@ export const storageService = {
       }
     );
     this.saveInventory(filtered);
+
+    if (isSupabaseConfigured) {
+      const orig = targetOrigId || 'NONE';
+      const id = `${targetId}_${stageId}_${location}_${orig}`;
+      safeRun(supabase.from('inventory').delete().eq('id', id), 'deleteInventoryItem');
+    }
   },
 
   applyBOMDeduction(partId: string, stageId: StageId, quantity: number, poId?: string) {
@@ -1180,6 +2589,7 @@ export const storageService = {
     };
     transactions.unshift(newTransaction);
     this.saveTransactions(transactions);
+    this.persistTransaction(newTransaction);
 
     if (qrData) {
       this.saveLabel(newTransaction);
@@ -1293,6 +2703,7 @@ export const storageService = {
     };
     transactions.unshift(newTransaction);
     this.saveTransactions(transactions);
+    this.persistTransaction(newTransaction);
 
     // 5. Update inventory for Level 2 parts if needed (BOM logic for Laser stage)
     // Actually, recordManualInbound has this logic, but recordStageIn should probably have it too if we scan a label.
@@ -1375,6 +2786,7 @@ export const storageService = {
     };
     transactions.unshift(newTransaction);
     this.saveTransactions(transactions);
+    this.persistTransaction(newTransaction);
 
     return newTransaction;
   },
@@ -1454,6 +2866,7 @@ export const storageService = {
     };
     transactions.unshift(newTransaction);
     this.saveTransactions(transactions);
+    this.persistTransaction(newTransaction);
 
     // Auto-create supplementary POs for compensation for any stage
     if (stageId !== 'LASER') {
@@ -1521,6 +2934,7 @@ export const storageService = {
     };
     transactions.unshift(newTransaction);
     this.saveTransactions(transactions);
+    this.persistTransaction(newTransaction);
     
     // Save to label history for reprint
     this.saveLabel(newTransaction);
@@ -1528,7 +2942,7 @@ export const storageService = {
     return newTransaction;
   },
 
-  getProductionOrders(): ProductionOrder[] {
+  getProductionOrdersSync(): ProductionOrder[] {
     const data = getCached(STORAGE_KEYS.PRODUCTION_ORDERS, () => {
       const data = localStorage.getItem(STORAGE_KEYS.PRODUCTION_ORDERS);
       return data ? JSON.parse(data) : [];
@@ -1536,9 +2950,40 @@ export const storageService = {
     return [...data];
   },
 
-  saveProductionOrders(orders: ProductionOrder[]) {
+  async fetchProductionOrders(): Promise<ProductionOrder[]> {
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.from('production_orders').select(DB_COLUMNS.PRODUCTION_ORDERS);
+        if (!error && data) {
+          const pos = data.map(rowToPo);
+          cache[STORAGE_KEYS.PRODUCTION_ORDERS] = pos;
+          localStorage.setItem(STORAGE_KEYS.PRODUCTION_ORDERS, JSON.stringify(pos));
+          return [...pos];
+        }
+      } catch (err) {
+        console.error('Supabase fetchProductionOrders error:', err);
+      }
+    }
+    return this.getProductionOrdersSync();
+  },
+
+  getProductionOrders(): ProductionOrder[] & Promise<ProductionOrder[]> {
+    const syncData = this.getProductionOrdersSync();
+    return makeAsyncArray(syncData, isSupabaseConfigured ? this.fetchProductionOrders() : undefined);
+  },
+
+  async saveProductionOrders(orders: ProductionOrder[]): Promise<void> {
     localStorage.setItem(STORAGE_KEYS.PRODUCTION_ORDERS, JSON.stringify(orders));
     cache[STORAGE_KEYS.PRODUCTION_ORDERS] = orders;
+    if (isSupabaseConfigured) {
+      try {
+        if (orders.length > 0) {
+          await supabase.from('production_orders').upsert(orders.map(poToRow));
+        }
+      } catch (err) {
+        console.error('Supabase saveProductionOrders error:', err);
+      }
+    }
   },
 
   resetShiftConfigs() {
@@ -2219,15 +3664,483 @@ export const storageService = {
     this.saveProductionOrders(pos);
   },
 
+  getStorageStats() {
+    const parts = this.getParts();
+    const pos = this.getProductionOrders();
+    const inventory = this.getInventory();
+    const transactions = this.getTransactions();
+    const labels = this.getLabels();
+    const bom = this.getBOM();
+    const bomV2 = this.getBOMV2();
+    const modelBom = this.getModelBOM();
+    const norms = this.getNorms();
+    const laserNesting = this.getLaserNesting();
+    const shiftConfigs = this.getShiftConfigs();
+    const transformations = this.getTransformations();
+    const glazingPlans = this.getGlazingPlans();
+
+    let totalBytes = 0;
+    let totalKeys = 0;
+    if (typeof window !== 'undefined' && window.localStorage) {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('wip_') || Object.values(STORAGE_KEYS).includes(key) || key === 'wip_labels')) {
+          totalKeys++;
+          const val = localStorage.getItem(key) || '';
+          totalBytes += (key.length + val.length) * 2;
+        }
+      }
+    }
+
+    return {
+      partsCount: parts.length,
+      posCount: pos.length,
+      inventoryCount: inventory.length,
+      transactionsCount: transactions.length,
+      labelsCount: labels.length,
+      bomCount: bom.length,
+      bomV2Count: bomV2.length,
+      modelBomCount: modelBom.length,
+      normsCount: norms.length,
+      laserNestingCount: laserNesting.length,
+      shiftConfigsCount: shiftConfigs.length,
+      transformationsCount: transformations.length,
+      glazingPlansCount: glazingPlans.length,
+      totalKeys,
+      totalBytes,
+      sizeFormatted: totalBytes > 1024 * 1024 
+        ? `${(totalBytes / (1024 * 1024)).toFixed(2)} MB` 
+        : `${(totalBytes / 1024).toFixed(1)} KB`
+    };
+  },
+
+  exportBackupData() {
+    const stats = this.getStorageStats();
+    const storageDump: Record<string, any> = {};
+
+    if (typeof window !== 'undefined' && window.localStorage) {
+      // 1. Gather all known STORAGE_KEYS
+      Object.values(STORAGE_KEYS).forEach(k => {
+        const val = localStorage.getItem(k);
+        if (val !== null) {
+          try {
+            storageDump[k] = JSON.parse(val);
+          } catch {
+            storageDump[k] = val;
+          }
+        }
+      });
+
+      // 2. Gather wip_labels and any other dynamic wip_ keys
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && (k.startsWith('wip_') || k === 'wip_labels')) {
+          if (!(k in storageDump)) {
+            const val = localStorage.getItem(k);
+            if (val !== null) {
+              try {
+                storageDump[k] = JSON.parse(val);
+              } catch {
+                storageDump[k] = val;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return {
+      app: 'WIP_TRACKING_SYSTEM',
+      version: '1.0',
+      exportedAt: new Date().toISOString(),
+      exportDateFormatted: format(new Date(), 'dd/MM/yyyy HH:mm:ss'),
+      summary: stats,
+      storage: storageDump
+    };
+  },
+
+  downloadBackupFile(customFilename?: string): string {
+    const backup = this.exportBackupData();
+    const dateStr = format(new Date(), 'yyyyMMdd_HHmmss');
+    const filename = customFilename || `WIP_LocalStorage_Backup_${dateStr}.json`;
+    const jsonStr = JSON.stringify(backup, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    return filename;
+  },
+
+  validateBackupJson(rawStringOrObject: any): { 
+    valid: boolean; 
+    error?: string; 
+    storageData?: Record<string, any>; 
+    metadata?: any;
+    stats?: any;
+  } {
+    let parsed: any;
+    if (typeof rawStringOrObject === 'string') {
+      try {
+        parsed = JSON.parse(rawStringOrObject);
+      } catch (err: any) {
+        return { valid: false, error: 'Tệp không phải định dạng JSON hợp lệ: ' + (err?.message || '') };
+      }
+    } else {
+      parsed = rawStringOrObject;
+    }
+
+    if (!parsed || typeof parsed !== 'object') {
+      return { valid: false, error: 'Dữ liệu JSON rỗng hoặc không đúng cấu trúc đối tượng' };
+    }
+
+    let storageData: Record<string, any> = {};
+    let metadata: any = null;
+
+    if (parsed.storage && typeof parsed.storage === 'object') {
+      storageData = parsed.storage;
+      metadata = {
+        app: parsed.app,
+        version: parsed.version,
+        exportedAt: parsed.exportedAt,
+        exportDateFormatted: parsed.exportDateFormatted,
+        summary: parsed.summary
+      };
+    } else if (parsed.data && typeof parsed.data === 'object') {
+      storageData = parsed.data;
+      metadata = { exportedAt: parsed.exportedAt };
+    } else {
+      storageData = parsed;
+    }
+
+    const keys = Object.keys(storageData);
+    const hasWipKeys = keys.some(k => k.startsWith('wip_') || Object.values(STORAGE_KEYS).includes(k) || k === 'wip_labels');
+
+    if (!hasWipKeys) {
+      return { 
+        valid: false, 
+        error: 'Không tìm thấy dữ liệu hợp lệ của hệ thống WIP (không có khóa dữ liệu wip_* nào trong file).' 
+      };
+    }
+
+    const partsCount = Array.isArray(storageData[STORAGE_KEYS.PARTS]) ? storageData[STORAGE_KEYS.PARTS].length : 0;
+    const posCount = Array.isArray(storageData[STORAGE_KEYS.PRODUCTION_ORDERS]) ? storageData[STORAGE_KEYS.PRODUCTION_ORDERS].length : 0;
+    const inventoryCount = Array.isArray(storageData[STORAGE_KEYS.INVENTORY]) ? storageData[STORAGE_KEYS.INVENTORY].length : 0;
+    const transactionsCount = Array.isArray(storageData[STORAGE_KEYS.TRANSACTIONS]) ? storageData[STORAGE_KEYS.TRANSACTIONS].length : 0;
+    const labelsCount = Array.isArray(storageData['wip_labels']) ? storageData['wip_labels'].length : 0;
+
+    return {
+      valid: true,
+      storageData,
+      metadata,
+      stats: {
+        totalKeys: keys.length,
+        partsCount,
+        posCount,
+        inventoryCount,
+        transactionsCount,
+        labelsCount
+      }
+    };
+  },
+
+  importBackupData(storageData: Record<string, any>, mode: 'overwrite' | 'merge' = 'overwrite'): {
+    success: boolean;
+    keysRestored: number;
+    message: string;
+  } {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return { success: false, keysRestored: 0, message: 'Trình duyệt không hỗ trợ LocalStorage.' };
+    }
+
+    try {
+      if (mode === 'overwrite') {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && (k.startsWith('wip_') || Object.values(STORAGE_KEYS).includes(k) || k === 'wip_labels')) {
+            keysToRemove.push(k);
+          }
+        }
+        keysToRemove.forEach(k => localStorage.removeItem(k));
+
+        let restoredCount = 0;
+        Object.entries(storageData).forEach(([key, value]) => {
+          if (key.startsWith('wip_') || Object.values(STORAGE_KEYS).includes(key) || key === 'wip_labels') {
+            const strVal = typeof value === 'string' ? value : JSON.stringify(value);
+            localStorage.setItem(key, strVal);
+            restoredCount++;
+          }
+        });
+
+        clearCache();
+        return {
+          success: true,
+          keysRestored: restoredCount,
+          message: `Đã khôi phục thành công ${restoredCount} danh mục dữ liệu (Ghi đè hoàn toàn).`
+        };
+      } else {
+        // Merge mode
+        let restoredCount = 0;
+        Object.entries(storageData).forEach(([key, incomingVal]) => {
+          if (!key.startsWith('wip_') && !Object.values(STORAGE_KEYS).includes(key) && key !== 'wip_labels') {
+            return;
+          }
+
+          const existingRaw = localStorage.getItem(key);
+          if (!existingRaw) {
+            const strVal = typeof incomingVal === 'string' ? incomingVal : JSON.stringify(incomingVal);
+            localStorage.setItem(key, strVal);
+            restoredCount++;
+            return;
+          }
+
+          try {
+            const existingVal = JSON.parse(existingRaw);
+            let incomingParsed = incomingVal;
+            if (typeof incomingVal === 'string') {
+              try { incomingParsed = JSON.parse(incomingVal); } catch {}
+            }
+
+            if (Array.isArray(existingVal) && Array.isArray(incomingParsed)) {
+              if (key === STORAGE_KEYS.PARTS) {
+                const map = new Map<string, any>();
+                existingVal.forEach(p => p && p.id && map.set(p.id, p));
+                incomingParsed.forEach(p => p && p.id && map.set(p.id, p));
+                localStorage.setItem(key, JSON.stringify(Array.from(map.values())));
+              } else if (key === STORAGE_KEYS.PRODUCTION_ORDERS) {
+                const map = new Map<string, any>();
+                existingVal.forEach(p => p && p.id && map.set(p.id, p));
+                incomingParsed.forEach(p => p && p.id && map.set(p.id, p));
+                localStorage.setItem(key, JSON.stringify(Array.from(map.values())));
+              } else if (key === STORAGE_KEYS.INVENTORY) {
+                const map = new Map<string, any>();
+                existingVal.forEach(item => {
+                  const k = `${item.partId}_${item.stageId}_${item.location || 'IN'}`;
+                  map.set(k, item);
+                });
+                incomingParsed.forEach(item => {
+                  const k = `${item.partId}_${item.stageId}_${item.location || 'IN'}`;
+                  map.set(k, item);
+                });
+                localStorage.setItem(key, JSON.stringify(Array.from(map.values())));
+              } else if (key === STORAGE_KEYS.TRANSACTIONS || key === 'wip_labels') {
+                const map = new Map<string, any>();
+                existingVal.forEach(item => item && item.id && map.set(item.id, item));
+                incomingParsed.forEach(item => item && item.id && map.set(item.id, item));
+                localStorage.setItem(key, JSON.stringify(Array.from(map.values())));
+              } else if (key === STORAGE_KEYS.BOM) {
+                const map = new Map<string, any>();
+                existingVal.forEach(item => item && item.childPartId && map.set(item.childPartId, item));
+                incomingParsed.forEach(item => item && item.childPartId && map.set(item.childPartId, item));
+                localStorage.setItem(key, JSON.stringify(Array.from(map.values())));
+              } else if (key === STORAGE_KEYS.BOM_V2) {
+                const map = new Map<string, any>();
+                existingVal.forEach(item => item && map.set(`${item.parentPartId}_${item.childPartId}`, item));
+                incomingParsed.forEach(item => item && map.set(`${item.parentPartId}_${item.childPartId}`, item));
+                localStorage.setItem(key, JSON.stringify(Array.from(map.values())));
+              } else if (key === STORAGE_KEYS.MODEL_BOM) {
+                const map = new Map<string, any>();
+                existingVal.forEach(item => item && map.set(`${item.modelId}_${item.childPartId}`, item));
+                incomingParsed.forEach(item => item && map.set(`${item.modelId}_${item.childPartId}`, item));
+                localStorage.setItem(key, JSON.stringify(Array.from(map.values())));
+              } else if (key === STORAGE_KEYS.NORMS) {
+                const map = new Map<string, any>();
+                existingVal.forEach(item => item && map.set(`${item.stageId}_${item.partId}`, item));
+                incomingParsed.forEach(item => item && map.set(`${item.stageId}_${item.partId}`, item));
+                localStorage.setItem(key, JSON.stringify(Array.from(map.values())));
+              } else {
+                const combined = [...existingVal, ...incomingParsed];
+                localStorage.setItem(key, JSON.stringify(combined));
+              }
+              restoredCount++;
+            } else if (typeof existingVal === 'object' && typeof incomingParsed === 'object' && existingVal && incomingParsed) {
+              const merged = { ...existingVal, ...incomingParsed };
+              localStorage.setItem(key, JSON.stringify(merged));
+              restoredCount++;
+            } else {
+              const strVal = typeof incomingVal === 'string' ? incomingVal : JSON.stringify(incomingVal);
+              localStorage.setItem(key, strVal);
+              restoredCount++;
+            }
+          } catch {
+            const strVal = typeof incomingVal === 'string' ? incomingVal : JSON.stringify(incomingVal);
+            localStorage.setItem(key, strVal);
+            restoredCount++;
+          }
+        });
+
+        clearCache();
+        return {
+          success: true,
+          keysRestored: restoredCount,
+          message: `Đã hợp nhất thành công ${restoredCount} danh mục dữ liệu.`
+        };
+      }
+    } catch (err: any) {
+      return {
+        success: false,
+        keysRestored: 0,
+        message: 'Lỗi khi nạp dữ liệu vào LocalStorage: ' + (err?.message || '')
+      };
+    }
+  },
+
+  async migrateLocalStorageToSupabase(): Promise<{ success: boolean; message: string; details?: any }> {
+    if (!isSupabaseConfigured) {
+      return {
+        success: false,
+        message: 'Chưa cấu hình Supabase URL hoặc Anon Key trong biến môi trường.'
+      };
+    }
+
+    try {
+      const results: Record<string, number> = {};
+
+      const parts = this.getPartsSync();
+      if (parts.length > 0) {
+        const { error } = await supabase.from('parts').upsert(parts.map(partToRow));
+        if (!error) results.parts = parts.length;
+      }
+
+      const inv = this.getInventorySync();
+      if (inv.length > 0) {
+        const { error } = await supabase.from('inventory').upsert(inv.map(invToRow));
+        if (!error) results.inventory = inv.length;
+      }
+
+      const txs = this.getTransactionsSync();
+      if (txs.length > 0) {
+        // Upsert in batches of 100
+        for (let i = 0; i < txs.length; i += 100) {
+          const batch = txs.slice(i, i + 100);
+          await supabase.from('transactions').upsert(batch.map(txToRow));
+        }
+        results.transactions = txs.length;
+      }
+
+      const labels = this.getLabelsSync();
+      if (labels.length > 0) {
+        for (let i = 0; i < labels.length; i += 100) {
+          const batch = labels.slice(i, i + 100);
+          await supabase.from('labels').upsert(batch.map(txToRow));
+        }
+        results.labels = labels.length;
+      }
+
+      const pos = this.getProductionOrdersSync();
+      if (pos.length > 0) {
+        const { error } = await supabase.from('production_orders').upsert(pos.map(poToRow));
+        if (!error) results.production_orders = pos.length;
+      }
+
+      const boms = this.getBOMSync();
+      if (boms.length > 0) {
+        const { error } = await supabase.from('bom_definitions').upsert(boms.map(bomToRow));
+        if (!error) results.boms = boms.length;
+      }
+
+      const bomsV2 = this.getBOMV2Sync();
+      if (bomsV2.length > 0) {
+        const { error } = await supabase.from('bom_v2_definitions').upsert(bomsV2.map(bomV2ToRow));
+        if (!error) results.bomsV2 = bomsV2.length;
+      }
+
+      const mboms = this.getModelBOMSync();
+      if (mboms.length > 0) {
+        const { error } = await supabase.from('model_bom_definitions').upsert(mboms.map(modelBomToRow));
+        if (!error) results.modelBOM = mboms.length;
+      }
+
+      const norms = this.getNormsSync();
+      if (norms.length > 0) {
+        const { error } = await supabase.from('productivity_norms').upsert(norms.map(normToRow));
+        if (!error) results.productivity_norms = norms.length;
+      }
+
+      const nesting = this.getLaserNestingSync();
+      if (nesting.length > 0) {
+        const { error } = await supabase.from('laser_nesting').upsert(nesting.map(nestingToRow));
+        if (!error) results.laser_nesting = nesting.length;
+      }
+
+      const shifts = this.getShiftConfigsSync();
+      if (shifts.length > 0) {
+        const { error } = await supabase.from('shift_configs').upsert(shifts.map(shiftToRow));
+        if (!error) results.shift_configs = shifts.length;
+      }
+
+      const transformations = this.getTransformationsSync();
+      if (transformations.length > 0) {
+        const { error } = await supabase.from('part_transformations').upsert(transformations.map(transfToRow));
+        if (!error) results.transformations = transformations.length;
+      }
+
+      const gPlans = this.getGlazingPlansSync();
+      if (gPlans.length > 0) {
+        const { error } = await supabase.from('glazing_plans').upsert(gPlans.map(glazingPlanToRow));
+        if (!error) results.glazing_plans = gPlans.length;
+      }
+
+      // Settings
+      const settingsPayloads = [
+        { key: STORAGE_KEYS.LABEL_SETTINGS, value: this.getLabelSettings() },
+        { key: STORAGE_KEYS.PEOPLE_PER_DAY, value: this.getPeoplePerDay() },
+        { key: STORAGE_KEYS.MANDAYS_PER_DAY, value: this.getMandaysPerDay() },
+        { key: STORAGE_KEYS.EXPORT_WEEK_NAME, value: this.getExportWeekName() },
+        { key: STORAGE_KEYS.HOURLY_PEOPLE_PAINTING, value: this.getHourlyPeoplePainting() },
+        { key: STORAGE_KEYS.HOURLY_PEOPLE_GLAZING, value: this.getHourlyPeopleGlazing() },
+        { key: STORAGE_KEYS.HOURLY_PEOPLE_BENDING, value: this.getHourlyPeopleBending() },
+        { key: STORAGE_KEYS.HOURLY_PEOPLE_WELDING, value: this.getHourlyPeopleWelding() },
+        { key: STORAGE_KEYS.BENDING_WELDING_HSQD, value: this.getBendingWeldingHSQD() },
+        { key: STORAGE_KEYS.GLAZING_CONFIGS, value: this.getGlazingConfigsSync() },
+        { key: STORAGE_KEYS.GLAZING_OUT_CONFIGS, value: this.getGlazingOutConfigsSync() },
+        { key: STORAGE_KEYS.QUICK_PRINT_PARTS, value: this.getQuickPrintPartsSync() },
+        { key: STORAGE_KEYS.GLAZING_PLAN_NORMS, value: this.getGlazingPlanNormsSync() },
+      ];
+
+      for (const item of settingsPayloads) {
+        await supabase.from('system_settings').upsert({
+          key: item.key,
+          value: item.value,
+          updated_at: new Date().toISOString()
+        });
+      }
+      results.settings = settingsPayloads.length;
+
+      return {
+        success: true,
+        message: 'Đã đồng bộ toàn bộ dữ liệu từ LocalStorage lên Supabase thành công!',
+        details: results
+      };
+    } catch (err: any) {
+      console.error('Migration error:', err);
+      return {
+        success: false,
+        message: 'Lỗi khi tải dữ liệu lên Supabase: ' + (err?.message || '')
+      };
+    }
+  },
+
+  clearCache() {
+    clearCache();
+  },
+
   resetAllData() {
-    localStorage.removeItem(STORAGE_KEYS.INVENTORY);
-    localStorage.removeItem(STORAGE_KEYS.TRANSACTIONS);
-    localStorage.removeItem(STORAGE_KEYS.PARTS);
-    localStorage.removeItem(STORAGE_KEYS.BOM);
-    localStorage.removeItem(STORAGE_KEYS.BOM_V2);
-    localStorage.removeItem(STORAGE_KEYS.MODEL_BOM);
-    localStorage.removeItem(STORAGE_KEYS.PRODUCTION_ORDERS);
-    localStorage.removeItem(STORAGE_KEYS.NORMS);
-    localStorage.removeItem('wip_labels');
+    clearCache();
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && (k.startsWith('wip_') || Object.values(STORAGE_KEYS).includes(k) || k === 'wip_labels')) {
+          keysToRemove.push(k);
+        }
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+    }
   },
 };

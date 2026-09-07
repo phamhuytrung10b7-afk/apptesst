@@ -39,7 +39,19 @@ import {
   FileSpreadsheet,
   FileDown,
   Square,
-  Check
+  Check,
+  Download,
+  Database,
+  HardDrive,
+  RefreshCw,
+  Copy,
+  FileJson,
+  Cloud,
+  CloudUpload,
+  CloudDownload,
+  Wifi,
+  WifiOff,
+  ExternalLink
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -524,7 +536,7 @@ function A7QRLabelCard({
           {partNameDisplay}
         </h2>
         <p 
-          className="font-mono font-bold text-black mt-0.5 break-words"
+          className="font-mono font-black text-black mt-0.5 break-words"
           style={{ fontSize: `${baseFontSize}px` }}
         >
           Mã LK: {partIdDisplay}
@@ -590,50 +602,50 @@ function A7QRLabelCard({
 
       {/* 7. PO DETAILS SECTION */}
       <div 
-        className="w-full space-y-[1px] font-mono font-bold border border-black p-1 rounded text-black leading-tight my-0.5"
-        style={{ fontSize: `${baseFontSize - 1.5}px` }}
+        className="w-full space-y-[1.5px] font-mono font-black border-2 border-black p-1 rounded-md text-black leading-tight my-0.5"
+        style={{ fontSize: `${baseFontSize - 1}px` }}
       >
         <div className="flex justify-between items-center">
-          <span className="uppercase opacity-80">LOẠI PO:</span>
-          <span className="uppercase font-black">
+          <span className="uppercase font-black text-black">LOẠI PO:</span>
+          <span className="uppercase font-black text-black">
             {po?.masterPoId ? 'PO Con (Sub)' : 'PO Tổng (Master)'}
           </span>
         </div>
         <div className="flex justify-between items-center">
-          <span className="uppercase opacity-80">MÃ PO:</span>
-          <span className="font-mono font-black truncate max-w-[170px]">{label.poId || 'N/A'}</span>
+          <span className="uppercase font-black text-black">MÃ PO:</span>
+          <span className="font-mono font-black text-black truncate max-w-[170px]">{label.poId || 'N/A'}</span>
         </div>
-        <div className="flex justify-between items-center italic">
-          <span className="opacity-80">KH PO Con:</span>
-          <span>{label.qrData?.split('|')?.[8] || po?.targetQuantity || 0} linh kiện</span>
+        <div className="flex justify-between items-center font-black text-black">
+          <span className="font-black text-black">KH PO Con:</span>
+          <span className="font-black text-black">{label.qrData?.split('|')?.[8] || po?.targetQuantity || 0} linh kiện</span>
         </div>
         {po?.plannedStartTime && (
-          <div className="flex justify-between items-center pt-[1px] border-t border-black/30">
-            <span className="uppercase opacity-80">KH Bắt đầu PO:</span>
-            <span className="font-mono">{format(po.plannedStartTime, 'dd/MM HH:mm')}</span>
+          <div className="flex justify-between items-center pt-[1px] border-t border-black">
+            <span className="uppercase font-black text-black">KH Bắt đầu PO:</span>
+            <span className="font-mono font-black text-black">{format(po.plannedStartTime, 'dd/MM HH:mm')}</span>
           </div>
         )}
         {po?.expectedCompletionTime && (
           <div className="flex justify-between items-center">
-            <span className="uppercase opacity-80">KH Kết thúc PO:</span>
-            <span className="font-mono">{format(po.expectedCompletionTime, 'dd/MM HH:mm')}</span>
+            <span className="uppercase font-black text-black">KH Kết thúc PO:</span>
+            <span className="font-mono font-black text-black">{format(po.expectedCompletionTime, 'dd/MM HH:mm')}</span>
           </div>
         )}
         {masterId && (
           <>
-            <div className="flex justify-between items-center pt-[1px] border-t border-black/30">
-              <span className="uppercase opacity-80">Thuộc PO Tổng:</span>
-              <span className="font-mono font-black truncate max-w-[150px]">{masterId}</span>
+            <div className="flex justify-between items-center pt-[1px] border-t border-black">
+              <span className="uppercase font-black text-black">Thuộc PO Tổng:</span>
+              <span className="font-mono font-black text-black truncate max-w-[150px]">{masterId}</span>
             </div>
-            <div className="flex justify-between items-center italic">
-              <span className="opacity-80">KH PO Tổng:</span>
-              <span>{label.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0} máy</span>
+            <div className="flex justify-between items-center font-black text-black">
+              <span className="font-black text-black">KH PO Tổng:</span>
+              <span className="font-black text-black">{label.qrData?.split('|')?.[9] || storageService.getProductionOrders().find(p => p.id === masterId)?.targetQuantity || 0} máy</span>
             </div>
           </>
         )}
-        <div className="flex justify-between items-center pt-[1px] border-t border-black/30">
-          <span className="uppercase opacity-80">Hoàn thành:</span>
-          <span className="font-mono font-black">{format(label.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
+        <div className="flex justify-between items-center pt-[1px] border-t border-black">
+          <span className="uppercase font-black text-black">Hoàn thành:</span>
+          <span className="font-mono font-black text-black">{format(label.timestamp, 'dd/MM/yyyy HH:mm:ss')}</span>
         </div>
       </div>
     </div>
@@ -659,6 +671,10 @@ export default function App() {
 
   const [labelSettings, setLabelSettings] = useState(storageService.getLabelSettings());
   const [defectModal, setDefectModal] = useState<{ partId: string, stageId: StageId, poId?: string } | null>(null);
+  const [settingsTab, setSettingsTab] = useState<'parts' | 'bom' | 'label' | 'bom_v2' | 'model_bom' | 'transformations' | 'backup' | 'cloud'>('parts');
+  const [isCloudConnected, setIsCloudConnected] = useState<boolean>(storageService.isConfigured());
+  const [isSyncingCloud, setIsSyncingCloud] = useState<boolean>(false);
+  const [isRealtimeActive, setIsRealtimeActive] = useState<boolean>(false);
 
   const dclrNorms = useMemo(() => storageService.getNorms().filter(n => n.stageId === 'DCLR'), [isImportingNorms, parts]);
   const dclrNormsMap = useMemo(() => new Map(dclrNorms.map(n => [n.partId, n.secondsPerUnit])), [dclrNorms]);
@@ -748,6 +764,41 @@ export default function App() {
     }
 
     refreshData();
+
+    // Khởi tạo và đồng bộ Realtime từ Supabase Cloud nếu đã cấu hình
+    let isMounted = true;
+    let unsubscribeRealtime: (() => void) | null = null;
+    if (storageService.isConfigured()) {
+      setIsSyncingCloud(true);
+      storageService.init()
+        .then(() => {
+          if (!isMounted) return;
+          refreshData();
+          setIsCloudConnected(true);
+          unsubscribeRealtime = storageService.subscribeToRealtime((payload) => {
+            if (!isMounted) return;
+            console.log('[Supabase Realtime] Thay đổi dữ liệu:', payload?.table);
+            refreshData();
+          });
+          setIsRealtimeActive(true);
+        })
+        .catch((err) => {
+          if (!isMounted) return;
+          console.warn('[Supabase] Khởi tạo Supabase không thành công:', err);
+        })
+        .finally(() => {
+          if (isMounted) {
+            setIsSyncingCloud(false);
+          }
+        });
+    }
+
+    return () => {
+      isMounted = false;
+      if (unsubscribeRealtime) {
+        unsubscribeRealtime();
+      }
+    };
   }, []);
 
   const refreshData = () => {
@@ -885,6 +936,12 @@ export default function App() {
             }
             #print-area, #print-area * {
               visibility: visible;
+              color: #000000 !important;
+              border-color: #000000 !important;
+              opacity: 1 !important;
+              font-weight: 900 !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
             }
             #print-area {
               position: absolute;
@@ -892,12 +949,14 @@ export default function App() {
               top: 0;
               width: ${labelSettings.width}mm;
               height: ${labelSettings.height}mm;
-              padding: 5mm;
+              padding: 0;
+              margin: 0;
               display: flex;
               flex-direction: column;
               align-items: center;
               justify-content: center;
-              background: white;
+              background: #ffffff !important;
+              overflow: hidden;
             }
             .no-print {
               display: none !important;
@@ -1006,9 +1065,12 @@ export default function App() {
           />
           <SidebarLink 
             active={currentView === 'settings'} 
-            onClick={() => setCurrentView('settings')}
+            onClick={() => {
+              setSettingsTab('parts');
+              setCurrentView('settings');
+            }}
             icon={<Settings size={24} />}
-            label="Cài đặt linh kiện"
+            label="Cài đặt & Cơ sở dữ liệu"
             collapsed={!isSidebarOpen}
           />
         </nav>
@@ -1039,18 +1101,60 @@ export default function App() {
               {currentView === 'po' && 'Quản lý Lệnh sản xuất (PO)'}
               {currentView === 'norms' && 'Định mức năng suất sản xuất'}
               {currentView === 'working_hours' && 'Cài đặt Ca làm việc & Nghỉ ngơi'}
-              {currentView === 'settings' && 'Cài đặt danh mục linh kiện'}
+              {currentView === 'settings' && 'Cài đặt linh kiện, Cloud Supabase & Sao lưu'}
             </h2>
           </div>
-          <div className="flex items-center gap-8">
+          <div className="flex items-center gap-4">
+            {isCloudConnected ? (
+              <button
+                onClick={() => {
+                  setSettingsTab('cloud');
+                  setCurrentView('settings');
+                }}
+                title="Supabase Online: Đã kết nối cơ sở dữ liệu Cloud. Nhấn để quản lý đồng bộ hoặc xem trạng thái."
+                className="flex items-center gap-2 px-3.5 py-2 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95"
+              >
+                <Cloud size={15} className="text-sky-600" />
+                <span>Supabase Cloud</span>
+                <span className={cn("w-2 h-2 rounded-full bg-emerald-500", isRealtimeActive && "animate-pulse")} title="Realtime Online" />
+                {isSyncingCloud && (
+                  <RefreshCw size={12} className="animate-spin text-sky-600 ml-0.5" />
+                )}
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setSettingsTab('cloud');
+                  setCurrentView('settings');
+                }}
+                title="Chưa kết nối Supabase Cloud. Đang hoạt động ở chế độ Local Storage cục bộ. Nhấn để kết nối cơ sở dữ liệu online."
+                className="flex items-center gap-2 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95"
+              >
+                <WifiOff size={15} className="text-amber-600" />
+                <span>Lưu cục bộ (Offline)</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => {
+                setSettingsTab('backup');
+                setCurrentView('settings');
+              }}
+              title="Mở giao diện Sao lưu & Nạp dữ liệu Local Storage"
+              className="flex items-center gap-2 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95"
+            >
+              <Database size={15} className="text-emerald-600" />
+              <span>Sao lưu / Nạp JSON</span>
+            </button>
+            <div className="h-6 w-px bg-gray-200" />
             <div className="flex flex-col items-end">
-              <span className="text-sm font-mono opacity-50 uppercase">Terminal ID</span>
-              <span className="text-base font-mono font-bold">DESKTOP-WS-01</span>
+              <span className="text-xs font-mono opacity-50 uppercase">Terminal ID</span>
+              <span className="text-sm font-mono font-bold">DESKTOP-WS-01</span>
             </div>
-            <div className="h-10 w-px bg-gray-200" />
-            <div className="flex items-center gap-3">
-              <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse" />
-              <span className="text-sm font-mono opacity-70 uppercase tracking-widest">Hệ thống sẵn sàng</span>
+            <div className="h-6 w-px bg-gray-200" />
+            <div className="flex items-center gap-2.5">
+              <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
+              <span className="text-xs font-mono opacity-70 uppercase tracking-widest">Sẵn sàng</span>
             </div>
           </div>
         </header>
@@ -1182,6 +1286,7 @@ export default function App() {
                     setLabelSettings(s);
                     storageService.saveLabelSettings(s);
                   }}
+                  defaultTab={settingsTab}
                 />
               )}
             </AnimatePresence>
@@ -6826,6 +6931,7 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
       };
       
       storageService.saveTransactions([transaction, ...storageService.getTransactions()]);
+      storageService.persistTransaction(transaction);
       
       // Label awaiting printing
       const formatQR = `${pseudoPartId}|${qty}|GLAZING|${ts}|${txId}|DCLR|${pseudoPartId}|||`;
@@ -8150,11 +8256,12 @@ function InboundView({ selectedStage, setSelectedStage, onScanSuccess, parts, se
   );
 }
 
-function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChange }: { 
+function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChange, defaultTab }: { 
   parts: Part[], 
   onPartsChange: () => void, 
   labelSettings: any,
   onLabelSettingsChange: (s: any) => void,
+  defaultTab?: 'parts' | 'bom' | 'label' | 'bom_v2' | 'model_bom' | 'transformations' | 'backup' | 'cloud',
   key?: string 
 }) {
   const [newPart, setNewPart] = useState<Part>({ id: '', name: '', unit: 'Cái', level: 1, skipLaser: false, skipBending: false, skipWelding: false, skipPainting: false, hasPaintingPO: false });
@@ -8165,7 +8272,166 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
   const [isImportingModelBOM, setIsImportingModelBOM] = useState(false);
   const [isImportingTransformations, setIsImportingTransformations] = useState(false);
 
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'parts' | 'bom' | 'label' | 'bom_v2' | 'model_bom' | 'transformations'>('parts');
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'parts' | 'bom' | 'label' | 'bom_v2' | 'model_bom' | 'transformations' | 'backup' | 'cloud'>(defaultTab || 'parts');
+
+  useEffect(() => {
+    if (defaultTab) {
+      setActiveSettingsTab(defaultTab);
+    }
+  }, [defaultTab]);
+
+  // Cloud Supabase State & Handlers
+  const [isMigratingCloud, setIsMigratingCloud] = useState(false);
+  const [migrationResult, setMigrationResult] = useState<{ success: boolean; message: string; details?: any } | null>(null);
+  const [isPullingCloud, setIsPullingCloud] = useState(false);
+  const [pullResult, setPullResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [copiedSqlHint, setCopiedSqlHint] = useState(false);
+
+  const handleMigrateToSupabase = async () => {
+    if (!storageService.isConfigured()) {
+      alert('Chưa cấu hình Supabase! Vui lòng điền VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY vào file .env.');
+      return;
+    }
+    const confirmed = confirm(
+      'XÁC NHẬN ĐẨY DỮ LIỆU LÊN CLOUD SUPABASE:\n\n' +
+      'Toàn bộ danh mục linh kiện, tồn kho WIP, nhật ký quét mã, lệnh sản xuất PO, định mức BOM trên máy tính này sẽ được đẩy lên cơ sở dữ liệu Supabase online.\n\n' +
+      'Bạn có muốn tiến hành không?'
+    );
+    if (!confirmed) return;
+
+    setIsMigratingCloud(true);
+    setMigrationResult(null);
+    try {
+      const res = await storageService.migrateLocalStorageToSupabase();
+      setMigrationResult(res);
+      if (res.success) {
+        onPartsChange();
+      }
+    } catch (err: any) {
+      setMigrationResult({
+        success: false,
+        message: 'Lỗi: ' + (err?.message || 'Không thể đồng bộ lên Supabase')
+      });
+    } finally {
+      setIsMigratingCloud(false);
+    }
+  };
+
+  const handlePullFromSupabase = async () => {
+    if (!storageService.isConfigured()) {
+      alert('Chưa cấu hình Supabase trong file .env!');
+      return;
+    }
+    setIsPullingCloud(true);
+    setPullResult(null);
+    try {
+      await storageService.init();
+      onPartsChange();
+      setPullResult({
+        success: true,
+        message: 'Đã tải thành công toàn bộ dữ liệu mới nhất từ Cloud Supabase về máy tính này!'
+      });
+    } catch (err: any) {
+      setPullResult({
+        success: false,
+        message: 'Lỗi khi tải dữ liệu từ Cloud: ' + (err?.message || '')
+      });
+    } finally {
+      setIsPullingCloud(false);
+    }
+  };
+
+  // Backup & Restore LocalStorage State
+  const [backupStats, setBackupStats] = useState(() => storageService.getStorageStats());
+  const [downloadSuccessMessage, setDownloadSuccessMessage] = useState<string | null>(null);
+  const [copiedJson, setCopiedJson] = useState(false);
+  const [selectedBackupFile, setSelectedBackupFile] = useState<File | null>(null);
+  const [importValidation, setImportValidation] = useState<{
+    valid: boolean;
+    error?: string;
+    storageData?: Record<string, any>;
+    metadata?: any;
+    stats?: any;
+  } | null>(null);
+  const [importMode, setImportMode] = useState<'overwrite' | 'merge'>('overwrite');
+  const [isProcessingImport, setIsProcessingImport] = useState(false);
+  const [importResult, setImportResult] = useState<{
+    success: boolean;
+    message: string;
+    keysRestored: number;
+  } | null>(null);
+
+  const refreshBackupStats = () => {
+    setBackupStats(storageService.getStorageStats());
+  };
+
+  const handleDownloadBackup = () => {
+    const filename = storageService.downloadBackupFile();
+    setDownloadSuccessMessage(`Đã tải xuống thành công tệp "${filename}". Bạn có thể sao chép tệp này sang máy khác.`);
+    refreshBackupStats();
+    setTimeout(() => setDownloadSuccessMessage(null), 8000);
+  };
+
+  const handleCopyBackupJson = () => {
+    const data = storageService.exportBackupData();
+    navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+    setCopiedJson(true);
+    setTimeout(() => setCopiedJson(false), 3000);
+  };
+
+  const handleBackupFileSelect = (file: File) => {
+    setSelectedBackupFile(file);
+    setImportResult(null);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result as string;
+        const validation = storageService.validateBackupJson(text);
+        setImportValidation(validation);
+      } catch (err: any) {
+        setImportValidation({
+          valid: false,
+          error: 'Không thể phân tích tệp JSON: ' + (err?.message || 'Lỗi không xác định')
+        });
+      }
+    };
+    reader.onerror = () => {
+      setImportValidation({
+        valid: false,
+        error: 'Lỗi khi đọc file từ ổ đĩa máy tính.'
+      });
+    };
+    reader.readAsText(file);
+  };
+
+  const handleExecuteImport = () => {
+    if (!importValidation || !importValidation.valid || !importValidation.storageData) {
+      alert('Vui lòng chọn tệp tin JSON hợp lệ trước.');
+      return;
+    }
+
+    const confirmMsg = importMode === 'overwrite'
+      ? 'CẢNH BÁO XÁC NHẬN:\n\nChế độ "Ghi đè hoàn toàn" sẽ xóa toàn bộ dữ liệu hiện có trên máy này và thay bằng dữ liệu trong tệp JSON.\n\nBạn có chắc chắn muốn nạp dữ liệu này không?'
+      : 'XÁC NHẬN:\n\nHệ thống sẽ hợp nhất dữ liệu từ tệp JSON vào dữ liệu hiện có trên máy tính này.\n\nBạn có muốn tiếp tục?';
+
+    if (!confirm(confirmMsg)) return;
+
+    setIsProcessingImport(true);
+    setTimeout(() => {
+      const res = storageService.importBackupData(importValidation.storageData!, importMode);
+      setIsProcessingImport(false);
+      setImportResult(res);
+
+      if (res.success) {
+        onPartsChange();
+        const updatedLabelSettings = storageService.getLabelSettings();
+        if (updatedLabelSettings) {
+          onLabelSettingsChange(updatedLabelSettings);
+        }
+        refreshBackupStats();
+      }
+    }, 250);
+  };
 
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetPassword, setResetPassword] = useState('');
@@ -8534,13 +8800,89 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
           </div>
         </form>
 
-        <div className="pt-8 border-t border-gray-100 mt-8">
-          <h3 className="text-xs font-bold uppercase opacity-50 mb-4 text-red-600">Khu vực nguy hiểm</h3>
+        <div className="pt-6 border-t border-gray-100 mt-6 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
+              <Database size={14} className="text-emerald-600" />
+              Sao lưu Local Storage
+            </h3>
+            <span className="text-[11px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+              {backupStats.sizeFormatted}
+            </span>
+          </div>
+          <p className="text-xs text-gray-500">Tải tệp JSON về máy tính để sao lưu dữ liệu hoặc nạp dữ liệu từ máy khác vào.</p>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={handleDownloadBackup}
+              className="py-2.5 px-3 bg-emerald-600 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-emerald-700 transition-all shadow-sm active:scale-95"
+              title="Tải xuống toàn bộ dữ liệu hiện tại thành tệp JSON"
+            >
+              <Download size={14} />
+              Tải file JSON
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveSettingsTab('backup')}
+              className={cn(
+                "py-2.5 px-3 border rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95",
+                activeSettingsTab === 'backup' 
+                  ? "bg-blue-600 text-white border-blue-600 shadow-sm" 
+                  : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
+              )}
+              title="Mở tab nạp dữ liệu từ file JSON"
+            >
+              <FileJson size={14} />
+              Nạp dữ liệu
+            </button>
+          </div>
+          {downloadSuccessMessage && (
+            <div className="p-2 bg-emerald-50 border border-emerald-200 rounded text-[11px] text-emerald-800 font-medium">
+              ✓ {downloadSuccessMessage}
+            </div>
+          )}
+        </div>
+
+        <div className="pt-6 border-t border-gray-100 mt-6 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
+              <Cloud size={14} className="text-sky-600" />
+              Cơ sở dữ liệu Cloud
+            </h3>
+            {storageService.isConfigured() ? (
+              <span className="text-[11px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Online
+              </span>
+            ) : (
+              <span className="text-[11px] font-mono font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                Chưa kết nối
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-gray-500">Đồng bộ cơ sở dữ liệu Supabase trực tuyến để đồng bộ tức thì giữa các máy tính.</p>
+          <button
+            type="button"
+            onClick={() => setActiveSettingsTab('cloud')}
+            className={cn(
+              "w-full py-2.5 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-95",
+              activeSettingsTab === 'cloud'
+                ? "bg-sky-700 text-white"
+                : "bg-sky-600 hover:bg-sky-700 text-white"
+            )}
+          >
+            <Cloud size={14} />
+            Quản lý Đồng bộ Cloud Supabase
+          </button>
+        </div>
+
+        <div className="pt-6 border-t border-gray-100 mt-6">
+          <h3 className="text-xs font-bold uppercase opacity-50 mb-3 text-red-600">Khu vực nguy hiểm</h3>
           <button 
             onClick={() => setShowResetModal(true)}
-            className="w-full py-3 border-2 border-red-100 text-red-600 rounded-lg text-sm font-bold uppercase hover:bg-red-50 transition-all flex items-center justify-center gap-2"
+            className="w-full py-2.5 border-2 border-red-100 text-red-600 rounded-lg text-xs font-bold uppercase hover:bg-red-50 transition-all flex items-center justify-center gap-2"
           >
-            <Trash2 size={16} />
+            <Trash2 size={15} />
             Xóa toàn bộ dữ liệu hệ thống
           </button>
         </div>
@@ -8590,12 +8932,12 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
       </div>
 
       <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
-        <div className="flex border-b border-gray-100">
+        <div className="flex border-b border-gray-100 flex-wrap bg-gray-50/50">
           <button 
             onClick={() => setActiveSettingsTab('parts')}
             className={cn(
-              "flex-1 py-5 text-base font-bold uppercase tracking-widest transition-all border-b-2",
-              activeSettingsTab === 'parts' ? "border-blue-600 text-blue-600" : "border-transparent text-gray-400 hover:text-gray-600"
+              "px-5 py-4 text-sm font-bold uppercase tracking-wider transition-all border-b-2 whitespace-nowrap",
+              activeSettingsTab === 'parts' ? "border-blue-600 text-blue-600 bg-white" : "border-transparent text-gray-400 hover:text-gray-600"
             )}
           >
             Danh mục linh kiện
@@ -8603,8 +8945,8 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
           <button 
             onClick={() => setActiveSettingsTab('bom')}
             className={cn(
-              "flex-1 py-5 text-base font-bold uppercase tracking-widest transition-all border-b-2",
-              activeSettingsTab === 'bom' ? "border-blue-600 text-blue-600" : "border-transparent text-gray-400 hover:text-gray-600"
+              "px-5 py-4 text-sm font-bold uppercase tracking-wider transition-all border-b-2 whitespace-nowrap",
+              activeSettingsTab === 'bom' ? "border-blue-600 text-blue-600 bg-white" : "border-transparent text-gray-400 hover:text-gray-600"
             )}
           >
             Định mức sản xuất (BOM)
@@ -8612,8 +8954,8 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
           <button 
             onClick={() => setActiveSettingsTab('bom_v2')}
             className={cn(
-              "flex-1 py-5 text-base font-bold uppercase tracking-widest transition-all border-b-2",
-              activeSettingsTab === 'bom_v2' ? "border-blue-600 text-blue-600" : "border-transparent text-gray-400 hover:text-gray-600"
+              "px-5 py-4 text-sm font-bold uppercase tracking-wider transition-all border-b-2 whitespace-nowrap",
+              activeSettingsTab === 'bom_v2' ? "border-blue-600 text-blue-600 bg-white" : "border-transparent text-gray-400 hover:text-gray-600"
             )}
           >
             Định mức Hàn (BOM v2)
@@ -8621,8 +8963,8 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
           <button 
             onClick={() => setActiveSettingsTab('model_bom')}
             className={cn(
-              "flex-1 py-5 text-base font-bold uppercase tracking-widest transition-all border-b-2",
-              activeSettingsTab === 'model_bom' ? "border-blue-600 text-blue-600" : "border-transparent text-gray-400 hover:text-gray-600"
+              "px-5 py-4 text-sm font-bold uppercase tracking-wider transition-all border-b-2 whitespace-nowrap",
+              activeSettingsTab === 'model_bom' ? "border-blue-600 text-blue-600 bg-white" : "border-transparent text-gray-400 hover:text-gray-600"
             )}
           >
             Định mức Model
@@ -8630,8 +8972,8 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
           <button 
             onClick={() => setActiveSettingsTab('label')}
             className={cn(
-              "flex-1 py-5 text-base font-bold uppercase tracking-widest transition-all border-b-2",
-              activeSettingsTab === 'label' ? "border-blue-600 text-blue-600" : "border-transparent text-gray-400 hover:text-gray-600"
+              "px-5 py-4 text-sm font-bold uppercase tracking-wider transition-all border-b-2 whitespace-nowrap",
+              activeSettingsTab === 'label' ? "border-blue-600 text-blue-600 bg-white" : "border-transparent text-gray-400 hover:text-gray-600"
             )}
           >
             Cấu hình khổ nhãn
@@ -8639,11 +8981,45 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
           <button 
             onClick={() => setActiveSettingsTab('transformations')}
             className={cn(
-              "flex-1 py-5 text-base font-bold uppercase tracking-widest transition-all border-b-2",
-              activeSettingsTab === 'transformations' ? "border-blue-600 text-blue-600" : "border-transparent text-gray-400 hover:text-gray-600"
+              "px-5 py-4 text-sm font-bold uppercase tracking-wider transition-all border-b-2 whitespace-nowrap",
+              activeSettingsTab === 'transformations' ? "border-blue-600 text-blue-600 bg-white" : "border-transparent text-gray-400 hover:text-gray-600"
             )}
           >
             Chuyển đổi linh kiện
+          </button>
+          <button 
+            onClick={() => {
+              setActiveSettingsTab('cloud');
+            }}
+            className={cn(
+              "px-5 py-4 text-sm font-bold uppercase tracking-wider transition-all border-b-2 whitespace-nowrap flex items-center gap-2",
+              activeSettingsTab === 'cloud' 
+                ? "border-sky-600 text-sky-700 bg-white shadow-sm font-black" 
+                : "border-transparent text-sky-600 hover:text-sky-700 hover:bg-sky-50/50 font-bold"
+            )}
+          >
+            <Cloud size={16} className="text-sky-600" />
+            Đồng bộ Cloud Supabase
+            {storageService.isConfigured() ? (
+              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse" title="Đã kết nối" />
+            ) : (
+              <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" title="Chưa cấu hình" />
+            )}
+          </button>
+          <button 
+            onClick={() => {
+              setActiveSettingsTab('backup');
+              refreshBackupStats();
+            }}
+            className={cn(
+              "px-5 py-4 text-sm font-bold uppercase tracking-wider transition-all border-b-2 whitespace-nowrap flex items-center gap-2",
+              activeSettingsTab === 'backup' 
+                ? "border-emerald-600 text-emerald-700 bg-white shadow-sm font-black" 
+                : "border-transparent text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50/50 font-bold"
+            )}
+          >
+            <Database size={16} className="text-emerald-600" />
+            Sao lưu & Nạp dữ liệu (JSON)
           </button>
         </div>
 
@@ -9134,6 +9510,723 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                 <p>Quy tắc này sẽ tự động thay đổi mã linh kiện được ghi nhận vào kho IN của công đoạn chỉ định. 
                    Ví dụ: Bạn muốn linh kiện L2 (đã chấn xong) khi vào kho Sơn sẽ được tính là linh kiện L1.</p>
                 <p className="text-xs opacity-70 italic">* Khi quét nhãn QR mã nguồn, hệ thống sẽ tự nhận diện và cộng tồn kho cho mã đích.</p>
+              </div>
+            </div>
+          </div>
+        ) : activeSettingsTab === 'backup' ? (
+          <div className="p-8 lg:p-10 space-y-8">
+            {/* Header Banner */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-gray-100">
+              <div className="flex items-center gap-4">
+                <div className="bg-emerald-600 p-3.5 rounded-2xl text-white shadow-lg shadow-emerald-600/20">
+                  <Database size={28} />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold tracking-tight text-gray-900">
+                    Lưu trữ & Nạp dữ liệu Local Storage (JSON)
+                  </h2>
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    Tải toàn bộ cơ sở dữ liệu hiện tại về máy tính dưới dạng file JSON để lưu trữ hoặc nạp sang máy tính khác mà không bị mất dữ liệu.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={refreshBackupStats}
+                  className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all"
+                  title="Cập nhật lại số liệu thống kê"
+                >
+                  <RefreshCw size={14} />
+                  Làm mới
+                </button>
+              </div>
+            </div>
+
+            {/* Current Storage Stats Cards */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-bold uppercase tracking-wider text-gray-500">
+                  Dữ liệu hiện có trên máy tính này
+                </span>
+                <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                  Dung lượng: {backupStats.sizeFormatted} ({backupStats.totalKeys} mục dữ liệu)
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <div className="bg-gray-50/80 border border-gray-200 rounded-xl p-3.5">
+                  <span className="text-xs text-gray-500 font-medium block">Linh kiện</span>
+                  <span className="text-xl font-bold font-mono text-gray-900">{backupStats.partsCount}</span>
+                  <span className="text-[10px] text-gray-400 block mt-0.5">mã sản phẩm</span>
+                </div>
+                <div className="bg-gray-50/80 border border-gray-200 rounded-xl p-3.5">
+                  <span className="text-xs text-gray-500 font-medium block">Lệnh SX (PO)</span>
+                  <span className="text-xl font-bold font-mono text-blue-600">{backupStats.posCount}</span>
+                  <span className="text-[10px] text-gray-400 block mt-0.5">đơn hàng</span>
+                </div>
+                <div className="bg-gray-50/80 border border-gray-200 rounded-xl p-3.5">
+                  <span className="text-xs text-gray-500 font-medium block">Tồn kho WIP</span>
+                  <span className="text-xl font-bold font-mono text-emerald-600">{backupStats.inventoryCount}</span>
+                  <span className="text-[10px] text-gray-400 block mt-0.5">dòng tồn</span>
+                </div>
+                <div className="bg-gray-50/80 border border-gray-200 rounded-xl p-3.5">
+                  <span className="text-xs text-gray-500 font-medium block">Nhật ký quét</span>
+                  <span className="text-xl font-bold font-mono text-purple-600">{backupStats.transactionsCount}</span>
+                  <span className="text-[10px] text-gray-400 block mt-0.5">lượt giao dịch</span>
+                </div>
+                <div className="bg-gray-50/80 border border-gray-200 rounded-xl p-3.5">
+                  <span className="text-xs text-gray-500 font-medium block">Nhãn QR</span>
+                  <span className="text-xl font-bold font-mono text-orange-600">{backupStats.labelsCount}</span>
+                  <span className="text-[10px] text-gray-400 block mt-0.5">nhãn đã in</span>
+                </div>
+                <div className="bg-gray-50/80 border border-gray-200 rounded-xl p-3.5">
+                  <span className="text-xs text-gray-500 font-medium block">Định mức/BOM</span>
+                  <span className="text-xl font-bold font-mono text-indigo-600">
+                    {backupStats.bomCount + backupStats.bomV2Count + backupStats.modelBomCount + backupStats.normsCount}
+                  </span>
+                  <span className="text-[10px] text-gray-400 block mt-0.5">quy tắc cấu hình</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Main 2-Column Actions */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Left Column: Download / Export */}
+              <div className="bg-gradient-to-br from-emerald-50/50 via-white to-emerald-50/30 border-2 border-emerald-200/80 rounded-2xl p-6 lg:p-7 flex flex-col justify-between shadow-sm">
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold uppercase tracking-wider rounded-full flex items-center gap-1.5">
+                      <Download size={13} />
+                      Xuất dữ liệu ra máy tính
+                    </span>
+                    <span className="text-xs font-mono text-emerald-600 font-semibold">Định dạng .JSON</span>
+                  </div>
+
+                  <h3 className="text-xl font-bold text-gray-900 mb-2 flex items-center gap-2">
+                    1. Tải xuống tệp sao lưu JSON
+                  </h3>
+                  <p className="text-sm text-gray-600 leading-relaxed mb-5">
+                    Đóng gói toàn bộ cơ sở dữ liệu hiện có thành một tệp tin <strong className="text-emerald-700">.json</strong> duy nhất. Bạn có thể lưu vào máy tính, gửi qua Zalo, Email hoặc chuyển vào USB để nạp sang máy khác.
+                  </p>
+
+                  <div className="bg-white border border-emerald-100 rounded-xl p-4 mb-6 space-y-2 text-xs text-gray-600">
+                    <p className="font-bold text-gray-700 uppercase tracking-wider text-[11px]">Dữ liệu được đóng gói trong tệp:</p>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 pt-1">
+                      <div className="flex items-center gap-1.5">
+                        <Check size={13} className="text-emerald-600 shrink-0" />
+                        <span>Toàn bộ danh mục linh kiện</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Check size={13} className="text-emerald-600 shrink-0" />
+                        <span>Tồn kho WIP tất cả công đoạn</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Check size={13} className="text-emerald-600 shrink-0" />
+                        <span>Danh sách Lệnh sản xuất (PO)</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Check size={13} className="text-emerald-600 shrink-0" />
+                        <span>Lịch sử quét xuất/nhập kho</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Check size={13} className="text-emerald-600 shrink-0" />
+                        <span>Định mức sản xuất BOM / v2 / Model</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Check size={13} className="text-emerald-600 shrink-0" />
+                        <span>Cấu hình in nhãn, ca làm việc</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={handleDownloadBackup}
+                    className="w-full py-4 px-6 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl font-bold uppercase tracking-wider flex items-center justify-center gap-3 shadow-lg shadow-emerald-600/20 transition-all text-sm"
+                  >
+                    <Download size={20} />
+                    TẢI XUỐNG TỆP SAO LƯU (.JSON)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCopyBackupJson}
+                    className="w-full py-2.5 px-4 bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl font-semibold text-xs flex items-center justify-center gap-2 transition-all"
+                  >
+                    <Copy size={14} />
+                    {copiedJson ? '✓ Đã sao chép nội dung JSON vào bộ nhớ đệm!' : 'Sao chép toàn bộ mã JSON (Clipboard)'}
+                  </button>
+
+                  {downloadSuccessMessage && (
+                    <div className="p-3 bg-emerald-100/80 border border-emerald-300 rounded-xl text-xs text-emerald-900 font-medium flex items-center gap-2 animate-fadeIn">
+                      <CheckCircle2 size={16} className="text-emerald-700 shrink-0" />
+                      <span>{downloadSuccessMessage}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Column: Upload / Import */}
+              <div className="bg-gradient-to-br from-blue-50/50 via-white to-blue-50/30 border-2 border-blue-200/80 rounded-2xl p-6 lg:p-7 flex flex-col justify-between shadow-sm">
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="px-3 py-1 bg-blue-100 text-blue-800 text-xs font-bold uppercase tracking-wider rounded-full flex items-center gap-1.5">
+                      <FileUp size={13} />
+                      Nạp dữ liệu vào máy này
+                    </span>
+                    <span className="text-xs font-mono text-blue-600 font-semibold">Khôi phục / Chuyển máy</span>
+                  </div>
+
+                  <h3 className="text-xl font-bold text-gray-900 mb-2 flex items-center gap-2">
+                    2. Nạp dữ liệu từ tệp JSON
+                  </h3>
+                  <p className="text-sm text-gray-600 leading-relaxed mb-5">
+                    Chọn tệp tin sao lưu <strong className="text-blue-700">.json</strong> đã xuất từ máy tính khác để tải toàn bộ dữ liệu vào trình duyệt của máy này.
+                  </p>
+
+                  {/* Dropzone & File Selector */}
+                  <label
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const file = e.dataTransfer.files?.[0];
+                      if (file) handleBackupFileSelect(file);
+                    }}
+                    className={cn(
+                      "block w-full border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-all",
+                      selectedBackupFile 
+                        ? "border-blue-500 bg-blue-50/40" 
+                        : "border-gray-300 hover:border-blue-400 bg-white hover:bg-blue-50/20"
+                    )}
+                  >
+                    <input
+                      type="file"
+                      accept=".json,application/json"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleBackupFileSelect(file);
+                      }}
+                    />
+                    {selectedBackupFile ? (
+                      <div className="flex items-center justify-center gap-3">
+                        <div className="bg-blue-600 text-white p-2.5 rounded-lg">
+                          <FileJson size={22} />
+                        </div>
+                        <div className="text-left">
+                          <p className="text-sm font-bold text-gray-900 truncate max-w-[240px] sm:max-w-[320px]">
+                            {selectedBackupFile.name}
+                          </p>
+                          <p className="text-xs text-gray-500 font-mono">
+                            {(selectedBackupFile.size / 1024).toFixed(1)} KB • Nhấp để chọn tệp khác
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        <div className="mx-auto w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mb-2">
+                          <Upload size={20} />
+                        </div>
+                        <p className="text-sm font-bold text-gray-800">
+                          Nhấp để chọn tệp tin JSON hoặc kéo thả vào đây
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          Chấp nhận các tệp sao lưu .json của hệ thống
+                        </p>
+                      </div>
+                    )}
+                  </label>
+
+                  {/* Validation Info */}
+                  {importValidation && !importValidation.valid && (
+                    <div className="mt-4 p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
+                      <AlertCircle size={16} className="text-red-600 shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="block">Tệp JSON không hợp lệ:</strong>
+                        <span>{importValidation.error}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {importValidation && importValidation.valid && (
+                    <div className="mt-4 bg-white border border-blue-200 rounded-xl p-4 space-y-3">
+                      <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                        <span className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                          <CheckCircle2 size={15} className="text-emerald-600" />
+                          Phát hiện dữ liệu hợp lệ trong file
+                        </span>
+                        {importValidation.metadata?.exportDateFormatted && (
+                          <span className="text-[11px] font-mono text-gray-500">
+                            Ngày xuất: {importValidation.metadata.exportDateFormatted}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                        <div className="bg-blue-50/60 p-2 rounded-lg">
+                          <span className="text-gray-500 block text-[11px]">Linh kiện</span>
+                          <span className="font-bold text-sm text-blue-700 font-mono">{importValidation.stats?.partsCount || 0}</span>
+                        </div>
+                        <div className="bg-blue-50/60 p-2 rounded-lg">
+                          <span className="text-gray-500 block text-[11px]">Lệnh SX (PO)</span>
+                          <span className="font-bold text-sm text-blue-700 font-mono">{importValidation.stats?.posCount || 0}</span>
+                        </div>
+                        <div className="bg-blue-50/60 p-2 rounded-lg">
+                          <span className="text-gray-500 block text-[11px]">Tồn kho WIP</span>
+                          <span className="font-bold text-sm text-blue-700 font-mono">{importValidation.stats?.inventoryCount || 0}</span>
+                        </div>
+                      </div>
+
+                      {/* Mode selection */}
+                      <div className="pt-2 border-t border-gray-100 space-y-2">
+                        <label className="text-[11px] font-bold uppercase tracking-wider text-gray-600 block">
+                          Chế độ nạp dữ liệu:
+                        </label>
+                        <div className="grid grid-cols-1 gap-2">
+                          <label className={cn(
+                            "flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-all",
+                            importMode === 'overwrite' 
+                              ? "border-blue-600 bg-blue-50/50" 
+                              : "border-gray-200 hover:bg-gray-50"
+                          )}>
+                            <input 
+                              type="radio" 
+                              name="importMode" 
+                              value="overwrite" 
+                              checked={importMode === 'overwrite'}
+                              onChange={() => setImportMode('overwrite')}
+                              className="mt-0.5"
+                            />
+                            <div className="text-xs">
+                              <span className="font-bold text-gray-900 block">
+                                Ghi đè toàn bộ (Khuyên dùng khi chuyển máy mới)
+                              </span>
+                              <span className="text-gray-500 text-[11px]">
+                                Xóa dữ liệu cũ trên máy này và thay thế 100% bằng dữ liệu từ tệp JSON.
+                              </span>
+                            </div>
+                          </label>
+
+                          <label className={cn(
+                            "flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-all",
+                            importMode === 'merge' 
+                              ? "border-blue-600 bg-blue-50/50" 
+                              : "border-gray-200 hover:bg-gray-50"
+                          )}>
+                            <input 
+                              type="radio" 
+                              name="importMode" 
+                              value="merge" 
+                              checked={importMode === 'merge'}
+                              onChange={() => setImportMode('merge')}
+                              className="mt-0.5"
+                            />
+                            <div className="text-xs">
+                              <span className="font-bold text-gray-900 block">
+                                Hợp nhất dữ liệu (Merge)
+                              </span>
+                              <span className="text-gray-500 text-[11px]">
+                                Giữ lại các bản ghi hiện tại và bổ sung thêm các bản ghi mới từ tệp JSON.
+                              </span>
+                            </div>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {importResult && (
+                    <div className={cn(
+                      "mt-4 p-4 rounded-xl border text-xs flex flex-col gap-2 animate-fadeIn",
+                      importResult.success 
+                        ? "bg-emerald-50 border-emerald-300 text-emerald-900" 
+                        : "bg-red-50 border-red-300 text-red-900"
+                    )}>
+                      <div className="flex items-center gap-2">
+                        {importResult.success ? (
+                          <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
+                        ) : (
+                          <AlertCircle size={18} className="text-red-600 shrink-0" />
+                        )}
+                        <span className="font-bold text-sm">{importResult.message}</span>
+                      </div>
+                      {importResult.success && (
+                        <div className="flex items-center gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => window.location.reload()}
+                            className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm"
+                          >
+                            <RefreshCw size={12} />
+                            Tải lại trang (F5) để áp dụng toàn diện
+                          </button>
+                          <span className="text-[11px] text-emerald-700">Dữ liệu đã được áp dụng vào giao diện ngay lập tức.</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-4">
+                  <button
+                    type="button"
+                    disabled={!importValidation?.valid || isProcessingImport}
+                    onClick={handleExecuteImport}
+                    className={cn(
+                      "w-full py-4 px-6 rounded-xl font-bold uppercase tracking-wider flex items-center justify-center gap-3 shadow-lg transition-all text-sm",
+                      importValidation?.valid && !isProcessingImport
+                        ? "bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/20 active:scale-[0.99] cursor-pointer"
+                        : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"
+                    )}
+                  >
+                    <HardDrive size={18} />
+                    {isProcessingImport ? 'ĐANG NẠP DỮ LIỆU...' : 'XÁC NHẬN NẠP DỮ LIỆU VÀO MÁY NÀY'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Step-by-Step Migration Guide */}
+            <div className="bg-white border border-gray-200 rounded-2xl p-6">
+              <h4 className="text-sm font-bold uppercase tracking-wider text-gray-800 mb-4 flex items-center gap-2">
+                <FileText size={18} className="text-blue-600" />
+                Hướng dẫn chuyển dữ liệu từ máy này sang máy khác:
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex gap-3.5">
+                  <span className="w-7 h-7 rounded-full bg-emerald-600 text-white font-bold font-mono text-sm flex items-center justify-center shrink-0">
+                    1
+                  </span>
+                  <div>
+                    <strong className="text-sm font-bold text-gray-900 block mb-1">
+                      Tại máy cũ (có dữ liệu)
+                    </strong>
+                    <p className="text-xs text-gray-600 leading-relaxed">
+                      Mở mục này và bấm nút <strong>"TẢI XUỐNG TỆP SAO LƯU (.JSON)"</strong>. Một tệp tin JSON sẽ được tải về thư mục Downloads của máy tính.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex gap-3.5">
+                  <span className="w-7 h-7 rounded-full bg-blue-600 text-white font-bold font-mono text-sm flex items-center justify-center shrink-0">
+                    2
+                  </span>
+                  <div>
+                    <strong className="text-sm font-bold text-gray-900 block mb-1">
+                      Sao chép tệp tin
+                    </strong>
+                    <p className="text-xs text-gray-600 leading-relaxed">
+                      Sao chép tệp JSON vừa tải sang máy tính mới qua USB, Zalo, Email hoặc Google Drive.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex gap-3.5">
+                  <span className="w-7 h-7 rounded-full bg-purple-600 text-white font-bold font-mono text-sm flex items-center justify-center shrink-0">
+                    3
+                  </span>
+                  <div>
+                    <strong className="text-sm font-bold text-gray-900 block mb-1">
+                      Tại máy tính mới
+                    </strong>
+                    <p className="text-xs text-gray-600 leading-relaxed">
+                      Mở ứng dụng trên máy mới, vào mục <strong>"Sao lưu & Nạp dữ liệu (JSON)"</strong>, chọn tệp tin JSON và bấm <strong>"XÁC NHẬN NẠP DỮ LIỆU"</strong>.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : activeSettingsTab === 'cloud' ? (
+          <div className="p-8 lg:p-10 space-y-8">
+            {/* Header Banner */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-gray-100">
+              <div className="flex items-center gap-4">
+                <div className="bg-sky-600 p-3.5 rounded-2xl text-white shadow-lg shadow-sky-600/20">
+                  <Cloud size={28} />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold tracking-tight text-gray-900">
+                    Cơ sở dữ liệu đám mây Supabase (Online Cloud & Realtime Sync)
+                  </h2>
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    Lưu trữ dữ liệu an toàn trên Cloud, hỗ trợ đồng bộ dữ liệu Realtime tức thì giữa nhiều máy tính và thiết bị khác nhau.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  disabled={isPullingCloud || !storageService.isConfigured()}
+                  onClick={handlePullFromSupabase}
+                  className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer"
+                  title="Kiểm tra kết nối và kéo dữ liệu mới nhất từ Cloud"
+                >
+                  <RefreshCw size={14} className={cn(isPullingCloud && "animate-spin text-sky-600")} />
+                  {isPullingCloud ? 'Đang tải dữ liệu...' : 'Kiểm tra & Tải mới'}
+                </button>
+              </div>
+            </div>
+
+            {/* Connection Status Card */}
+            <div className={cn(
+              "p-6 rounded-2xl border flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all",
+              storageService.isConfigured() 
+                ? "bg-sky-50/60 border-sky-200" 
+                : "bg-amber-50/60 border-amber-200"
+            )}>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-xs font-bold uppercase tracking-wider text-gray-600">Trạng thái kết nối Cloud:</span>
+                  {storageService.isConfigured() ? (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      ĐÃ KẾT NỐI SUPABASE CLOUD (HOẠT ĐỘNG)
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                      <WifiOff size={14} />
+                      CHƯA CẤU HÌNH BIẾN MÔI TRƯỜNG .ENV
+                    </span>
+                  )}
+                </div>
+
+                <div className="text-xs text-gray-600 font-mono space-y-1">
+                  <div>
+                    <span className="opacity-60">Supabase URL: </span>
+                    <span className="font-bold text-gray-900">
+                      {(import.meta as any).env?.VITE_SUPABASE_URL || '(Chưa cấu hình VITE_SUPABASE_URL)'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="opacity-60">Realtime Channel: </span>
+                    <span className="font-bold text-sky-700">
+                      {storageService.isConfigured() ? 'public:* (Tự động lắng nghe thay đổi)' : 'Chưa kích hoạt'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="shrink-0 flex flex-col sm:flex-row gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const text = `# File .env cấu hình Supabase:\nVITE_SUPABASE_URL=https://your-project.supabase.co\nVITE_SUPABASE_ANON_KEY=your-anon-key`;
+                    navigator.clipboard.writeText(text);
+                    setCopiedSqlHint(true);
+                    setTimeout(() => setCopiedSqlHint(false), 3000);
+                  }}
+                  className="px-4 py-2.5 bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-sm"
+                >
+                  <Copy size={14} />
+                  {copiedSqlHint ? 'Đã sao chép mẫu .env!' : 'Sao chép mẫu .env'}
+                </button>
+              </div>
+            </div>
+
+            {/* Two Primary Action Cards */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Card 1: Push / Migrate Local to Supabase */}
+              <div className="bg-white border border-gray-200 rounded-2xl p-6 lg:p-8 flex flex-col justify-between shadow-sm space-y-6">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-sky-100 text-sky-700 rounded-xl">
+                      <CloudUpload size={22} />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-gray-900">1. Đẩy toàn bộ dữ liệu máy này lên Cloud</h3>
+                      <p className="text-xs text-gray-500">Chuyển toàn bộ dữ liệu đang có trên máy này lên Supabase</p>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-gray-600 leading-relaxed">
+                    Dùng tính năng này khi bạn vừa tạo cơ sở dữ liệu Supabase mới và muốn đồng bộ toàn bộ:
+                    <strong> danh mục linh kiện, tồn kho WIP các công đoạn, lịch sử quét mã nhãn, lệnh sản xuất (PO), định mức BOM, cấu hình chuyển đổi và định mức năng suất</strong> từ máy tính này lên cơ sở dữ liệu trực tuyến.
+                  </p>
+
+                  <div className="bg-sky-50/50 p-4 rounded-xl border border-sky-100 text-xs text-sky-900 space-y-1.5">
+                    <div className="font-bold flex items-center gap-1.5 text-sky-800">
+                      <Database size={14} />
+                      Dữ liệu sẵn sàng được đẩy:
+                    </div>
+                    <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-sky-700">
+                      <li>{parts.length} linh kiện trong danh mục</li>
+                      <li>{storageService.getInventory().length} bản ghi tồn kho các công đoạn</li>
+                      <li>{storageService.getTransactions().length} nhật ký quét giao dịch</li>
+                      <li>{storageService.getProductionOrders().length} lệnh sản xuất (PO)</li>
+                      <li>Định mức BOM Level 1, BOM v2 và Model BOM</li>
+                    </ul>
+                  </div>
+
+                  {migrationResult && (
+                    <div className={cn(
+                      "p-4 rounded-xl border text-xs flex flex-col gap-2",
+                      migrationResult.success ? "bg-emerald-50 border-emerald-200 text-emerald-900" : "bg-red-50 border-red-200 text-red-900"
+                    )}>
+                      <div className="flex items-center gap-2 font-bold">
+                        {migrationResult.success ? <CheckCircle2 size={16} className="text-emerald-600 shrink-0" /> : <AlertCircle size={16} className="text-red-600 shrink-0" />}
+                        <span>{migrationResult.message}</span>
+                      </div>
+                      {migrationResult.details && (
+                        <div className="text-[11px] opacity-80 grid grid-cols-2 gap-1 pt-1 font-mono">
+                          {Object.entries(migrationResult.details).map(([k, v]) => (
+                            <span key={k}>{k}: {String(v)} bản ghi</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    disabled={isMigratingCloud || !storageService.isConfigured()}
+                    onClick={handleMigrateToSupabase}
+                    className={cn(
+                      "w-full py-4 px-6 rounded-xl font-bold uppercase tracking-wider flex items-center justify-center gap-3 shadow-lg transition-all text-sm",
+                      storageService.isConfigured() && !isMigratingCloud
+                        ? "bg-sky-600 hover:bg-sky-700 text-white shadow-sky-600/20 active:scale-[0.99] cursor-pointer"
+                        : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"
+                    )}
+                  >
+                    <CloudUpload size={18} className={cn(isMigratingCloud && "animate-bounce")} />
+                    {isMigratingCloud ? 'ĐANG ĐẨY DỮ LIỆU LÊN CLOUD SUPABASE...' : 'ĐẨY TOÀN BỘ DỮ LIỆU LÊN CLOUD SUPABASE'}
+                  </button>
+                  {!storageService.isConfigured() && (
+                    <p className="text-[11px] text-amber-700 mt-2 text-center">
+                      * Cần điền VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY vào .env trước khi bấm nút này.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Card 2: Pull / Refresh from Supabase */}
+              <div className="bg-white border border-gray-200 rounded-2xl p-6 lg:p-8 flex flex-col justify-between shadow-sm space-y-6">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-blue-100 text-blue-700 rounded-xl">
+                      <CloudDownload size={22} />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-gray-900">2. Tải dữ liệu từ Cloud về máy này</h3>
+                      <p className="text-xs text-gray-500">Kéo toàn bộ dữ liệu mới nhất từ Supabase về bộ nhớ máy</p>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-gray-600 leading-relaxed">
+                    Khi mở ứng dụng trên một máy tính mới, hoặc khi muốn đảm bảo dữ liệu máy tính của bạn hoàn toàn trùng khớp 100% với dữ liệu mới nhất trên đám mây, hãy nhấn nút tải dữ liệu bên dưới.
+                  </p>
+
+                  <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 text-xs text-blue-900 space-y-2">
+                    <div className="font-bold flex items-center gap-1.5 text-blue-800">
+                      <Wifi size={14} />
+                      Đồng bộ Realtime tự động:
+                    </div>
+                    <p className="text-[11px] text-blue-700 leading-relaxed">
+                      Hệ thống đã tích hợp <strong>Supabase Realtime Subscriptions</strong>. Mọi thao tác quét xuất kho, nhập kho, tạo PO hoặc thêm linh kiện từ bất kỳ máy nào sẽ tự động cập nhật ngay trên các máy khác mà không cần bấm nút F5!
+                    </p>
+                  </div>
+
+                  {pullResult && (
+                    <div className={cn(
+                      "p-4 rounded-xl border text-xs flex items-center gap-2 font-bold",
+                      pullResult.success ? "bg-emerald-50 border-emerald-200 text-emerald-900" : "bg-red-50 border-red-200 text-red-900"
+                    )}>
+                      {pullResult.success ? <CheckCircle2 size={16} className="text-emerald-600 shrink-0" /> : <AlertCircle size={16} className="text-red-600 shrink-0" />}
+                      <span>{pullResult.message}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    disabled={isPullingCloud || !storageService.isConfigured()}
+                    onClick={handlePullFromSupabase}
+                    className={cn(
+                      "w-full py-4 px-6 rounded-xl font-bold uppercase tracking-wider flex items-center justify-center gap-3 shadow-lg transition-all text-sm",
+                      storageService.isConfigured() && !isPullingCloud
+                        ? "bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/20 active:scale-[0.99] cursor-pointer"
+                        : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"
+                    )}
+                  >
+                    <CloudDownload size={18} className={cn(isPullingCloud && "animate-spin")} />
+                    {isPullingCloud ? 'ĐANG TẢI DỮ LIỆU TỪ CLOUD...' : 'TẢI DỮ LIỆU TỪ CLOUD VỀ MÁY NÀY'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Step-by-Step Setup Guide */}
+            <div className="bg-white border border-gray-200 rounded-2xl p-6 lg:p-8 space-y-6">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-bold uppercase tracking-wider text-gray-800 flex items-center gap-2">
+                  <FileText size={18} className="text-sky-600" />
+                  Hướng dẫn 4 bước thiết lập Supabase từ đầu:
+                </h4>
+                <span className="text-xs text-sky-700 bg-sky-50 px-3 py-1 rounded-full font-bold border border-sky-200">
+                  Tệp schema: supabase_schema.sql
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex gap-3.5">
+                  <span className="w-7 h-7 rounded-full bg-sky-600 text-white font-bold font-mono text-sm flex items-center justify-center shrink-0">
+                    1
+                  </span>
+                  <div>
+                    <strong className="text-sm font-bold text-gray-900 block mb-1">
+                      Tạo dự án Supabase
+                    </strong>
+                    <p className="text-xs text-gray-600 leading-relaxed">
+                      Truy cập <strong>supabase.com</strong>, đăng ký/đăng nhập và bấm <strong>New Project</strong> để tạo một dự án miễn phí.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex gap-3.5">
+                  <span className="w-7 h-7 rounded-full bg-blue-600 text-white font-bold font-mono text-sm flex items-center justify-center shrink-0">
+                    2
+                  </span>
+                  <div>
+                    <strong className="text-sm font-bold text-gray-900 block mb-1">
+                      Chạy file SQL tạo bảng
+                    </strong>
+                    <p className="text-xs text-gray-600 leading-relaxed">
+                      Mở mục <strong>SQL Editor</strong> trong Supabase, mở tệp <code>supabase_schema.sql</code> trong dự án này, dán toàn bộ vào và bấm <strong>Run</strong>.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex gap-3.5">
+                  <span className="w-7 h-7 rounded-full bg-indigo-600 text-white font-bold font-mono text-sm flex items-center justify-center shrink-0">
+                    3
+                  </span>
+                  <div>
+                    <strong className="text-sm font-bold text-gray-900 block mb-1">
+                      Điền biến vào file .env
+                    </strong>
+                    <p className="text-xs text-gray-600 leading-relaxed">
+                      Vào mục <strong>Project Settings &gt; API</strong>, sao chép <strong>Project URL</strong> và <strong>anon public key</strong>, điền vào file <code>.env</code>.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex gap-3.5">
+                  <span className="w-7 h-7 rounded-full bg-emerald-600 text-white font-bold font-mono text-sm flex items-center justify-center shrink-0">
+                    4
+                  </span>
+                  <div>
+                    <strong className="text-sm font-bold text-gray-900 block mb-1">
+                      Bấm Đẩy dữ liệu lên Cloud
+                    </strong>
+                    <p className="text-xs text-gray-600 leading-relaxed">
+                      Bấm nút <strong>"ĐẨY TOÀN BỘ DỮ LIỆU LÊN CLOUD SUPABASE"</strong> ở trên để hoàn tất việc đồng bộ dữ liệu ban đầu!
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
