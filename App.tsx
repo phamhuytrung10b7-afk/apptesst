@@ -45,13 +45,7 @@ import {
   HardDrive,
   RefreshCw,
   Copy,
-  FileJson,
-  Cloud,
-  CloudUpload,
-  CloudDownload,
-  Wifi,
-  WifiOff,
-  ExternalLink
+  FileJson
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -76,7 +70,6 @@ import { twMerge } from 'tailwind-merge';
 import { STAGES, INITIAL_PARTS, StageId, Part, InventoryItem, Transaction, BOMDefinition, BOMDefinitionV2, ProductionOrder, ModelBOMDefinition, ProductivityNorm, LaserNesting, ShiftConfig, PartTransformation, DEFECT_REASONS } from './types';
 import { storageService } from './storage';
 import { exportPreparationReport } from './exportPreparationReport';
-import { useConfirm } from './ConfirmModal';
 
 // Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -371,78 +364,49 @@ export function GlobalDialogs() {
   };
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 overflow-y-auto bg-slate-900/60 backdrop-blur-md">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <motion.div 
-        initial={{ scale: 0.95, opacity: 0, y: 15 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.95, opacity: 0, y: 15 }}
-        className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-lg w-full overflow-hidden"
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4 border border-gray-100"
       >
-        <div className="p-6 sm:p-7">
-          <div className="flex items-start gap-4">
-            {activeDialog.type === 'confirm' ? (
-              <div className="w-12 h-12 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center shrink-0 border border-red-500/20">
-                <AlertCircle className="w-6 h-6 stroke-[2.2]" />
-              </div>
-            ) : activeDialog.type === 'alert' ? (
-              <div className="w-12 h-12 rounded-2xl bg-blue-500/10 text-blue-500 flex items-center justify-center shrink-0 border border-blue-500/20">
-                <AlertCircle className="w-6 h-6 stroke-[2.2]" />
-              </div>
-            ) : (
-              <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center shrink-0 border border-indigo-500/20">
-                <Edit2 className="w-6 h-6 stroke-[2.2]" />
-              </div>
-            )}
-            <div className="space-y-1 pt-1 flex-1">
-              <h3 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight leading-snug">{activeDialog.title}</h3>
-            </div>
+        <h3 className="text-xl font-bold text-gray-900 mb-2">{activeDialog.title}</h3>
+        {activeDialog.message && <p className="text-gray-600 mb-6">{activeDialog.message}</p>}
+        
+        {activeDialog.type === 'prompt' && (
+          <div className="mb-6">
+            <input 
+              autoFocus
+              type={activeDialog.passwordMode || activeDialog.title.toLowerCase().includes('mật khẩu') ? 'password' : 'text'}
+              value={inputValue}
+              onChange={e => setInputValue(e.target.value)}
+              className="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all font-medium text-lg"
+              placeholder="Nhập giá trị..."
+              onKeyDown={e => {
+                if (e.key === 'Enter') close(inputValue);
+                if (e.key === 'Escape') close(null);
+              }}
+            />
           </div>
+        )}
 
-          {activeDialog.message && (
-            <div className="mt-4 text-sm sm:text-base text-slate-600 leading-relaxed whitespace-pre-line pl-0 sm:pl-16">
-              {activeDialog.message}
-            </div>
-          )}
-          
-          {activeDialog.type === 'prompt' && (
-            <div className="mt-4 pl-0 sm:pl-16">
-              <input 
-                autoFocus
-                type={activeDialog.passwordMode || activeDialog.title.toLowerCase().includes('mật khẩu') ? 'password' : 'text'}
-                value={inputValue}
-                onChange={e => setInputValue(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all font-medium text-base text-slate-900"
-                placeholder="Nhập giá trị..."
-                onKeyDown={e => {
-                  if (e.key === 'Enter') close(inputValue);
-                  if (e.key === 'Escape') close(null);
-                }}
-              />
-            </div>
-          )}
-        </div>
-
-        <div className="bg-slate-50/80 px-6 sm:px-7 py-4 sm:py-5 border-t border-slate-100 flex flex-col-reverse sm:flex-row items-center justify-end gap-3">
+        <div className="flex justify-end gap-3 rounded-b-xl border-gray-100">
           {activeDialog.type !== 'alert' && (
             <button 
               autoFocus={activeDialog.type === 'confirm'}
               onClick={() => close(activeDialog.type === 'prompt' ? null : false)}
-              className="w-full sm:w-auto px-5 py-2.5 rounded-xl text-sm font-bold text-slate-700 bg-slate-200/70 hover:bg-slate-200 active:scale-[0.98] transition-all cursor-pointer"
+              className="px-5 py-2.5 rounded-lg text-gray-600 font-bold hover:bg-gray-100 transition-colors"
             >
-              Hủy bỏ
+              Hủy
             </button>
           )}
           <button 
             onClick={() => close(activeDialog.type === 'prompt' ? inputValue : true)}
             autoFocus={activeDialog.type === 'alert'}
-            className={cn(
-              "w-full sm:w-auto px-6 py-2.5 rounded-xl text-sm font-bold active:scale-[0.98] transition-all cursor-pointer",
-              activeDialog.type === 'confirm' 
-                ? "bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/20" 
-                : "bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20"
-            )}
+            className="px-5 py-2.5 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 active:scale-95 transition-all shadow-md shadow-blue-600/20"
           >
-            {activeDialog.type === 'alert' ? 'Đóng' : 'Đồng ý'}
+            {activeDialog.type === 'alert' ? 'Đóng' : 'Xác nhận'}
           </button>
         </div>
       </motion.div>
@@ -683,7 +647,6 @@ function A7QRLabelCard({
 }
 
 export default function App() {
-  const { confirm } = useConfirm();
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -702,10 +665,6 @@ export default function App() {
 
   const [labelSettings, setLabelSettings] = useState(storageService.getLabelSettings());
   const [defectModal, setDefectModal] = useState<{ partId: string, stageId: StageId, poId?: string } | null>(null);
-  const [settingsTab, setSettingsTab] = useState<'parts' | 'bom' | 'label' | 'bom_v2' | 'model_bom' | 'transformations' | 'backup' | 'cloud'>('parts');
-  const [isCloudConnected, setIsCloudConnected] = useState<boolean>(storageService.isConfigured());
-  const [isSyncingCloud, setIsSyncingCloud] = useState<boolean>(false);
-  const [isRealtimeActive, setIsRealtimeActive] = useState<boolean>(false);
 
   const dclrNorms = useMemo(() => storageService.getNorms().filter(n => n.stageId === 'DCLR'), [isImportingNorms, parts]);
   const dclrNormsMap = useMemo(() => new Map(dclrNorms.map(n => [n.partId, n.secondsPerUnit])), [dclrNorms]);
@@ -794,42 +753,10 @@ export default function App() {
       setSelectedPart(existingParts[0].id);
     }
 
+    // Auto cleanup data older than retention limits (Labels > 24h, Scan Logs > 35d, Completed POs > 35d)
+    storageService.autoCleanupOldData();
+
     refreshData();
-
-    // Khởi tạo và đồng bộ Realtime từ Supabase Cloud nếu đã cấu hình
-    let isMounted = true;
-    let unsubscribeRealtime: (() => void) | null = null;
-    if (storageService.isConfigured()) {
-      setIsSyncingCloud(true);
-      storageService.init()
-        .then(() => {
-          if (!isMounted) return;
-          refreshData();
-          setIsCloudConnected(true);
-          unsubscribeRealtime = storageService.subscribeToRealtime((payload) => {
-            if (!isMounted) return;
-            console.log('[Supabase Realtime] Thay đổi dữ liệu:', payload?.table);
-            refreshData();
-          });
-          setIsRealtimeActive(true);
-        })
-        .catch((err) => {
-          if (!isMounted) return;
-          console.warn('[Supabase] Khởi tạo Supabase không thành công:', err);
-        })
-        .finally(() => {
-          if (isMounted) {
-            setIsSyncingCloud(false);
-          }
-        });
-    }
-
-    return () => {
-      isMounted = false;
-      if (unsubscribeRealtime) {
-        unsubscribeRealtime();
-      }
-    };
   }, []);
 
   const refreshData = () => {
@@ -871,15 +798,9 @@ export default function App() {
     } catch (err: any) {
       const errMsg = err instanceof Error ? err.message : (err.message || 'Đã xảy ra lỗi');
       if (errMsg.startsWith('OVER_PO:')) {
-        const ok = await confirm({
-          title: 'Cảnh báo: Vượt kế hoạch PO',
-          message: errMsg.replace('OVER_PO:', ''),
-          confirmText: 'Vẫn xuất kho',
-          cancelText: 'Hủy bỏ',
-          confirmVariant: 'danger',
-          iconType: 'warning'
-        });
-        if (ok) {
+        const warningMessage = errMsg.replace('OVER_PO:', '');
+        const confirmed = await customConfirm(warningMessage);
+        if (confirmed) {
           try {
             const tx = storageService.recordStageOut(selectedPart, selectedStage, quantity, sourceLocation, targetStageId, poId, true);
             const updatedInventory = storageService.getInventory();
@@ -1104,12 +1025,9 @@ export default function App() {
           />
           <SidebarLink 
             active={currentView === 'settings'} 
-            onClick={() => {
-              setSettingsTab('parts');
-              setCurrentView('settings');
-            }}
+            onClick={() => setCurrentView('settings')}
             icon={<Settings size={24} />}
-            label="Cài đặt & Cơ sở dữ liệu"
+            label="Cài đặt & Sao lưu dữ liệu"
             collapsed={!isSidebarOpen}
           />
         </nav>
@@ -1140,43 +1058,12 @@ export default function App() {
               {currentView === 'po' && 'Quản lý Lệnh sản xuất (PO)'}
               {currentView === 'norms' && 'Định mức năng suất sản xuất'}
               {currentView === 'working_hours' && 'Cài đặt Ca làm việc & Nghỉ ngơi'}
-              {currentView === 'settings' && 'Cài đặt linh kiện, Cloud Supabase & Sao lưu'}
+              {currentView === 'settings' && 'Cài đặt linh kiện & Sao lưu Local Storage'}
             </h2>
           </div>
-          <div className="flex items-center gap-4">
-            {isCloudConnected ? (
-              <button
-                onClick={() => {
-                  setSettingsTab('cloud');
-                  setCurrentView('settings');
-                }}
-                title="Supabase Online: Đã kết nối cơ sở dữ liệu Cloud. Nhấn để quản lý đồng bộ hoặc xem trạng thái."
-                className="flex items-center gap-2 px-3.5 py-2 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95"
-              >
-                <Cloud size={15} className="text-sky-600" />
-                <span>Supabase Cloud</span>
-                <span className={cn("w-2 h-2 rounded-full bg-emerald-500", isRealtimeActive && "animate-pulse")} title="Realtime Online" />
-                {isSyncingCloud && (
-                  <RefreshCw size={12} className="animate-spin text-sky-600 ml-0.5" />
-                )}
-              </button>
-            ) : (
-              <button
-                onClick={() => {
-                  setSettingsTab('cloud');
-                  setCurrentView('settings');
-                }}
-                title="Chưa kết nối Supabase Cloud. Đang hoạt động ở chế độ Local Storage cục bộ. Nhấn để kết nối cơ sở dữ liệu online."
-                className="flex items-center gap-2 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95"
-              >
-                <WifiOff size={15} className="text-amber-600" />
-                <span>Lưu cục bộ (Offline)</span>
-              </button>
-            )}
-
+          <div className="flex items-center gap-6">
             <button
               onClick={() => {
-                setSettingsTab('backup');
                 setCurrentView('settings');
               }}
               title="Mở giao diện Sao lưu & Nạp dữ liệu Local Storage"
@@ -1325,7 +1212,6 @@ export default function App() {
                     setLabelSettings(s);
                     storageService.saveLabelSettings(s);
                   }}
-                  defaultTab={settingsTab}
                 />
               )}
             </AnimatePresence>
@@ -2336,7 +2222,12 @@ function LabelHistoryView({ parts, labels: initialLabels, onPrint, onCopy, onRol
           <div className="flex justify-between items-center">
             <div>
               <h2 className="font-bold text-xl tracking-tight">Danh sách nhãn QR</h2>
-              <p className="text-xs text-gray-400 mt-1">Tổng số: {labels.length} nhãn</p>
+              <div className="flex items-center gap-1.5 mt-1">
+                <p className="text-xs text-gray-400">Tổng số: {labels.length} nhãn</p>
+                <span className="text-[10px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-bold border border-amber-200">
+                  Lưu 24h
+                </span>
+              </div>
             </div>
             <div className="flex flex-col gap-1 items-end">
               <div className="flex items-center gap-1">
@@ -3417,8 +3308,16 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
         totalTH += dayTH;
     }
     
-    rowData.push(totalKHSX > 0 ? totalKHSX : '', totalTH > 0 ? totalTH : '', (totalKHSX - totalTH) !== 0 ? (totalKHSX - totalTH) : '');
-    return { rowData, hsqd, totalKHSX, totalTH };
+    const diff = totalTH - totalKHSX;
+    let diffDisplay: any = '';
+    if (diff < 0) {
+      diffDisplay = `(${Math.abs(diff)})`;
+    } else if (diff > 0) {
+      diffDisplay = diff;
+    }
+    
+    rowData.push(totalKHSX > 0 ? totalKHSX : '', totalTH > 0 ? totalTH : '', diffDisplay);
+    return { rowData, hsqd, totalKHSX, totalTH, diff };
   });
 
   const activeLapRapRows = lapRapRows.filter(r => r.totalKHSX > 0 || r.totalTH > 0);
@@ -3476,8 +3375,14 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
   const thucHienAvg = totalMandays > 0 ? (grandTH_conv / totalMandays) : 0;
   const phanTramAvg = (thucHienAvg / 64) * 100;
 
-  footerUnconverted.push(grandKHSX_un > 0 ? grandKHSX_un : '-', grandTH_un > 0 ? grandTH_un : '-', (grandKHSX_un - grandTH_un));
-  footerConverted.push(Math.round(grandKHSX_conv), Math.round(grandTH_conv), Math.round(grandKHSX_conv - grandTH_conv));
+  const grandUnDiff = grandTH_un - grandKHSX_un;
+  const grandUnDiffDisplay = grandUnDiff < 0 ? `(${Math.abs(grandUnDiff)})` : grandUnDiff;
+
+  const grandConvDiff = Math.round(grandTH_conv - grandKHSX_conv);
+  const grandConvDiffDisplay = grandConvDiff < 0 ? `(${Math.abs(grandConvDiff)})` : grandConvDiff;
+
+  footerUnconverted.push(grandKHSX_un > 0 ? grandKHSX_un : '-', grandTH_un > 0 ? grandTH_un : '-', grandUnDiffDisplay);
+  footerConverted.push(Math.round(grandKHSX_conv), Math.round(grandTH_conv), grandConvDiffDisplay);
   footerPeople.push('Năng suất Tuần', '', '');
   footerCapacity.push('Kế hoạch', 'Thực hiện', '% thực hiện');
   footerRatio.push(64, Math.round(thucHienAvg), Math.round(phanTramAvg) + '%'); 
@@ -3489,6 +3394,7 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
   const wsLR = XLSX.utils.aoa_to_sheet(lrSheetData);
 
   const numDays = daysStartMs.length;
+  const diffCol = 3 + numDays * 2 + 2;
   const mergesLR = [
     { s: {r:0, c:0}, e: {r:0, c: 3 + numDays*2 + 2} }, // Title ROW
     { s: {r:1, c:0}, e: {r:2, c:0} }, 
@@ -3524,6 +3430,19 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
       const isTitle = R === 0;
       const isHeader = R === 1 || R === 2;
       const isFooter = R >= footerStartR;
+      const isDiffCol = C === diffCol;
+      
+      const cellVal = wsLR[cellAddress].v;
+      let isNegative = false;
+      if (typeof cellVal === 'number' && cellVal < 0) {
+        isNegative = true;
+        if (isDiffCol) {
+          wsLR[cellAddress].v = `(${Math.abs(cellVal)})`;
+          wsLR[cellAddress].t = 's';
+        }
+      } else if (typeof cellVal === 'string' && cellVal.startsWith('(') && cellVal.endsWith(')')) {
+        isNegative = true;
+      }
       
       if (isTitle) {
          wsLR[cellAddress].s = {
@@ -3538,7 +3457,11 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
       } else if (isFooter) {
          wsLR[cellAddress].s = {
             ...dataStyle,
-            font: { bold: true, sz: 11 },
+            font: { 
+              bold: true, 
+              sz: 11,
+              color: (isDiffCol && isNegative) ? { rgb: "DC2626" } : undefined
+            },
             fill: { fgColor: { rgb: R === footerStartR ? "E2E8F0" : R === footerStartR + 1 ? "FED7AA" : R === footerStartR + 4 ? "F3F4F6" : R === footerStartR + 5 ? "FFFF00" : "FEF3C7" } }
          };
          if (C > 2) wsLR[cellAddress].s.alignment = { horizontal: "center", vertical: "center" };
@@ -3547,6 +3470,8 @@ const exportProductionReportRange = (transactions: Transaction[], parts: Part[],
          if (C >= 3 && C < 3 + numDays*2) {
              const isKHSX = (C - 3) % 2 === 0;
              wsLR[cellAddress].s.font = { ...wsLR[cellAddress].s.font, color: { rgb: isKHSX ? "DC2626" : "2563EB" }, bold: true };
+         } else if (isDiffCol && isNegative) {
+             wsLR[cellAddress].s.font = { ...wsLR[cellAddress].s.font, color: { rgb: "DC2626" }, bold: true };
          }
       }
     }
@@ -5274,7 +5199,12 @@ function ProduceView({
     }, 0);
   }, [inventory, selectedPart, selectedStage, sourceLocation, selectedPoId]);
 
-  const activePo = availablePos.find(p => p.id === selectedPoId) || availablePos[0];
+  const activePo = allAvailablePos.find(p => p.id === selectedPoId) || availablePos[0];
+  const poProcessed = activePo ? (sourceLocation === 'IN' ? activePo.producedQuantity : (activePo.exportedQuantity || 0)) : 0;
+  const poTarget = activePo?.targetQuantity || 0;
+  const poRemaining = activePo ? Math.max(0, poTarget - poProcessed) : 0;
+  const isOverPo = Boolean(activePo && quantity > 0 && ((poProcessed + quantity) > poTarget));
+  const overAmount = isOverPo ? ((poProcessed + quantity) - poTarget) : 0;
 
   return (
     <motion.div 
@@ -5285,18 +5215,45 @@ function ProduceView({
     >
       <div className="bg-white p-10 rounded-2xl border border-gray-200 shadow-sm space-y-8">
         {activePo && (
-          <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl flex justify-between items-center">
-            <div>
-              <div className="text-sm font-bold uppercase text-blue-600 opacity-70">Lệnh PO đang chạy</div>
-              <div className="font-mono font-bold text-blue-800 text-lg">{activePo.id}</div>
+          <div className={cn(
+            "p-5 rounded-2xl border transition-all space-y-3",
+            isOverPo ? "bg-amber-50 border-amber-300" : "bg-blue-50 border-blue-200"
+          )}>
+            <div className="flex justify-between items-center">
+              <div>
+                <div className="text-xs font-bold uppercase text-blue-600 tracking-wider">Lệnh PO đã chọn</div>
+                <div className="font-mono font-bold text-blue-900 text-lg flex items-center gap-2">
+                  <span>{activePo.id}</span>
+                  {activePo.id.startsWith('REPAIR') && (
+                    <span className="text-xs bg-amber-200 text-amber-900 px-2 py-0.5 rounded font-sans font-bold">LỆNH BÙ</span>
+                  )}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-xs font-bold uppercase text-blue-600 tracking-wider">
+                  {sourceLocation === 'IN' ? 'Tiến độ SX (IN)' : 'Tiến độ Xuất (OUT)'}
+                </div>
+                <div className="font-mono font-bold text-blue-900 text-lg">
+                  {poProcessed} / {poTarget}
+                </div>
+              </div>
             </div>
-            <div className="text-right">
-              <div className="text-sm font-bold uppercase text-blue-600 opacity-70">
-                {sourceLocation === 'IN' ? 'Tiến độ SX' : 'Tiến độ Xuất'}
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-blue-200/60 text-xs">
+              <div className="font-medium text-gray-700">
+                Còn lại theo PO: <span className="font-mono font-bold text-blue-900 text-sm">{poRemaining}</span>
               </div>
-              <div className="font-mono font-bold text-blue-800 text-lg">
-                {sourceLocation === 'IN' ? activePo.producedQuantity : activePo.exportedQuantity || 0} / {activePo.targetQuantity}
-              </div>
+              {isOverPo ? (
+                <div className="flex items-center gap-1.5 text-amber-800 font-bold bg-amber-100/90 border border-amber-300 px-2.5 py-1 rounded-lg">
+                  <AlertCircle size={14} className="text-amber-600 flex-shrink-0" />
+                  <span>Vượt PO (+{overAmount}) — sẽ yêu cầu xác nhận khi xuất</span>
+                </div>
+              ) : quantity > 0 ? (
+                <div className="flex items-center gap-1.5 text-emerald-800 font-bold bg-emerald-100/90 border border-emerald-300 px-2.5 py-1 rounded-lg">
+                  <Check size={14} className="text-emerald-600 flex-shrink-0" />
+                  <span>Trong hạn mức PO (Còn lại sau xuất: {poRemaining - quantity})</span>
+                </div>
+              ) : null}
             </div>
           </div>
         )}
@@ -5305,10 +5262,14 @@ function ProduceView({
           <p className="text-lg text-gray-500">Ghi nhận hoàn thành công đoạn hoặc xuất linh kiện từ kho thành phẩm để in nhãn QR.</p>
         </div>
         
-        <form onSubmit={(e) => {
+        <form onSubmit={async (e) => {
+          e.preventDefault();
+          if (quantity <= 0) {
+            await customAlert('Vui lòng nhập số lượng lớn hơn 0');
+            return;
+          }
           if (quantity > currentStock + 0.0001) {
-            alert(`Số lượng xuất (${quantity}) vượt quá tồn kho hiện tại (${currentStock})`);
-            e.preventDefault();
+            await customAlert(`Số lượng xuất (${quantity}) vượt quá tồn kho hiện tại (${currentStock})`);
             return;
           }
           handleProduce(e, sourceLocation, sourceLocation === 'OUT' ? targetStageId : undefined, selectedPoId);
@@ -5357,15 +5318,28 @@ function ProduceView({
 
           {allAvailablePos.length > 0 && (
             <div className="space-y-4">
-              <label className="text-base font-bold uppercase tracking-widest opacity-80">3. Chọn Lệnh PO (Tiến độ)</label>
+              <div className="flex justify-between items-center">
+                <label className="text-base font-bold uppercase tracking-widest opacity-80">3. Chọn Lệnh PO (Ràng buộc tiến độ)</label>
+                {availablePos.length > 1 && (
+                  <span className="text-xs bg-purple-100 text-purple-700 font-bold px-2.5 py-1 rounded-md">
+                    Linh kiện nằm trong {availablePos.length} PO khác nhau
+                  </span>
+                )}
+              </div>
               <SearchableSelect 
-                options={allAvailablePos.map(po => ({
-                  id: po.id,
-                  label: `${po.id.startsWith('REPAIR') ? '🛠️ [BÙ] ' : ''}${po.id} - ${getProcessValue(parts.find((p: any) => p.id === po.partId)?.name || po.partId, parts.find((p: any) => p.id === po.partId), selectedStage, sourceLocation)} (${sourceLocation === 'IN' ? po.producedQuantity : po.exportedQuantity || 0}/${po.targetQuantity})`
-                }))}
+                options={allAvailablePos.map(po => {
+                  const poPart = parts.find((p: any) => p.id === po.partId);
+                  const isCurrentPart = po.partId === selectedPart;
+                  const currentQty = sourceLocation === 'IN' ? po.producedQuantity : (po.exportedQuantity || 0);
+                  const rem = Math.max(0, po.targetQuantity - currentQty);
+                  return {
+                    id: po.id,
+                    label: `${isCurrentPart ? '★ ' : ''}${po.id.startsWith('REPAIR') ? '🛠️ [BÙ] ' : ''}${po.id} - ${getProcessValue(poPart?.name || po.partId, poPart, selectedStage, sourceLocation)} (${currentQty}/${po.targetQuantity} - Còn: ${rem})`
+                  };
+                })}
                 value={selectedPoId}
                 onChange={handlePoChange}
-                placeholder="Tìm Lệnh PO..."
+                placeholder="Tìm và chọn đúng Lệnh PO..."
               />
             </div>
           )}
@@ -6675,7 +6649,6 @@ function GlazingComponentPrintCard({ norm, plan, idx, onPrint, onRecordProductio
 }
 
 function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDefectModal, refreshData, labels, onPrint, aggregatedGlazingOut }: any) {
-  const { confirm } = useConfirm();
   const inventory = globalInventory || [];
   const [activeTab, setActiveTab] = useState<'INVENTORY' | 'INBOUND' | 'OUTBOUND' | 'QUICK_PRINT' | 'PLANNING' | 'CONFIG'>('INVENTORY');
   const [showEditInventoryModal, setShowEditInventoryModal] = useState<{ partId: string, quantity: number, stageId: any, location: any } | null>(null);
@@ -6971,7 +6944,6 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
       };
       
       storageService.saveTransactions([transaction, ...storageService.getTransactions()]);
-      storageService.persistTransaction(transaction);
       
       // Label awaiting printing
       const formatQR = `${pseudoPartId}|${qty}|GLAZING|${ts}|${txId}|DCLR|${pseudoPartId}|||`;
@@ -7387,16 +7359,8 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                                 </div>
                                 <div className="flex items-center gap-1">
                                   <button 
-                                    onClick={async () => {
-                                      const ok = await confirm({
-                                        title: 'Xác nhận hoàn thành',
-                                        message: 'Đánh dấu kế hoạch này đã hoàn thành? Kế hoạch sẽ được chuyển sang mục Đã hoàn thành.',
-                                        confirmText: 'Đồng ý',
-                                        cancelText: 'Hủy bỏ',
-                                        confirmVariant: 'primary',
-                                        iconType: 'info'
-                                      });
-                                      if (ok) {
+                                    onClick={() => {
+                                      if (confirm('Đánh dấu kế hoạch này đã hoàn thành? Kế hoạch sẽ được chuyển sang mục Đã hoàn thành.')) {
                                         storageService.completeGlazingPlan(plan.id);
                                         setGlazingPlans(storageService.getGlazingPlans());
                                         refreshData();
@@ -7408,16 +7372,8 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                                     Xong
                                   </button>
                                   <button 
-                                    onClick={async () => {
-                                      const ok = await confirm({
-                                        title: 'Xóa kế hoạch dán kính',
-                                        message: 'Bạn có chắc chắn muốn xóa kế hoạch dán kính này?',
-                                        confirmText: 'Đồng ý xóa',
-                                        cancelText: 'Hủy bỏ',
-                                        confirmVariant: 'danger',
-                                        iconType: 'danger'
-                                      });
-                                      if (ok) {
+                                    onClick={() => {
+                                      if (confirm('Xóa kế hoạch dán kính này?')) {
                                         storageService.deleteGlazingPlan(plan.id);
                                         setGlazingPlans(storageService.getGlazingPlans());
                                         refreshData();
@@ -7488,16 +7444,8 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                                 <RotateCcw size={16} />
                               </button>
                                <button 
-                                 onClick={async () => {
-                                   const ok = await confirm({
-                                     title: 'Xóa vĩnh viễn kế hoạch',
-                                     message: 'Bạn có chắc chắn muốn xóa vĩnh viễn kế hoạch này khỏi danh sách đã hoàn thành?',
-                                     confirmText: 'Đồng ý xóa',
-                                     cancelText: 'Hủy bỏ',
-                                     confirmVariant: 'danger',
-                                     iconType: 'danger'
-                                   });
-                                   if (ok) {
+                                 onClick={() => {
+                                   if (confirm('Xóa vĩnh viễn kế hoạch này?')) {
                                      storageService.deleteGlazingPlan(plan.id);
                                      setGlazingPlans(storageService.getGlazingPlans());
                                      refreshData();
@@ -7712,22 +7660,8 @@ function GlazingView({ parts, inventory: globalInventory, onManualInbound, setDe
                     <span className="text-[10px] font-black uppercase text-blue-600 tracking-widest">Định mức đã tải ({glazingPlanNorms.length})</span>
                     {glazingPlanNorms.length > 0 && (
                       <button 
-                        onClick={async () => {
-                          const ok = await confirm({
-                            title: 'Xóa sạch định mức',
-                            message: 'Bạn có chắc chắn muốn xóa toàn bộ danh sách định mức kế hoạch dán kính không?',
-                            confirmText: 'Đồng ý xóa',
-                            cancelText: 'Hủy bỏ',
-                            confirmVariant: 'danger',
-                            iconType: 'danger'
-                          });
-                          if (ok) {
-                            storageService.saveGlazingPlanNorms([]);
-                            setGlazingPlanNorms([]);
-                          }
-                        }}
-                        className="text-red-400 hover:text-red-600 transition-colors cursor-pointer"
-                        title="Xóa tất cả định mức"
+                        onClick={() => { if(confirm('Xóa sạch định mức?')) { storageService.saveGlazingPlanNorms([]); setGlazingPlanNorms([]); } }}
+                        className="text-red-400 hover:text-red-600 transition-colors"
                       >
                         <Trash2 size={16} />
                       </button>
@@ -8334,15 +8268,13 @@ function InboundView({ selectedStage, setSelectedStage, onScanSuccess, parts, se
   );
 }
 
-function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChange, defaultTab }: { 
+function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChange }: { 
   parts: Part[], 
   onPartsChange: () => void, 
   labelSettings: any,
   onLabelSettingsChange: (s: any) => void,
-  defaultTab?: 'parts' | 'bom' | 'label' | 'bom_v2' | 'model_bom' | 'transformations' | 'backup' | 'cloud',
   key?: string 
 }) {
-  const { confirm } = useConfirm();
   const [newPart, setNewPart] = useState<Part>({ id: '', name: '', unit: 'Cái', level: 1, skipLaser: false, skipBending: false, skipWelding: false, skipPainting: false, hasPaintingPO: false });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
@@ -8351,77 +8283,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
   const [isImportingModelBOM, setIsImportingModelBOM] = useState(false);
   const [isImportingTransformations, setIsImportingTransformations] = useState(false);
 
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'parts' | 'bom' | 'label' | 'bom_v2' | 'model_bom' | 'transformations' | 'backup' | 'cloud'>(defaultTab || 'parts');
-
-  useEffect(() => {
-    if (defaultTab) {
-      setActiveSettingsTab(defaultTab);
-    }
-  }, [defaultTab]);
-
-  // Cloud Supabase State & Handlers
-  const [isMigratingCloud, setIsMigratingCloud] = useState(false);
-  const [migrationResult, setMigrationResult] = useState<{ success: boolean; message: string; details?: any } | null>(null);
-  const [isPullingCloud, setIsPullingCloud] = useState(false);
-  const [pullResult, setPullResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [copiedSqlHint, setCopiedSqlHint] = useState(false);
-
-  const handleMigrateToSupabase = async () => {
-    if (!storageService.isConfigured()) {
-      alert('Chưa cấu hình Supabase! Vui lòng điền VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY vào file .env.');
-      return;
-    }
-    const confirmed = await confirm({
-      title: 'Đẩy dữ liệu lên Cloud Supabase',
-      message: 'Toàn bộ danh mục linh kiện, tồn kho WIP, nhật ký quét mã, lệnh sản xuất PO, định mức BOM trên máy tính này sẽ được đẩy lên cơ sở dữ liệu Supabase online.\n\nBạn có muốn tiến hành không?',
-      confirmText: 'Đồng ý đẩy lên',
-      cancelText: 'Hủy bỏ',
-      confirmVariant: 'danger',
-      iconType: 'warning'
-    });
-    if (!confirmed) return;
-
-    setIsMigratingCloud(true);
-    setMigrationResult(null);
-    try {
-      const res = await storageService.migrateLocalStorageToSupabase();
-      setMigrationResult(res);
-      if (res.success) {
-        onPartsChange();
-      }
-    } catch (err: any) {
-      setMigrationResult({
-        success: false,
-        message: 'Lỗi: ' + (err?.message || 'Không thể đồng bộ lên Supabase')
-      });
-    } finally {
-      setIsMigratingCloud(false);
-    }
-  };
-
-  const handlePullFromSupabase = async () => {
-    if (!storageService.isConfigured()) {
-      alert('Chưa cấu hình Supabase trong file .env!');
-      return;
-    }
-    setIsPullingCloud(true);
-    setPullResult(null);
-    try {
-      await storageService.init();
-      onPartsChange();
-      setPullResult({
-        success: true,
-        message: 'Đã tải thành công toàn bộ dữ liệu mới nhất từ Cloud Supabase về máy tính này!'
-      });
-    } catch (err: any) {
-      setPullResult({
-        success: false,
-        message: 'Lỗi khi tải dữ liệu từ Cloud: ' + (err?.message || '')
-      });
-    } finally {
-      setIsPullingCloud(false);
-    }
-  };
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'parts' | 'bom' | 'label' | 'bom_v2' | 'model_bom' | 'transformations' | 'backup'>('parts');
 
   // Backup & Restore LocalStorage State
   const [backupStats, setBackupStats] = useState(() => storageService.getStorageStats());
@@ -8437,17 +8299,24 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
   } | null>(null);
   const [importMode, setImportMode] = useState<'overwrite' | 'merge'>('overwrite');
   const [isProcessingImport, setIsProcessingImport] = useState(false);
-  const [importProgressMessage, setImportProgressMessage] = useState<string>('');
-  const [importProgressPercent, setImportProgressPercent] = useState<number>(0);
   const [importResult, setImportResult] = useState<{
     success: boolean;
     message: string;
     keysRestored: number;
-    details?: Record<string, number>;
   } | null>(null);
+
+  const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
 
   const refreshBackupStats = () => {
     setBackupStats(storageService.getStorageStats());
+  };
+
+  const handleManualCleanup = () => {
+    const res = storageService.autoCleanupOldData();
+    refreshBackupStats();
+    onPartsChange();
+    setCleanupMessage(`Đã dọn dẹp thành công: xóa ${res.labelsRemoved} nhãn QR (>24h), ${res.posRemoved} lệnh PO đã hoàn thành (>35 ngày) và ${res.txsRemoved} nhật ký quét (>35 ngày) để giải phóng bộ nhớ!`);
+    setTimeout(() => setCleanupMessage(null), 8000);
   };
 
   const handleDownloadBackup = () => {
@@ -8467,8 +8336,6 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
   const handleBackupFileSelect = (file: File) => {
     setSelectedBackupFile(file);
     setImportResult(null);
-    setImportProgressMessage('');
-    setImportProgressPercent(0);
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
@@ -8491,60 +8358,42 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
     reader.readAsText(file);
   };
 
-  const handleExecuteImport = async () => {
+  const handleExecuteImport = () => {
     if (!importValidation || !importValidation.valid || !importValidation.storageData) {
-      alert('Vui lòng chọn tệp tin JSON hợp lệ trước.');
-      return;
-    }
-
-    const isOverwrite = importMode === 'overwrite';
-    const confirmed = await confirm({
-      title: isOverwrite ? 'Cảnh báo ghi đè toàn bộ dữ liệu Supabase Cloud' : 'Xác nhận nạp dữ liệu lên Supabase Cloud',
-      message: isOverwrite
-        ? 'Chế độ "Ghi đè hoàn toàn" sẽ DỌN DẸP DỮ LIỆU CŨ trên Supabase Cloud và nạp mới 100% dữ liệu từ tệp JSON theo từng gói 300 bản ghi (Khắc phục triệt để lỗi tràn bộ nhớ LocalStorage).\n\nBạn có chắc chắn muốn tiếp tục không?'
-        : 'Hệ thống sẽ nạp dữ liệu từ tệp JSON thẳng lên cơ sở dữ liệu Supabase Cloud qua các gói 300 bản ghi.\n\nBạn có muốn tiếp tục?',
-      confirmText: isOverwrite ? 'Đồng ý ghi đè' : 'Đồng ý nạp lên Cloud',
-      cancelText: 'Hủy bỏ',
-      confirmVariant: isOverwrite ? 'danger' : 'primary',
-      iconType: isOverwrite ? 'danger' : 'warning'
-    });
-
-    if (!confirmed) return;
-
-    setIsProcessingImport(true);
-    setImportProgressPercent(5);
-    setImportProgressMessage('Đang chuẩn bị gói dữ liệu nạp lên Supabase Cloud...');
-    setImportResult(null);
-
-    try {
-      const res = await storageService.importBackupDataToSupabase(
-        importValidation.storageData,
-        importMode,
-        (progress) => {
-          if (progress.message) setImportProgressMessage(progress.message);
-          if (progress.percent !== undefined) setImportProgressPercent(progress.percent);
-        }
-      );
-
-      setImportResult(res);
-
-      if (res.success) {
-        onPartsChange();
-        const updatedLabelSettings = storageService.getLabelSettings();
-        if (updatedLabelSettings) {
-          onLabelSettingsChange(updatedLabelSettings);
-        }
-        refreshBackupStats();
-      }
-    } catch (err: any) {
       setImportResult({
         success: false,
         keysRestored: 0,
-        message: 'Lỗi không mong muốn trong quá trình nạp: ' + (err?.message || '')
+        message: 'Vui lòng chọn tệp tin JSON hợp lệ trước.'
       });
-    } finally {
-      setIsProcessingImport(false);
+      return;
     }
+
+    setIsProcessingImport(true);
+    setImportResult(null);
+
+    setTimeout(() => {
+      try {
+        const res = storageService.importBackupData(importValidation.storageData!, importMode);
+        setIsProcessingImport(false);
+        setImportResult(res);
+
+        if (res.success) {
+          onPartsChange();
+          const updatedLabelSettings = storageService.getLabelSettings();
+          if (updatedLabelSettings) {
+            onLabelSettingsChange(updatedLabelSettings);
+          }
+          refreshBackupStats();
+        }
+      } catch (err: any) {
+        setIsProcessingImport(false);
+        setImportResult({
+          success: false,
+          keysRestored: 0,
+          message: 'Lỗi khi nạp dữ liệu: ' + (err?.message || String(err))
+        });
+      }
+    }, 150);
   };
 
   const [showResetModal, setShowResetModal] = useState(false);
@@ -8780,16 +8629,8 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
     setEditingId(part.id);
   };
 
-  const handleDelete = async (id: string) => {
-    const ok = await confirm({
-      title: 'Xác nhận xóa linh kiện',
-      message: 'Bạn có chắc chắn muốn xóa linh kiện này? Dữ liệu tồn kho liên quan sẽ không bị xóa nhưng có thể hiển thị không chính xác.',
-      confirmText: 'Đồng ý xóa',
-      cancelText: 'Hủy bỏ',
-      confirmVariant: 'danger',
-      iconType: 'danger'
-    });
-    if (ok) {
+  const handleDelete = (id: string) => {
+    if (confirm('Bạn có chắc chắn muốn xóa linh kiện này? Dữ liệu tồn kho liên quan sẽ không bị xóa nhưng có thể hiển thị không chính xác.')) {
       const updatedParts = parts.filter(p => p.id !== id);
       storageService.saveParts(updatedParts);
       onPartsChange();
@@ -8965,39 +8806,6 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
           )}
         </div>
 
-        <div className="pt-6 border-t border-gray-100 mt-6 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
-              <Cloud size={14} className="text-sky-600" />
-              Cơ sở dữ liệu Cloud
-            </h3>
-            {storageService.isConfigured() ? (
-              <span className="text-[11px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Online
-              </span>
-            ) : (
-              <span className="text-[11px] font-mono font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                Chưa kết nối
-              </span>
-            )}
-          </div>
-          <p className="text-xs text-gray-500">Đồng bộ cơ sở dữ liệu Supabase trực tuyến để đồng bộ tức thì giữa các máy tính.</p>
-          <button
-            type="button"
-            onClick={() => setActiveSettingsTab('cloud')}
-            className={cn(
-              "w-full py-2.5 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-95",
-              activeSettingsTab === 'cloud'
-                ? "bg-sky-700 text-white"
-                : "bg-sky-600 hover:bg-sky-700 text-white"
-            )}
-          >
-            <Cloud size={14} />
-            Quản lý Đồng bộ Cloud Supabase
-          </button>
-        </div>
-
         <div className="pt-6 border-t border-gray-100 mt-6">
           <h3 className="text-xs font-bold uppercase opacity-50 mb-3 text-red-600">Khu vực nguy hiểm</h3>
           <button 
@@ -9108,25 +8916,6 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
             )}
           >
             Chuyển đổi linh kiện
-          </button>
-          <button 
-            onClick={() => {
-              setActiveSettingsTab('cloud');
-            }}
-            className={cn(
-              "px-5 py-4 text-sm font-bold uppercase tracking-wider transition-all border-b-2 whitespace-nowrap flex items-center gap-2",
-              activeSettingsTab === 'cloud' 
-                ? "border-sky-600 text-sky-700 bg-white shadow-sm font-black" 
-                : "border-transparent text-sky-600 hover:text-sky-700 hover:bg-sky-50/50 font-bold"
-            )}
-          >
-            <Cloud size={16} className="text-sky-600" />
-            Đồng bộ Cloud Supabase
-            {storageService.isConfigured() ? (
-              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse" title="Đã kết nối" />
-            ) : (
-              <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" title="Chưa cấu hình" />
-            )}
           </button>
           <button 
             onClick={() => {
@@ -9465,16 +9254,8 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
               </div>
               <div className="flex gap-4">
                 <button 
-                  onClick={async () => {
-                    const ok = await confirm({
-                      title: 'Đảo ngược Nguồn / Đích',
-                      message: 'Bạn có chắc chắn muốn đảo ngược tất cả dữ liệu Nguồn và Đích trong bảng này không?',
-                      confirmText: 'Đồng ý đảo ngược',
-                      cancelText: 'Hủy bỏ',
-                      confirmVariant: 'warning',
-                      iconType: 'warning'
-                    });
-                    if (!ok) return;
+                  onClick={() => {
+                    if (!confirm('Bạn có chắc chắn muốn đảo ngược tất cả dữ liệu Nguồn và Đích trong bảng này không?')) return;
                     const current = storageService.getTransformations();
                     const swapped = current.map(t => ({
                       ...t,
@@ -9485,7 +9266,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                     onPartsChange();
                     alert('Đã đảo ngược dữ liệu thành công!');
                   }}
-                  className="bg-white border-2 border-orange-500 text-orange-500 px-6 py-3 rounded-xl font-bold uppercase hover:bg-orange-50 transition-all flex items-center gap-2 cursor-pointer"
+                  className="bg-white border-2 border-orange-500 text-orange-500 px-6 py-3 rounded-xl font-bold uppercase hover:bg-orange-50 transition-all flex items-center gap-2"
                 >
                   <RotateCcw size={20} />
                   Đảo ngược Nguồn/Đích
@@ -9662,6 +9443,14 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
               </div>
               <div className="flex items-center gap-3">
                 <button
+                  onClick={handleManualCleanup}
+                  className="px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-sm"
+                  title="Xóa nhãn QR >24h, nhật ký >35 ngày và lệnh PO hoàn thành >35 ngày để giải phóng bộ nhớ"
+                >
+                  <Trash2 size={14} />
+                  Dọn dẹp giải phóng bộ nhớ
+                </button>
+                <button
                   onClick={refreshBackupStats}
                   className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all"
                   title="Cập nhật lại số liệu thống kê"
@@ -9671,6 +9460,13 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                 </button>
               </div>
             </div>
+
+            {cleanupMessage && (
+              <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-xl text-xs text-emerald-900 font-medium flex items-center gap-2">
+                <CheckCircle2 size={16} className="text-emerald-700 shrink-0" />
+                <span>{cleanupMessage}</span>
+              </div>
+            )}
 
             {/* Current Storage Stats Cards */}
             <div>
@@ -9802,17 +9598,17 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                 <div>
                   <div className="flex items-center justify-between mb-4">
                     <span className="px-3 py-1 bg-blue-100 text-blue-800 text-xs font-bold uppercase tracking-wider rounded-full flex items-center gap-1.5">
-                      <CloudUpload size={13} />
-                      Nạp trực tiếp lên Supabase Cloud
+                      <FileUp size={13} />
+                      Nạp dữ liệu vào máy này
                     </span>
-                    <span className="text-xs font-mono text-blue-600 font-semibold">Gói 300 bản ghi • Không lo tràn bộ nhớ</span>
+                    <span className="text-xs font-mono text-blue-600 font-semibold">Khôi phục / Chuyển máy</span>
                   </div>
 
                   <h3 className="text-xl font-bold text-gray-900 mb-2 flex items-center gap-2">
-                    2. Nạp dữ liệu từ tệp JSON lên Cloud
+                    2. Nạp dữ liệu từ tệp JSON
                   </h3>
                   <p className="text-sm text-gray-600 leading-relaxed mb-5">
-                    Chọn tệp sao lưu <strong className="text-blue-700">.json</strong> để đẩy trực tiếp dữ liệu lên cơ sở dữ liệu Supabase Cloud qua các gói 300 bản ghi, khắc phục triệt để lỗi giới hạn LocalStorage.
+                    Chọn tệp tin sao lưu <strong className="text-blue-700">.json</strong> đã xuất từ máy tính khác để tải toàn bộ dữ liệu vào trình duyệt của máy này.
                   </p>
 
                   {/* Dropzone & File Selector */}
@@ -9862,7 +9658,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                           Nhấp để chọn tệp tin JSON hoặc kéo thả vào đây
                         </p>
                         <p className="text-xs text-gray-400">
-                          Chấp nhận các tệp sao lưu .json dung lượng lớn của hệ thống
+                          Chấp nhận các tệp sao lưu .json của hệ thống
                         </p>
                       </div>
                     )}
@@ -9893,35 +9689,31 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                         )}
                       </div>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+                      <div className="grid grid-cols-3 gap-2 text-center text-xs">
                         <div className="bg-blue-50/60 p-2 rounded-lg">
                           <span className="text-gray-500 block text-[11px]">Linh kiện</span>
-                          <span className="font-bold text-sm text-blue-700 font-mono">{(importValidation.stats?.partsCount || 0).toLocaleString()}</span>
+                          <span className="font-bold text-sm text-blue-700 font-mono">{importValidation.stats?.partsCount || 0}</span>
                         </div>
                         <div className="bg-blue-50/60 p-2 rounded-lg">
                           <span className="text-gray-500 block text-[11px]">Lệnh SX (PO)</span>
-                          <span className="font-bold text-sm text-blue-700 font-mono">{(importValidation.stats?.posCount || 0).toLocaleString()}</span>
+                          <span className="font-bold text-sm text-blue-700 font-mono">{importValidation.stats?.posCount || 0}</span>
                         </div>
                         <div className="bg-blue-50/60 p-2 rounded-lg">
                           <span className="text-gray-500 block text-[11px]">Tồn kho WIP</span>
-                          <span className="font-bold text-sm text-blue-700 font-mono">{(importValidation.stats?.inventoryCount || 0).toLocaleString()}</span>
-                        </div>
-                        <div className="bg-blue-50/60 p-2 rounded-lg">
-                          <span className="text-gray-500 block text-[11px]">Nhật ký / QR</span>
-                          <span className="font-bold text-sm text-blue-700 font-mono">{((importValidation.stats?.transactionsCount || 0) + (importValidation.stats?.labelsCount || 0)).toLocaleString()}</span>
+                          <span className="font-bold text-sm text-blue-700 font-mono">{importValidation.stats?.inventoryCount || 0}</span>
                         </div>
                       </div>
 
                       {/* Mode selection */}
                       <div className="pt-2 border-t border-gray-100 space-y-2">
                         <label className="text-[11px] font-bold uppercase tracking-wider text-gray-600 block">
-                          Chế độ nạp lên Supabase Cloud:
+                          Chế độ nạp dữ liệu:
                         </label>
                         <div className="grid grid-cols-1 gap-2">
                           <label className={cn(
                             "flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-all",
                             importMode === 'overwrite' 
-                              ? "border-blue-600 bg-blue-50/50 shadow-sm" 
+                              ? "border-blue-600 bg-blue-50/50" 
                               : "border-gray-200 hover:bg-gray-50"
                           )}>
                             <input 
@@ -9934,10 +9726,10 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                             />
                             <div className="text-xs">
                               <span className="font-bold text-gray-900 block">
-                                Ghi đè hoàn toàn (Dọn dẹp bảng cũ trên Cloud rồi nạp mới)
+                                Ghi đè toàn bộ (Khuyên dùng khi chuyển máy mới)
                               </span>
                               <span className="text-gray-500 text-[11px]">
-                                Xóa sạch các bảng Supabase hiện tại và nạp mới 100% từ file JSON (Khuyên dùng khi chuyển dữ liệu từ máy khác).
+                                Xóa dữ liệu cũ trên máy này và thay thế 100% bằng dữ liệu từ tệp JSON.
                               </span>
                             </div>
                           </label>
@@ -9945,7 +9737,7 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                           <label className={cn(
                             "flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-all",
                             importMode === 'merge' 
-                              ? "border-blue-600 bg-blue-50/50 shadow-sm" 
+                              ? "border-blue-600 bg-blue-50/50" 
                               : "border-gray-200 hover:bg-gray-50"
                           )}>
                             <input 
@@ -9958,10 +9750,10 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                             />
                             <div className="text-xs">
                               <span className="font-bold text-gray-900 block">
-                                Hợp nhất dữ liệu (Upsert)
+                                Hợp nhất dữ liệu (Merge)
                               </span>
                               <span className="text-gray-500 text-[11px]">
-                                Giữ nguyên các bản ghi không trùng và cập nhật/bổ sung các bản ghi mới từ tệp JSON vào Supabase Cloud.
+                                Giữ lại các bản ghi hiện tại và bổ sung thêm các bản ghi mới từ tệp JSON.
                               </span>
                             </div>
                           </label>
@@ -9970,71 +9762,32 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                     </div>
                   )}
 
-                  {/* Real-time Progress Bar Box */}
-                  {isProcessingImport && (
-                    <div className="mt-4 p-4 rounded-xl border border-blue-300 bg-blue-50/90 space-y-2.5 animate-fadeIn shadow-sm">
-                      <div className="flex items-center justify-between text-xs font-bold text-blue-900">
-                        <span className="flex items-center gap-2">
-                          <RefreshCw size={15} className="animate-spin text-blue-600" />
-                          Đang nạp dữ liệu lên Supabase Cloud...
-                        </span>
-                        <span className="font-mono text-sm px-2 py-0.5 bg-blue-200/80 rounded-md text-blue-950 font-bold">
-                          {importProgressPercent}%
-                        </span>
-                      </div>
-                      
-                      {/* Animated Progress bar */}
-                      <div className="w-full bg-blue-200/80 rounded-full h-3 overflow-hidden p-0.5">
-                        <div 
-                          className="bg-blue-600 h-full rounded-full transition-all duration-300 ease-out shadow-sm"
-                          style={{ width: `${Math.max(4, importProgressPercent)}%` }}
-                        />
-                      </div>
-
-                      <p className="text-xs text-blue-800 font-mono flex items-center gap-1.5 pt-0.5">
-                        <span className="inline-block w-2 h-2 rounded-full bg-blue-600 animate-ping shrink-0" />
-                        {importProgressMessage || 'Đang thực thi các gói upsert 300 bản ghi...'}
-                      </p>
-                    </div>
-                  )}
-
                   {importResult && (
                     <div className={cn(
-                      "mt-4 p-4 rounded-xl border text-xs flex flex-col gap-2.5 animate-fadeIn shadow-sm",
+                      "mt-4 p-4 rounded-xl border text-xs flex flex-col gap-2 animate-fadeIn",
                       importResult.success 
                         ? "bg-emerald-50 border-emerald-300 text-emerald-900" 
                         : "bg-red-50 border-red-300 text-red-900"
                     )}>
-                      <div className="flex items-start gap-2.5">
+                      <div className="flex items-center gap-2">
                         {importResult.success ? (
-                          <CheckCircle2 size={20} className="text-emerald-600 shrink-0 mt-0.5" />
+                          <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
                         ) : (
-                          <AlertCircle size={20} className="text-red-600 shrink-0 mt-0.5" />
+                          <AlertCircle size={18} className="text-red-600 shrink-0" />
                         )}
-                        <div className="space-y-1">
-                          <span className="font-bold text-sm block">{importResult.message}</span>
-                          {importResult.details && (
-                            <div className="flex flex-wrap gap-1.5 pt-1">
-                              {Object.entries(importResult.details).map(([tbl, count]) => (
-                                <span key={tbl} className="px-2 py-0.5 bg-emerald-100/90 text-emerald-800 font-mono text-[11px] rounded-md font-semibold">
-                                  {tbl}: {count}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
+                        <span className="font-bold text-sm">{importResult.message}</span>
                       </div>
                       {importResult.success && (
-                        <div className="flex items-center gap-2 pt-1 border-t border-emerald-200">
+                        <div className="flex items-center gap-2 pt-1">
                           <button
                             type="button"
                             onClick={() => window.location.reload()}
                             className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm"
                           >
                             <RefreshCw size={12} />
-                            Tải lại trang (F5) để đồng bộ hoàn toàn
+                            Tải lại trang (F5) để áp dụng toàn diện
                           </button>
-                          <span className="text-[11px] text-emerald-700">Dữ liệu đã được nạp thành công lên Cloud.</span>
+                          <span className="text-[11px] text-emerald-700">Dữ liệu đã được áp dụng vào giao diện ngay lập tức.</span>
                         </div>
                       )}
                     </div>
@@ -10053,17 +9806,8 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                         : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"
                     )}
                   >
-                    {isProcessingImport ? (
-                      <>
-                        <RefreshCw size={18} className="animate-spin" />
-                        <span>ĐANG NẠP DỮ LIỆU LÊN CLOUD ({importProgressPercent}%)...</span>
-                      </>
-                    ) : (
-                      <>
-                        <CloudUpload size={18} />
-                        <span>NẠP THẲNG LÊN SUPABASE CLOUD (GÓI 300)</span>
-                      </>
-                    )}
+                    <HardDrive size={18} />
+                    {isProcessingImport ? 'ĐANG NẠP DỮ LIỆU...' : 'XÁC NHẬN NẠP DỮ LIỆU VÀO MÁY NÀY'}
                   </button>
                 </div>
               </div>
@@ -10114,298 +9858,6 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
                     </strong>
                     <p className="text-xs text-gray-600 leading-relaxed">
                       Mở ứng dụng trên máy mới, vào mục <strong>"Sao lưu & Nạp dữ liệu (JSON)"</strong>, chọn tệp tin JSON và bấm <strong>"XÁC NHẬN NẠP DỮ LIỆU"</strong>.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : activeSettingsTab === 'cloud' ? (
-          <div className="p-8 lg:p-10 space-y-8">
-            {/* Header Banner */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-gray-100">
-              <div className="flex items-center gap-4">
-                <div className="bg-sky-600 p-3.5 rounded-2xl text-white shadow-lg shadow-sky-600/20">
-                  <Cloud size={28} />
-                </div>
-                <div>
-                  <h2 className="text-2xl font-bold tracking-tight text-gray-900">
-                    Cơ sở dữ liệu đám mây Supabase (Online Cloud & Realtime Sync)
-                  </h2>
-                  <p className="text-sm text-gray-500 mt-0.5">
-                    Lưu trữ dữ liệu an toàn trên Cloud, hỗ trợ đồng bộ dữ liệu Realtime tức thì giữa nhiều máy tính và thiết bị khác nhau.
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  disabled={isPullingCloud || !storageService.isConfigured()}
-                  onClick={handlePullFromSupabase}
-                  className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer"
-                  title="Kiểm tra kết nối và kéo dữ liệu mới nhất từ Cloud"
-                >
-                  <RefreshCw size={14} className={cn(isPullingCloud && "animate-spin text-sky-600")} />
-                  {isPullingCloud ? 'Đang tải dữ liệu...' : 'Kiểm tra & Tải mới'}
-                </button>
-              </div>
-            </div>
-
-            {/* Connection Status Card */}
-            <div className={cn(
-              "p-6 rounded-2xl border flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all",
-              storageService.isConfigured() 
-                ? "bg-sky-50/60 border-sky-200" 
-                : "bg-amber-50/60 border-amber-200"
-            )}>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2.5">
-                  <span className="text-xs font-bold uppercase tracking-wider text-gray-600">Trạng thái kết nối Cloud:</span>
-                  {storageService.isConfigured() ? (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      ĐÃ KẾT NỐI SUPABASE CLOUD (HOẠT ĐỘNG)
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                      <WifiOff size={14} />
-                      CHƯA CẤU HÌNH BIẾN MÔI TRƯỜNG .ENV
-                    </span>
-                  )}
-                </div>
-
-                <div className="text-xs text-gray-600 font-mono space-y-1">
-                  <div>
-                    <span className="opacity-60">Supabase URL: </span>
-                    <span className="font-bold text-gray-900">
-                      {(import.meta as any).env?.VITE_SUPABASE_URL || '(Chưa cấu hình VITE_SUPABASE_URL)'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="opacity-60">Realtime Channel: </span>
-                    <span className="font-bold text-sky-700">
-                      {storageService.isConfigured() ? 'public:* (Tự động lắng nghe thay đổi)' : 'Chưa kích hoạt'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="shrink-0 flex flex-col sm:flex-row gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const text = `# File .env cấu hình Supabase:\nVITE_SUPABASE_URL=https://your-project.supabase.co\nVITE_SUPABASE_ANON_KEY=your-anon-key`;
-                    navigator.clipboard.writeText(text);
-                    setCopiedSqlHint(true);
-                    setTimeout(() => setCopiedSqlHint(false), 3000);
-                  }}
-                  className="px-4 py-2.5 bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-sm"
-                >
-                  <Copy size={14} />
-                  {copiedSqlHint ? 'Đã sao chép mẫu .env!' : 'Sao chép mẫu .env'}
-                </button>
-              </div>
-            </div>
-
-            {/* Two Primary Action Cards */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Card 1: Push / Migrate Local to Supabase */}
-              <div className="bg-white border border-gray-200 rounded-2xl p-6 lg:p-8 flex flex-col justify-between shadow-sm space-y-6">
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 bg-sky-100 text-sky-700 rounded-xl">
-                      <CloudUpload size={22} />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-bold text-gray-900">1. Đẩy toàn bộ dữ liệu máy này lên Cloud</h3>
-                      <p className="text-xs text-gray-500">Chuyển toàn bộ dữ liệu đang có trên máy này lên Supabase</p>
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-gray-600 leading-relaxed">
-                    Dùng tính năng này khi bạn vừa tạo cơ sở dữ liệu Supabase mới và muốn đồng bộ toàn bộ:
-                    <strong> danh mục linh kiện, tồn kho WIP các công đoạn, lịch sử quét mã nhãn, lệnh sản xuất (PO), định mức BOM, cấu hình chuyển đổi và định mức năng suất</strong> từ máy tính này lên cơ sở dữ liệu trực tuyến.
-                  </p>
-
-                  <div className="bg-sky-50/50 p-4 rounded-xl border border-sky-100 text-xs text-sky-900 space-y-1.5">
-                    <div className="font-bold flex items-center gap-1.5 text-sky-800">
-                      <Database size={14} />
-                      Dữ liệu sẵn sàng được đẩy:
-                    </div>
-                    <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-sky-700">
-                      <li>{parts.length} linh kiện trong danh mục</li>
-                      <li>{storageService.getInventory().length} bản ghi tồn kho các công đoạn</li>
-                      <li>{storageService.getTransactions().length} nhật ký quét giao dịch</li>
-                      <li>{storageService.getProductionOrders().length} lệnh sản xuất (PO)</li>
-                      <li>Định mức BOM Level 1, BOM v2 và Model BOM</li>
-                    </ul>
-                  </div>
-
-                  {migrationResult && (
-                    <div className={cn(
-                      "p-4 rounded-xl border text-xs flex flex-col gap-2",
-                      migrationResult.success ? "bg-emerald-50 border-emerald-200 text-emerald-900" : "bg-red-50 border-red-200 text-red-900"
-                    )}>
-                      <div className="flex items-center gap-2 font-bold">
-                        {migrationResult.success ? <CheckCircle2 size={16} className="text-emerald-600 shrink-0" /> : <AlertCircle size={16} className="text-red-600 shrink-0" />}
-                        <span>{migrationResult.message}</span>
-                      </div>
-                      {migrationResult.details && (
-                        <div className="text-[11px] opacity-80 grid grid-cols-2 gap-1 pt-1 font-mono">
-                          {Object.entries(migrationResult.details).map(([k, v]) => (
-                            <span key={k}>{k}: {String(v)} bản ghi</span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <div className="pt-2">
-                  <button
-                    type="button"
-                    disabled={isMigratingCloud || !storageService.isConfigured()}
-                    onClick={handleMigrateToSupabase}
-                    className={cn(
-                      "w-full py-4 px-6 rounded-xl font-bold uppercase tracking-wider flex items-center justify-center gap-3 shadow-lg transition-all text-sm",
-                      storageService.isConfigured() && !isMigratingCloud
-                        ? "bg-sky-600 hover:bg-sky-700 text-white shadow-sky-600/20 active:scale-[0.99] cursor-pointer"
-                        : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"
-                    )}
-                  >
-                    <CloudUpload size={18} className={cn(isMigratingCloud && "animate-bounce")} />
-                    {isMigratingCloud ? 'ĐANG ĐẨY DỮ LIỆU LÊN CLOUD SUPABASE...' : 'ĐẨY TOÀN BỘ DỮ LIỆU LÊN CLOUD SUPABASE'}
-                  </button>
-                  {!storageService.isConfigured() && (
-                    <p className="text-[11px] text-amber-700 mt-2 text-center">
-                      * Cần điền VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY vào .env trước khi bấm nút này.
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* Card 2: Pull / Refresh from Supabase */}
-              <div className="bg-white border border-gray-200 rounded-2xl p-6 lg:p-8 flex flex-col justify-between shadow-sm space-y-6">
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 bg-blue-100 text-blue-700 rounded-xl">
-                      <CloudDownload size={22} />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-bold text-gray-900">2. Tải dữ liệu từ Cloud về máy này</h3>
-                      <p className="text-xs text-gray-500">Kéo toàn bộ dữ liệu mới nhất từ Supabase về bộ nhớ máy</p>
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-gray-600 leading-relaxed">
-                    Khi mở ứng dụng trên một máy tính mới, hoặc khi muốn đảm bảo dữ liệu máy tính của bạn hoàn toàn trùng khớp 100% với dữ liệu mới nhất trên đám mây, hãy nhấn nút tải dữ liệu bên dưới.
-                  </p>
-
-                  <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 text-xs text-blue-900 space-y-2">
-                    <div className="font-bold flex items-center gap-1.5 text-blue-800">
-                      <Wifi size={14} />
-                      Đồng bộ Realtime tự động:
-                    </div>
-                    <p className="text-[11px] text-blue-700 leading-relaxed">
-                      Hệ thống đã tích hợp <strong>Supabase Realtime Subscriptions</strong>. Mọi thao tác quét xuất kho, nhập kho, tạo PO hoặc thêm linh kiện từ bất kỳ máy nào sẽ tự động cập nhật ngay trên các máy khác mà không cần bấm nút F5!
-                    </p>
-                  </div>
-
-                  {pullResult && (
-                    <div className={cn(
-                      "p-4 rounded-xl border text-xs flex items-center gap-2 font-bold",
-                      pullResult.success ? "bg-emerald-50 border-emerald-200 text-emerald-900" : "bg-red-50 border-red-200 text-red-900"
-                    )}>
-                      {pullResult.success ? <CheckCircle2 size={16} className="text-emerald-600 shrink-0" /> : <AlertCircle size={16} className="text-red-600 shrink-0" />}
-                      <span>{pullResult.message}</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="pt-2">
-                  <button
-                    type="button"
-                    disabled={isPullingCloud || !storageService.isConfigured()}
-                    onClick={handlePullFromSupabase}
-                    className={cn(
-                      "w-full py-4 px-6 rounded-xl font-bold uppercase tracking-wider flex items-center justify-center gap-3 shadow-lg transition-all text-sm",
-                      storageService.isConfigured() && !isPullingCloud
-                        ? "bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/20 active:scale-[0.99] cursor-pointer"
-                        : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"
-                    )}
-                  >
-                    <CloudDownload size={18} className={cn(isPullingCloud && "animate-spin")} />
-                    {isPullingCloud ? 'ĐANG TẢI DỮ LIỆU TỪ CLOUD...' : 'TẢI DỮ LIỆU TỪ CLOUD VỀ MÁY NÀY'}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Step-by-Step Setup Guide */}
-            <div className="bg-white border border-gray-200 rounded-2xl p-6 lg:p-8 space-y-6">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-bold uppercase tracking-wider text-gray-800 flex items-center gap-2">
-                  <FileText size={18} className="text-sky-600" />
-                  Hướng dẫn 4 bước thiết lập Supabase từ đầu:
-                </h4>
-                <span className="text-xs text-sky-700 bg-sky-50 px-3 py-1 rounded-full font-bold border border-sky-200">
-                  Tệp schema: supabase_schema.sql
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex gap-3.5">
-                  <span className="w-7 h-7 rounded-full bg-sky-600 text-white font-bold font-mono text-sm flex items-center justify-center shrink-0">
-                    1
-                  </span>
-                  <div>
-                    <strong className="text-sm font-bold text-gray-900 block mb-1">
-                      Tạo dự án Supabase
-                    </strong>
-                    <p className="text-xs text-gray-600 leading-relaxed">
-                      Truy cập <strong>supabase.com</strong>, đăng ký/đăng nhập và bấm <strong>New Project</strong> để tạo một dự án miễn phí.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex gap-3.5">
-                  <span className="w-7 h-7 rounded-full bg-blue-600 text-white font-bold font-mono text-sm flex items-center justify-center shrink-0">
-                    2
-                  </span>
-                  <div>
-                    <strong className="text-sm font-bold text-gray-900 block mb-1">
-                      Chạy file SQL tạo bảng
-                    </strong>
-                    <p className="text-xs text-gray-600 leading-relaxed">
-                      Mở mục <strong>SQL Editor</strong> trong Supabase, mở tệp <code>supabase_schema.sql</code> trong dự án này, dán toàn bộ vào và bấm <strong>Run</strong>.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex gap-3.5">
-                  <span className="w-7 h-7 rounded-full bg-indigo-600 text-white font-bold font-mono text-sm flex items-center justify-center shrink-0">
-                    3
-                  </span>
-                  <div>
-                    <strong className="text-sm font-bold text-gray-900 block mb-1">
-                      Điền biến vào file .env
-                    </strong>
-                    <p className="text-xs text-gray-600 leading-relaxed">
-                      Vào mục <strong>Project Settings &gt; API</strong>, sao chép <strong>Project URL</strong> và <strong>anon public key</strong>, điền vào file <code>.env</code>.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex gap-3.5">
-                  <span className="w-7 h-7 rounded-full bg-emerald-600 text-white font-bold font-mono text-sm flex items-center justify-center shrink-0">
-                    4
-                  </span>
-                  <div>
-                    <strong className="text-sm font-bold text-gray-900 block mb-1">
-                      Bấm Đẩy dữ liệu lên Cloud
-                    </strong>
-                    <p className="text-xs text-gray-600 leading-relaxed">
-                      Bấm nút <strong>"ĐẨY TOÀN BỘ DỮ LIỆU LÊN CLOUD SUPABASE"</strong> ở trên để hoàn tất việc đồng bộ dữ liệu ban đầu!
                     </p>
                   </div>
                 </div>
@@ -10576,7 +10028,6 @@ function SettingsView({ parts, onPartsChange, labelSettings, onLabelSettingsChan
 }
 
 function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () => void }) {
-  const { confirm } = useConfirm();
   const [activeTab, setActiveTab] = useState<StageId | 'NESTING' | 'BW_HSQD'>('NESTING');
   const [bendingWeldingHSQD, setBendingWeldingHSQD] = useState<{partId: string, hsqd: number}[]>(() => storageService.getBendingWeldingHSQD());
   const [isImporting, setIsImporting] = useState(false);
@@ -10783,21 +10234,13 @@ function NormsView({ parts, onNormsChange }: { parts: Part[], onNormsChange: () 
           <div className="flex gap-4">
             {activeTab === 'NESTING' && nesting.length > 0 && (
               <button 
-                onClick={async () => {
-                  const ok = await confirm({
-                    title: 'Xóa toàn bộ định mức tổ hợp Laser',
-                    message: 'Bạn có chắc chắn muốn xóa toàn bộ dữ liệu định mức tổ hợp (Nesting) Laser không?',
-                    confirmText: 'Đồng ý xóa',
-                    cancelText: 'Hủy bỏ',
-                    confirmVariant: 'danger',
-                    iconType: 'danger'
-                  });
-                  if (ok) {
+                onClick={() => {
+                  if (confirm('Xóa toàn bộ định mức tổ hợp Laser?')) {
                     storageService.saveLaserNesting([]);
                     onNormsChange();
                   }
                 }}
-                className="px-6 py-4 border border-red-200 text-red-600 rounded-xl text-sm font-bold uppercase hover:bg-red-50 transition-all font-mono cursor-pointer"
+                className="px-6 py-4 border border-red-200 text-red-600 rounded-xl text-sm font-bold uppercase hover:bg-red-50 transition-all font-mono"
               >
                 Xóa tất cả
               </button>
@@ -11071,7 +10514,6 @@ function HistoryView({ transactions, parts }: HistoryProps) {
 }
 
 function WorkingHoursView() {
-  const { confirm } = useConfirm();
   const [configs, setConfigs] = useState<ShiftConfig[]>([]);
   
   useEffect(() => {
@@ -11083,16 +10525,8 @@ function WorkingHoursView() {
     alert('Đã lưu cài đặt ca làm việc & nghỉ ngơi! \nHệ thống sẽ tự động áp dụng nguồn lực ngoại lệ khi tính toán kế hoạch sản xuất cho PO mới.');
   };
 
-  const handleReset = async () => {
-    const ok = await confirm({
-      title: 'Khôi phục cài đặt mặc định',
-      message: 'Bạn có chắc muốn khôi phục về cài đặt ca làm việc và nghỉ ngơi mặc định từ hệ thống?',
-      confirmText: 'Đồng ý khôi phục',
-      cancelText: 'Hủy bỏ',
-      confirmVariant: 'warning',
-      iconType: 'warning'
-    });
-    if (ok) {
+  const handleReset = () => {
+    if (confirm('Bạn có chắc muốn khôi phục về cài đặt mặc định từ hệ thống?')) {
       storageService.resetShiftConfigs();
       setConfigs(storageService.getShiftConfigs());
     }
